@@ -1,0 +1,5 @@
+python-interpreter-path = "./.venv/bin/python"
+search-path = [
+    "./vllm",
+    "./vllm-ascend",
+]

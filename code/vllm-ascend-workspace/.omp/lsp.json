@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "pyrefly": {
+      "command": "pyrefly",
+      "args": ["lsp"],
+      "fileTypes": [".py", ".pyi"],
+      "languageId": "python",
+      "rootMarkers": ["pyrefly.toml"]
+    }
+  }
+}
