@@ -1,0 +1,5 @@
+# uv pip install -r vllm/requirements/common.txt -r vllm-ascend/requirements.txt
+# 会有冲突
+fastapi
+triton-ascend
+triton

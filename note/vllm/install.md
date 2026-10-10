@@ -11,6 +11,8 @@ setup.py 会去 https://wheels.vllm.ai/{commit}/{variant}/vllm/metadata.json 取
 # 从此工作区的 vLLM 目录运行
 cd code/vllm
 uv venv --python 3.12 --seed --managed-python
+# 企业内网可能需要用系统证书
+uv venv --python 3.12 --seed --managed-python --system-certs
 source .venv/bin/activate
 # 自动发现已发布的 CUDA wheel，失败时不会执行安装
 # env 输出同时固定 commit 和 CUDA variant，避免安装时选择不同索引
