@@ -60,7 +60,7 @@ NAME = re.compile(r"[a-z_][a-z0-9_-]*\$?", re.ASCII)
 FIELDS = {"comment", "shell", "groups", "public_keys"}
 
 
-def load_users(path, default_public_key=None):
+def load_users(path):
     path = path.expanduser().resolve()
     users = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(users, dict) or not users:
@@ -80,33 +80,62 @@ def load_users(path, default_public_key=None):
         groups = user.get("groups", [])
         if not isinstance(groups, list) or any(not isinstance(g, str) or not NAME.fullmatch(g) for g in groups):
             raise ValueError(f"{name}: groups must be an array of group names")
-        files = user.get("public_keys", [default_public_key] if default_public_key else [])
+        files = user.get("public_keys")
         if isinstance(files, str):
             files = [files]
-        if not isinstance(files, list) or any(not isinstance(f, str) for f in files):
+        if files is not None and (not isinstance(files, list) or any(not isinstance(f, str) for f in files)):
             raise ValueError(f"{name}: public_keys must be a file path or an array of file paths")
+        entry["public_keys"] = files
+        prepared.append(entry)
+    return prepared
+
+
+def plan_users(users, base_dir, default_public_key, key_cache):
+    prepared = []
+    for user in users:
+        entry = {k: v for k, v in user.items() if k != "public_keys"}
+        files = user["public_keys"]
+        if files is None:
+            files = [default_public_key] if default_public_key else []
         keys = []
         for filename in files:
-            key_path = Path(filename).expanduser()
-            if not key_path.is_absolute():
-                key_path = path.parent / key_path
-            key = key_path.read_text(encoding="utf-8").strip()
-            if "PRIVATE KEY" in key or len(key.splitlines()) != 1 or len(key.split()) < 2:
-                raise ValueError(f"{name}: expected a single SSH public key in {key_path}")
-            if not key.startswith(("ssh-", "ecdsa-", "sk-")):
-                raise ValueError(f"{name}: unsupported SSH public key in {key_path}")
-            keys.append(key)
+            path = Path(filename).expanduser()
+            if not path.is_absolute():
+                path = base_dir / path
+            path = path.resolve()
+            if path not in key_cache:
+                key = path.read_text(encoding="utf-8").strip()
+                if "PRIVATE KEY" in key or len(key.splitlines()) != 1 or len(key.split()) < 2:
+                    raise ValueError(f"{user['name']}: expected a single SSH public key in {path}")
+                if not key.startswith(("ssh-", "ecdsa-", "sk-")):
+                    raise ValueError(f"{user['name']}: unsupported SSH public key in {path}")
+                key_cache[path] = key
+            keys.append(key_cache[path])
         entry["authorized_keys"] = "\n".join(keys)
         prepared.append(entry)
     return prepared
 
 
-def build_inventory(targets, users_path):
+def build_plan(targets, users, base_dir):
+    cache = {}
+    return [{**target, "users": plan_users(users, base_dir, target.get("public_key"), cache)}
+            for target in targets]
+
+
+def describe_plan(plan, mode):
+    return {"mode": mode, "hosts": [
+        {"host": target["host"], "group": target["group"], "users": [
+            {k: v for k, v in user.items() if k != "authorized_keys"}
+            | {"public_key_count": len(user["authorized_keys"].splitlines())}
+            for user in target["users"]]} for target in plan]}
+
+
+def build_inventory(plan):
     children = {}
-    for index, target in enumerate(targets):
+    for index, target in enumerate(plan):
         children[f"target_{index}"] = inventory_group(
             {target["host"]: {"ansible_python_interpreter": target["python"],
-                              "managed_users": load_users(users_path, target.get("public_key"))}},
+                              "managed_users": target["users"]}},
             target["ssh"], target["ssh_config"])
     return {"all": {"children": children}}
 
@@ -127,16 +156,12 @@ def main():
     if args.workers < 1:
         parser.error("workers must be positive")
     try:
-        load_users(args.users)
+        users = load_users(args.users)
         targets = load_targets(args)
-        inventory_data = build_inventory(targets, args.users)
-        print(json.dumps({"mode": "apply" if args.apply else "check" if args.check else "plan",
-                          "hosts": [{"host": t["host"], "group": t["group"],
-                                     "users": [{k: v for k, v in u.items() if k != "authorized_keys"}
-                                               | {"public_key_count": len(u["authorized_keys"].splitlines())}
-                                               for u in inventory_data["all"]["children"][f"target_{i}"]["hosts"][t["host"]]["managed_users"]]}
-                                    for i, t in enumerate(targets)]},
-                         ensure_ascii=False, indent=2), flush=True)
+        plan = build_plan(targets, users, args.users.expanduser().resolve().parent)
+        inventory_data = build_inventory(plan)
+        mode = "apply" if args.apply else "check" if args.check else "plan"
+        print(json.dumps(describe_plan(plan, mode), ensure_ascii=False, indent=2), flush=True)
         if not args.apply and not args.check:
             return 0
         with tempfile.TemporaryDirectory(prefix="createuser-") as directory:
