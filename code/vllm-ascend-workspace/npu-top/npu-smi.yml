@@ -5,6 +5,7 @@
 # 查询部分服务器： --limit 'npu01,npu02'
 # 指定命令路径： -e npu_smi_bin=/usr/local/sbin/npu-smi
 # 需要 sudo 时： --become；需要 sudo 密码时再追加 --ask-become-pass
+# --containers：显示进程的 Docker 归属；远端需 Python 3，Docker 查询需对应权限。
 - name: 查询每台服务器所有 NPU 的利用率
   hosts: npu_servers
   gather_facts: false
@@ -38,6 +39,28 @@
       ansible.builtin.debug:
         msg: "{{ (npu_summary.stdout | from_json).lines }}"
       when: npu_summary.rc | default(-1) == 0
+
+    - name: 查询宿主机进程的容器归属
+      vars:
+        ansible_ssh_use_tty: false
+      ansible.builtin.raw: >-
+        python3 -c {{ lookup('ansible.builtin.file', playbook_dir ~ '/npu_process_containers.py') | quote }}
+        {{ npu_smi_result.stdout | quote }}
+      register: npu_containers_result
+      changed_when: false
+      when:
+        - npu_containers | default(false) | bool
+        - npu_smi_result.rc | default(-1) == 0
+      ignore_errors: true
+      ignore_unreachable: true
+
+    - name: 显示进程及容器归属
+      tags: [npu_top_output]
+      ansible.builtin.debug:
+        msg: "{{ (npu_containers_result.stdout | from_json) if npu_containers_result.rc | default(-1) == 0 else ['容器归属查询失败：' ~ (npu_containers_result.stderr | default('远端不可用'))] }}"
+      when:
+        - npu_containers | default(false) | bool
+        - npu_smi_result.rc | default(-1) == 0
 
     - name: 汇总所有已选择服务器的空闲卡 TOP10
       ansible.builtin.command:

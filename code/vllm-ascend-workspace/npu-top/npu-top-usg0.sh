@@ -18,7 +18,4 @@ python3 "$script_dir/../../../scripts/ssh_hosts.py" \
   --config "$config" --ssh-config "$windows_config" --ssh "$ssh_program" \
   --host-glob 'suzhou*' --group npu_servers > "$hosts_dir/hosts.json"
 
-export ANSIBLE_CALLBACK_PLUGINS="$script_dir/callback_plugins${ANSIBLE_CALLBACK_PLUGINS:+:$ANSIBLE_CALLBACK_PLUGINS}"
-export ANSIBLE_STDOUT_CALLBACK=npu_top
-# 不使用 exec：退出时需清理临时主机清单。
-ansible-playbook -i "$hosts_dir/hosts.json" "$script_dir/npu-smi.yml" "$@"
+bash "$script_dir/npu-top-run.sh" -i "$hosts_dir/hosts.json" "$script_dir/npu-smi.yml" "$@"
