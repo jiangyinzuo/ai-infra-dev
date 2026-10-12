@@ -59,6 +59,11 @@
         owner: root
         group: root
         mode: '0750'
+    - name: Ensure Docker access group exists
+      ansible.builtin.group:
+        name: docker
+        state: present
+
     - name: Create accounts without replacing existing supplementary groups
       ansible.builtin.user:
         name: "{{ item.name }}"
@@ -68,6 +73,15 @@
         append: "{{ true if (item.groups | default([]) | length > 0) else omit }}"
         create_home: true
         state: present
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Add managed users to Docker group without replacing existing groups
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        groups: docker
+        append: true
       loop: "{{ managed_users }}"
       loop_control:
         label: "{{ item.name }}"

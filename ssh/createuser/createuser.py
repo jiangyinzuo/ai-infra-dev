@@ -21,10 +21,11 @@ Safety and semantics:
     --group is required and repeatable; --host-glob further restricts targets.
     Shared connection profiles: ssh/hosts.json (--profiles can override).
     Default plan performs local configuration discovery only, no Ansible/SSH.
-    Existing users are updated only for explicitly configured shell/comment/groups;
-    existing supplementary groups and authorized keys are preserved.
-    Missing or empty groups leave supplementary groups untouched; nonempty groups
-    are appended, never used to replace existing memberships.
+    Existing users are updated only for explicitly configured shell/comment/groups
+    and mandatory Docker group membership; supplementary groups and keys are preserved.
+    Configured groups are appended, never used to replace existing memberships.
+    Ensures the docker group exists and adds every managed user to it; Docker itself
+    is not installed. New membership takes effect on the user's next login.
     Creates home directories and grants full passwordless sudo (NOPASSWD: ALL)
     to every configured user, including existing accounts. No password/UID/primary
     group changes. Each root-owned 0440 sudoers drop-in is validated with visudo;
@@ -32,6 +33,7 @@ Safety and semantics:
     Only the managed drop-in is validated; no global visudo -c check is run.
     Existing sudoers issues are not repaired and may affect effective privileges.
     The SSH private key therefore grants root access; protect it accordingly.
+    Docker group access also grants host-level privileges through the Docker daemon.
     Missing public_keys uses the target group's public_key from ssh/hosts.json;
     an explicit path/list overrides it, and [] disables key installation.
     ${WINDOWS_SSH_HOME} and ${WSL_SSH_HOME} resolve controller SSH directories.
