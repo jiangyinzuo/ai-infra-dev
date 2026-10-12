@@ -9,6 +9,7 @@ import shlex
 import os
 import re
 import subprocess
+from functools import lru_cache
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_PROFILES = Path(__file__).resolve().parent / "hosts.json"
@@ -28,6 +29,7 @@ def inventory_group(hosts: dict, ssh: str, ssh_config: str) -> dict:
     }}
 
 
+@lru_cache(maxsize=1)
 def windows_paths():
     profile = subprocess.check_output(
         ["cmd.exe", "/d", "/c", "chcp 65001 >nul & echo %USERPROFILE%"],

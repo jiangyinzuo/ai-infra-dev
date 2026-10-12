@@ -37,7 +37,7 @@ import sys
 import tempfile
 
 from ssh_config import host_passwords
-from ssh_hosts import DEFAULT_PROFILES, load_targets
+from ssh_hosts import DEFAULT_PROFILES, load_targets, windows_paths
 
 
 @contextmanager
@@ -83,12 +83,8 @@ def authentication_command(command: list[str], password: str | None):
 @contextmanager
 def windows_askpass(password: str, environment: dict[str, str]):
     """辅助脚本不含密码；仅通过 WSLENV 传入 Windows 子进程环境。"""
-    profile = subprocess.check_output(
-        ["cmd.exe", "/d", "/c", "chcp 65001 >nul & echo %USERPROFILE%"],
-        cwd="/mnt/c", text=True, encoding="utf-8",
-    ).strip()
-    home = subprocess.check_output(["wslpath", "-u", profile], text=True).strip()
-    with tempfile.TemporaryDirectory(prefix="ssh-askpass-", dir=Path(home) / ".ssh") as directory:
+    home = windows_paths()["WINDOWS_SSH_HOME"]
+    with tempfile.TemporaryDirectory(prefix="ssh-askpass-", dir=home) as directory:
         helper = Path(directory) / "askpass.cmd"
         helper.write_text(
             '@echo off\r\npowershell.exe -NoProfile -NonInteractive -Command '
