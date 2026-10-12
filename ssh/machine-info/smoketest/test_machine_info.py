@@ -1,0 +1,149 @@
+"""Offline smoke tests: python3 -m pytest -q ssh/machine-info/smoketest"""
+import argparse
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import shutil
+import sys
+from unittest.mock import patch
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, ROOT / filename)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+CLI = load_module("machine_info", "machine-info.py")
+PROBE = load_module("machine_probe", "machine_probe.py")
+
+
+def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(tmp_path):
+    config = tmp_path / "ssh-config"
+    config.write_text("Host lab-b lab-a\n User root\n# Host lab-disabled\nHost lab-*\n User root\nHost elsewhere\n User root\n")
+    profiles = tmp_path / "profiles.json"
+    profiles.write_text(json.dumps({"groups": [{"name": "lab", "host_glob": "lab-*",
+                                               "config": str(config), "ssh": "/usr/bin/ssh"}]}))
+    args = argparse.Namespace(profiles=profiles, group=["lab"], host_glob=["*-a"])
+    assert [target["host"] for target in CLI.load_targets(args)] == ["lab-a"]
+    args.host_glob = ["missing-*"]
+    with pytest.raises(ValueError, match="No hosts selected"):
+        CLI.load_targets(args)
+    args.group = ["unknown"]
+    with pytest.raises(ValueError, match="Unknown groups"):
+        CLI.load_targets(args)
+
+
+def test_npu_inventory_cli_preserves_each_profile_connection(tmp_path):
+    config = tmp_path / "ssh-config"
+    config.write_text("Host local-one remote-two\n User root\n")
+    profiles = tmp_path / "hosts.json"
+    profiles.write_text(json.dumps({"groups": [
+        {"name": "local", "host_glob": "local-*", "config": str(config), "ssh": "/usr/bin/ssh"},
+        {"name": "remote", "host_glob": "remote-*", "config": str(config),
+         "ssh_config": "C:\\Users\\example user\\.ssh\\config", "ssh": "/custom/ssh-usg0"},
+    ]}))
+    result = subprocess.run([sys.executable, str(ROOT.parent / "ssh_hosts.py"),
+                             "--profiles", str(profiles), "--inventory-group", "npu_servers"],
+                            cwd=tmp_path, capture_output=True, text=True, check=True)
+    hosts = json.loads(result.stdout)["all"]["children"]["npu_servers"]["hosts"]
+    assert set(hosts) == {"local-one", "remote-two"}
+    assert hosts["local-one"]["ansible_ssh_executable"] == "/usr/bin/ssh"
+    assert hosts["remote-two"]["ansible_ssh_executable"] == "/custom/ssh-usg0"
+    import shlex
+    assert shlex.split(hosts["remote-two"]["ansible_ssh_args"])[1] == "C:\\Users\\example user\\.ssh\\config"
+
+
+def test_directory_capacity_resolves_links_and_excludes_files(tmp_path):
+    directory = tmp_path / "data actual"
+    directory.mkdir()
+    link = tmp_path / "data-link"
+    link.symlink_to(directory, target_is_directory=True)
+    (tmp_path / "data-file").write_text("not a directory")
+    (tmp_path / "data-broken").symlink_to(tmp_path / "missing")
+    result = PROBE.data_directories(str(tmp_path / "data*"))
+    entries = {entry["path"]: entry for entry in result["directories"]}
+    assert not result["errors"]
+    assert set(entries) == {str(directory), str(link)}
+    assert entries[str(link)]["symlink"] is True
+    assert entries[str(link)]["real_path"] == str(directory)
+    df = subprocess.run(["df", "-B1", "--output=size,used", "--", str(directory)],
+                        capture_output=True, text=True, check=True)
+    total, _ = map(int, df.stdout.splitlines()[1].split())
+    assert entries[str(directory)]["total_bytes"] == total
+    assert entries[str(link)]["filesystem"] == entries[str(directory)]["filesystem"]
+    assert entries[str(directory)]["used_bytes"] <= total
+    assert PROBE.data_directories(str(tmp_path / "absent*")) == {"directories": [], "errors": []}
+
+
+@pytest.mark.parametrize("failure", [
+    {"unreachable": True, "msg": "Permission denied"},
+    {"failed": True, "msg": "probe timed out"},
+    {"rc": 1, "stderr": "Python unavailable"},
+    {"rc": 0, "stdout": "login banner only"},
+    {"rc": 0, "stdout": "__MACHINE_INFO__{}\n__MACHINE_INFO__{}\n"},
+])
+def test_transport_errors_are_host_results_not_batch_exceptions(failure):
+    result = CLI.parse_result({"group": "lab", "host": "offline"}, failure)
+    assert result["host"] == "offline"
+    assert "error" in result
+    assert "kubernetes" not in result
+
+
+def test_service_detection_distinguishes_stopped_nodes_clients_and_unknown():
+    def service_result(args):
+        state = "loaded" if args[2] == "kubelet.service" else "not-found"
+        return {"returncode": 0, "stdout": f"LoadState={state}\nActiveState=inactive\nSubState=dead", "stderr": ""}
+
+    with patch.object(PROBE.shutil, "which", return_value=None), \
+         patch.object(PROBE.Path, "exists", return_value=False), \
+         patch.object(PROBE.Path, "is_file", return_value=False), \
+         patch.object(PROBE, "command", side_effect=service_result):
+        node = PROBE.kubernetes()
+        assert node["status"] == "installed"
+        assert node["services"]["kubelet"]["ActiveState"] == "inactive"
+        absent = {"returncode": 0, "stdout": "LoadState=not-found\nActiveState=inactive\nSubState=dead", "stderr": ""}
+        with patch.object(PROBE, "command", return_value=absent):
+            assert PROBE.kubernetes()["status"] == "not-detected"
+        with patch.object(PROBE, "command", return_value={"returncode": 1, "stdout": "", "stderr": "systemd unavailable"}):
+            assert PROBE.kubernetes()["status"] == "unknown"
+        with patch.object(PROBE.shutil, "which", side_effect=lambda name: "/usr/bin/kubectl" if name == "kubectl" else None), \
+             patch.object(PROBE, "command", side_effect=lambda args: {"returncode": 0, "stdout": '{"clientVersion":{"gitVersion":"v1.34.9"}}', "stderr": ""} if args[0] == "/usr/bin/kubectl" else absent):
+            client = PROBE.kubernetes()
+            assert client["status"] == "client-only"
+            assert client["versions"]["kubectl"] == "v1.34.9"
+
+
+def test_playbook_collects_local_capacity_without_ssh(tmp_path):
+    """Run the real playbook using Ansible's local transport, no servers or USG."""
+    if shutil.which("ansible-playbook") is None:
+        pytest.skip("ansible-playbook is required for the local integration smoke")
+    data = tmp_path / "data-local"
+    data.mkdir()
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(json.dumps({"all": {"hosts": {"smoke-local": {
+        "ansible_connection": "local", "machine_python": sys.executable,
+    }}}}))
+    output = tmp_path / "results.json"
+    variables = tmp_path / "vars.json"
+    variables.write_text(json.dumps({"results_path": str(output),
+                                     "directory_glob": str(tmp_path / "data*"), "probe_timeout": 30}))
+    execution = subprocess.run(["ansible-playbook", "-i", str(inventory),
+                                str(ROOT / "machine-info.yml"), "-e", "@" + str(variables)],
+                               capture_output=True, text=True, timeout=60, cwd=tmp_path)
+    assert execution.returncode == 0, execution.stdout + execution.stderr
+    result = CLI.parse_result({"host": "smoke-local", "group": "smoke"},
+                              json.loads(output.read_text())["smoke-local"])
+    assert "error" not in result
+    directories = result["storage"]["directories"]
+    assert [entry["path"] for entry in directories] == [str(data)]
+    expected = subprocess.run(["df", "-B1", "--output=size", "--", str(data)],
+                              capture_output=True, text=True, check=True)
+    assert directories[0]["total_bytes"] == int(expected.stdout.splitlines()[1])

@@ -1,0 +1,24 @@
+{
+  "groups": [
+    {
+      "name": "suzhou",
+      "host_glob": "suzhou*",
+      "config": "${WINDOWS_SSH_CONFIG}",
+      "ssh_config": "${WINDOWS_SSH_CONFIG_NATIVE}",
+      "ssh": "${REPO}/ssh/ssh-usg0"
+    },
+    {
+      "name": "xiaoqiaoling",
+      "host_glob": "xiaoqiaoling*",
+      "config": "~/.ssh/config",
+      "ssh": "/usr/bin/ssh"
+    },
+    {
+      "name": "lianqiuhu",
+      "host_glob": "lianqiuhu*",
+      "config": "${WINDOWS_SSH_CONFIG}",
+      "ssh_config": "${WINDOWS_SSH_CONFIG_NATIVE}",
+      "ssh": "${REPO}/ssh/ssh-usg1"
+    }
+  ]
+}

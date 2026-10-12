@@ -1,0 +1,27 @@
+---
+- name: Collect read-only machine information
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Run the Python probe without remote module files
+      ansible.builtin.raw: >-
+        {{ machine_python | default('python3') | quote }} -c
+        {{ lookup('ansible.builtin.file', playbook_dir ~ '/machine_probe.py') | quote }}
+        {{ directory_glob | quote }}
+      vars:
+        ansible_ssh_use_tty: false
+      timeout: "{{ probe_timeout | int }}"
+      register: machine_result
+      changed_when: false
+      ignore_errors: true
+      ignore_unreachable: true
+
+    - name: Save all results on the controller including unreachable hosts
+      ansible.builtin.copy:
+        content: >-
+          {{ dict(ansible_play_hosts_all | zip(ansible_play_hosts_all | map('extract', hostvars, 'machine_result'))) | to_json }}
+        dest: "{{ results_path }}"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      run_once: true

@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def run(hosts_file, *args):
     result = subprocess.run(
-        [str(ROOT / "npu-top.sh"), "-i", str(hosts_file),
-         "--limit", "smoke-*", *args],
+        ["bash", str(ROOT / "npu-top-run.sh"), "-i", str(hosts_file),
+         str(ROOT / "npu-smi.yml"), "--limit", "smoke-*", *args],
         cwd=hosts_file.parent,
         text=True,
         capture_output=True,
