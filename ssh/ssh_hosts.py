@@ -86,7 +86,7 @@ def load_targets(args):
                             "python": profile.get("python", "python3"),
                             "public_key": expand(profile["public_key"]) if "public_key" in profile else None,
                             "config": str(config),
-                            "password_method": profile.get("password_method", "sshpass")})
+                            "password_method": profile["password_method"]})
     if not targets:
         raise ValueError("No hosts selected")
     return targets

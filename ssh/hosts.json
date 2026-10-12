@@ -14,7 +14,8 @@
       "host_glob": "xiaoqiaoling*",
       "config": "~/.ssh/config",
       "ssh": "/usr/bin/ssh",
-      "public_key": "${WSL_SSH_HOME}/id_ed25519.pub"
+      "public_key": "${WSL_SSH_HOME}/id_ed25519.pub",
+      "password_method": "sshpass"
     },
     {
       "name": "lianqiuhu",

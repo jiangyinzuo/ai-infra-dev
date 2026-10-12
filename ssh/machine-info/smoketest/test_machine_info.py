@@ -52,7 +52,7 @@ def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(tmp_path):
     config.write_text("Host lab-b lab-a\n User root\n# Host lab-disabled\nHost lab-*\n User root\nHost elsewhere\n User root\n")
     profiles = tmp_path / "profiles.json"
     profiles.write_text(json.dumps({"groups": [{"name": "lab", "host_glob": "lab-*",
-                                               "config": str(config), "ssh": "/usr/bin/ssh"}]}))
+                                               "config": str(config), "ssh": "/usr/bin/ssh", "password_method": "sshpass"}]}))
     args = argparse.Namespace(profiles=profiles, group=["lab"], host_glob=["*-a"])
     assert [target["host"] for target in CLI.load_targets(args)] == ["lab-a"]
     args.host_glob = ["missing-*"]
@@ -68,9 +68,9 @@ def test_npu_inventory_cli_preserves_each_profile_connection(tmp_path):
     config.write_text("Host local-one remote-two\n User root\n")
     profiles = tmp_path / "hosts.json"
     profiles.write_text(json.dumps({"groups": [
-        {"name": "local", "host_glob": "local-*", "config": str(config), "ssh": "/usr/bin/ssh"},
+        {"name": "local", "host_glob": "local-*", "config": str(config), "ssh": "/usr/bin/ssh", "password_method": "sshpass"},
         {"name": "remote", "host_glob": "remote-*", "config": str(config),
-         "ssh_config": "C:\\Users\\example user\\.ssh\\config", "ssh": "/custom/ssh-usg0"},
+         "ssh_config": "C:\\Users\\example user\\.ssh\\config", "ssh": "/custom/ssh-usg0", "password_method": "windows-askpass"},
     ]}))
     result = subprocess.run([sys.executable, str(ROOT.parent / "ssh_hosts.py"),
                              "--profiles", str(profiles), "--inventory-group", "npu_servers"],
