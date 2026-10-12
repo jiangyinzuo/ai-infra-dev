@@ -6,7 +6,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || exit 1
 
 hosts_dir=$(mktemp -d)
 trap 'rm -rf -- "$hosts_dir"' EXIT
-python3 "$script_dir/../../../scripts/ssh_hosts.py" \
+python3 "$script_dir/../ssh_hosts.py" \
   --config "$HOME/.ssh/config" --ssh-config "$HOME/.ssh/config" --ssh /usr/bin/ssh \
   --host-glob 'xiaoqiaoling*' --group npu_servers > "$hosts_dir/hosts.json"
 

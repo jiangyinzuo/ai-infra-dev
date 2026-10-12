@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+USG0_IP=$(
+    /mnt/c/windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command \
+        '(Get-NetIPAddress -InterfaceAlias "usg0" -AddressFamily IPv4 -AddressState Preferred | Select-Object -First 1 -ExpandProperty IPAddress)' \
+        | tr -d '\r'
+)
+
+if [[ -z "$USG0_IP" ]]; then
+    echo "Error: cannot get IPv4 address of Windows interface usg0" >&2
+else
+    export USG0_IP
+fi
+
+USG1_IP=$(
+    /mnt/c/windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command \
+        '(Get-NetIPAddress -InterfaceAlias "usg1" -AddressFamily IPv4 -AddressState Preferred | Select-Object -First 1 -ExpandProperty IPAddress)' \
+        | tr -d '\r'
+)
+
+if [[ -z "$USG1_IP" ]]; then
+    echo "Error: cannot get IPv4 address of Windows interface usg1" >&2
+else
+    export USG1_IP
+fi
+
+echo "export USG0_IP=$USG0_IP"
+echo "export USG1_IP=$USG1_IP"

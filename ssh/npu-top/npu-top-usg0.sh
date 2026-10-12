@@ -14,7 +14,7 @@ windows_config=$(wslpath -w "$config")
 
 hosts_dir=$(mktemp -d)
 trap 'rm -rf -- "$hosts_dir"' EXIT
-python3 "$script_dir/../../../scripts/ssh_hosts.py" \
+python3 "$script_dir/../ssh_hosts.py" \
   --config "$config" --ssh-config "$windows_config" --ssh "$ssh_program" \
   --host-glob 'suzhou*' --group npu_servers > "$hosts_dir/hosts.json"
 

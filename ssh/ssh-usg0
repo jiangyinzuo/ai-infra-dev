@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${USG0_IP:?Error: USG0_IP is not set}"
+
+exec /mnt/c/Windows/System32/OpenSSH/ssh.exe -b "$USG0_IP" "$@"
+

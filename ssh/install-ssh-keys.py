@@ -17,6 +17,7 @@ SSHCONFIG Example:
 
 LIMIT:
     只枚举当前文件中的具体 Host 别名，不展开 Include 或通配符 Host。
+    未匹配到具体 Host 时报告错误并返回 1，--dry-run 同样适用。
 """
 from __future__ import annotations
 
@@ -190,6 +191,8 @@ def run_batch(args: argparse.Namespace) -> int:
     key = Path(args.public_key).expanduser().resolve()
     hosts = {alias: password for alias, password in host_passwords(config).items()
              if any(fnmatch.fnmatchcase(alias, pattern) for pattern in args.host_glob)}
+    if not hosts:
+        raise ValueError(f"未找到匹配 {', '.join(args.host_glob)} 的具体 Host：{config}")
     failures = 0
     with ssh_environment(args.ssh, args.password_method == "windows-askpass") as environment:
         for host, password in hosts.items():
