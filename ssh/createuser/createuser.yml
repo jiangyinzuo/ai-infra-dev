@@ -1,0 +1,112 @@
+---
+- name: Create users and install public keys
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Query existing accounts without creating them
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ item.name }}"
+        fail_key: false
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: account_queries
+
+    - name: Verify requested supplementary groups exist
+      ansible.builtin.getent:
+        database: group
+        key: "{{ item.1 }}"
+      loop: "{{ managed_users | subelements('groups', skip_missing=True) }}"
+      loop_control:
+        label: "{{ item.0.name }} / {{ item.1 }}"
+
+    - name: Verify explicitly configured shells are executable
+      ansible.builtin.command:
+        argv: [test, -x, "{{ item.shell }}"]
+      when: item.shell is defined
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: false
+      check_mode: false
+
+    - name: Validate each proposed sudo rule without writing policy files
+      ansible.builtin.command:
+        argv: [/usr/sbin/visudo, -cf, /dev/stdin]
+        stdin: "{{ item.name }} ALL=(ALL:ALL) NOPASSWD: ALL"
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: false
+      check_mode: false
+    - name: Verify sudoers loads the managed drop-in directory
+      ansible.builtin.slurp:
+        src: /etc/sudoers
+      register: sudoers_config
+
+    - name: Require an active sudoers.d include
+      ansible.builtin.assert:
+        that:
+          - "(sudoers_config.content | b64decode) is search('(?m)^\\s*(?:#|@)includedir\\s+/etc/sudoers[.]d/?\\s*(?:#.*)?$')"
+        fail_msg: /etc/sudoers must include /etc/sudoers.d; no accounts changed.
+
+    - name: Ensure sudoers drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/sudoers.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0750'
+    - name: Create accounts without replacing existing supplementary groups
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        comment: "{{ item.comment | default(omit) }}"
+        shell: "{{ item.shell | default(omit) }}"
+        groups: "{{ item.groups | default(omit, true) }}"
+        append: "{{ true if (item.groups | default([]) | length > 0) else omit }}"
+        create_home: true
+        state: present
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Add configured SSH public keys without removing existing keys
+      ansible.posix.authorized_key:
+        user: "{{ item.name }}"
+        key: "{{ item.authorized_keys }}"
+        state: present
+        manage_dir: true
+        exclusive: false
+      when:
+        - item.authorized_keys | length > 0
+        - not ansible_check_mode or account_queries.results[user_index].ansible_facts.getent_passwd[item.name] is not none
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+        index_var: user_index
+
+    - name: Report public key checks deferred until the new account exists
+      ansible.builtin.debug:
+        msg: "{{ item.name }}: account creation is predicted; {{ item.authorized_keys.splitlines() | length }} public key(s) planned. Actual home, authorized_keys contents and permissions cannot be checked until the account exists."
+      when:
+        - ansible_check_mode
+        - item.authorized_keys | length > 0
+        - account_queries.results[user_index].ansible_facts.getent_passwd[item.name] is none
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+        index_var: user_index
+
+    - name: Grant passwordless sudo with a validated per-user rule
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/99-createuser-{{ item.name }}"
+        content: "{{ item.name }} ALL=(ALL:ALL) NOPASSWD: ALL\n"
+        owner: root
+        group: root
+        mode: '0440'
+        validate: /usr/sbin/visudo -cf %s
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"

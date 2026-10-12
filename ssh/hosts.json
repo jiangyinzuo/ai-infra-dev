@@ -5,20 +5,23 @@
       "host_glob": "suzhou*",
       "config": "${WINDOWS_SSH_CONFIG}",
       "ssh_config": "${WINDOWS_SSH_CONFIG_NATIVE}",
-      "ssh": "${REPO}/ssh/ssh-usg0"
+      "ssh": "${REPO}/ssh/ssh-usg0",
+      "public_key": "${WINDOWS_SSH_HOME}/id_ed25519.pub"
     },
     {
       "name": "xiaoqiaoling",
       "host_glob": "xiaoqiaoling*",
       "config": "~/.ssh/config",
-      "ssh": "/usr/bin/ssh"
+      "ssh": "/usr/bin/ssh",
+      "public_key": "${WSL_SSH_HOME}/id_ed25519.pub"
     },
     {
       "name": "lianqiuhu",
       "host_glob": "lianqiuhu*",
       "config": "${WINDOWS_SSH_CONFIG}",
       "ssh_config": "${WINDOWS_SSH_CONFIG_NATIVE}",
-      "ssh": "${REPO}/ssh/ssh-usg1"
+      "ssh": "${REPO}/ssh/ssh-usg1",
+      "public_key": "${WINDOWS_SSH_HOME}/id_ed25519.pub"
     }
   ]
 }

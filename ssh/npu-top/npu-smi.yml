@@ -1,7 +1,4 @@
 ---
-# DEPENDENCY: uv tool install ansible-core
-# 主机清单：python3 -m pip install sshconf==0.2.7（与公钥安装器共用解析模块）
-#
 # 查询部分服务器： --limit 'npu01,npu02'
 # 指定命令路径： -e npu_smi_bin=/usr/local/sbin/npu-smi
 # 需要 sudo 时： --become；需要 sudo 密码时再追加 --ask-become-pass

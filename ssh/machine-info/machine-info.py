@@ -8,8 +8,6 @@ Examples:
     python3 ssh/machine-info/machine-info.py --output /tmp/machines.md
 
 Prerequisites:
-    Local: python3 -m pip install sshconf==0.2.7
-    Local: uv tool install ansible-core (ansible-playbook must be on PATH).
     Offline smoke: uv run --with pytest --with sshconf==0.2.7 python -m pytest -q ssh/machine-info/smoketest
     Remote: Python 3, GNU df; systemd for service states; SSH key authentication.
     USG: source ssh/ssh-get-usg-ip to export USG0_IP / USG1_IP first.
@@ -28,6 +26,7 @@ Profiles (--profiles, default ssh/hosts.json, shared with npu-top):
     each remote probe. Temporary inventory/results live only on the controller.
 
 Output:
+    OS: PRETTY_NAME from /etc/os-release (JSON: os.pretty_name).
     Kubernetes: installed / client-only / not-detected / unknown, component
     versions and systemd load/active/sub states. No node Ready claim.
     Storage: matching directories (including links), resolved paths, filesystem,
@@ -107,17 +106,17 @@ def markdown(report):
     lines = ["# Machine information", "", "Collected: " + report["collected_at"], "",
              "Capacity is for each directory's filesystem, not directory contents. Shared filesystems must not be summed.",
              "Versions are local component versions; running kubelet does not imply node Ready. not-detected is not proof of absence.", "",
-             "| Group | Host | Kubernetes | Component versions | Service states |",
-             "|---|---|---|---|---|"]
+             "| Group | Host | OS | Kubernetes | Component versions | Service states |",
+             "|---|---|---|---|---|---|"]
     for record in report["machines"]:
         if "error" in record:
-            lines.append(f"| {cell(record['group'])} | {cell(record['host'])} | Query failed | — | {cell(record['error'])} |")
+            lines.append(f"| {cell(record['group'])} | {cell(record['host'])} | — | Query failed | — | {cell(record['error'])} |")
             continue
         k8s = record["kubernetes"]
         versions = "; ".join(f"{k}: {v}" for k, v in k8s["versions"].items()) or "—"
         states = "; ".join(f"{k}: {v.get('LoadState', 'unknown')}/{v.get('ActiveState', 'unknown')}/{v.get('SubState', 'unknown')}"
                            for k, v in k8s["services"].items() if v.get("LoadState") != "not-found") or "No detected services"
-        lines.append("| " + " | ".join(map(cell, [record["group"], record["host"], k8s["status"], versions, states])) + " |")
+        lines.append("| " + " | ".join(map(cell, [record["group"], record["host"], record["os"]["pretty_name"] or "Unknown", k8s["status"], versions, states])) + " |")
     lines += ["", "## Data directories", "", "Pattern: `" + cell(report["directory_glob"]) + "`", "",
               "| Host | Directory | Resolved path | Filesystem | Mount | Total | Used | Available | Use% |",
               "|---|---|---|---|---|---|---|---|---|"]
@@ -135,7 +134,7 @@ def markdown(report):
         if not record["storage"]["directories"]:
             lines.append(f"| {cell(record['host'])} | No matching directories | — | — | — | — | — | — | — |")
     errors = [record["host"] + ": " + message for record in report["machines"] if "error" not in record
-              for section in ("kubernetes", "storage") for message in record[section]["errors"]]
+              for section in ("os", "kubernetes", "storage") for message in record[section]["errors"]]
     if errors:
         lines += ["", "## Collection errors", "", *("- " + cell(error) for error in errors)]
     return "\n".join(lines) + "\n"
@@ -164,7 +163,7 @@ def main():
             args.output.write_text(text, encoding="utf-8")
         else:
             print(text, end="")
-        return int(any("error" in r or r["kubernetes"]["errors"] or r["storage"]["errors"] for r in machines))
+        return int(any("error" in r or any(r[section]["errors"] for section in ("os", "kubernetes", "storage")) for r in machines))
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         print("Error: " + str(exc), file=sys.stderr)
         return 1

@@ -34,7 +34,8 @@ def windows_paths():
         cwd="/mnt/c", text=True, encoding="utf-8", timeout=15).strip()
     native = profile + "\\.ssh\\config"
     local = subprocess.check_output(["wslpath", "-u", native], text=True, timeout=10).strip()
-    return {"WINDOWS_SSH_CONFIG": local, "WINDOWS_SSH_CONFIG_NATIVE": native}
+    return {"WINDOWS_SSH_CONFIG": local, "WINDOWS_SSH_CONFIG_NATIVE": native,
+            "WINDOWS_SSH_HOME": str(Path(local).parent)}
 
 
 def load_targets(args):
@@ -43,8 +44,9 @@ def load_targets(args):
     missing = set(args.group or []) - {p["name"] for p in selected}
     if missing:
         raise ValueError("Unknown groups: " + ", ".join(sorted(missing)))
-    variables = {**os.environ, "REPO": str(REPO)}
-    if any("${WINDOWS_SSH_CONFIG" in json.dumps(p) for p in selected):
+    variables = {**os.environ, "REPO": str(REPO),
+                 "WSL_SSH_HOME": str(Path.home() / ".ssh")}
+    if any("${WINDOWS_SSH_" in json.dumps(p) for p in selected):
         variables.update(windows_paths())
 
     def expand(value):
@@ -67,7 +69,8 @@ def load_targets(args):
             targets.append({"group": profile["name"], "host": host,
                             "ssh": expand(profile["ssh"]),
                             "ssh_config": expand(profile.get("ssh_config", str(config))),
-                            "python": profile.get("python", "python3")})
+                            "python": profile.get("python", "python3"),
+                            "public_key": expand(profile["public_key"]) if "public_key" in profile else None})
     if not targets:
         raise ValueError("No hosts selected")
     return targets

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import shlex
 
 
 PROGRAMS = ("kubelet", "kubectl", "kubeadm", "k3s", "rke2", "microk8s")
@@ -21,6 +22,21 @@ def command(args):
                 "stderr": result.stderr.strip()}
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"returncode": None, "stdout": "", "stderr": str(exc)}
+
+
+def operating_system(path=Path("/etc/os-release")):
+    """Parse PRETTY_NAME as data; never source or execute os-release contents."""
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition("=")
+            if separator and key.strip() == "PRETTY_NAME":
+                values = shlex.split(value, comments=True)
+                if len(values) != 1 or not values[0]:
+                    raise ValueError("PRETTY_NAME must contain a nonempty value")
+                return {"pretty_name": values[0], "errors": []}
+        raise ValueError("PRETTY_NAME is missing")
+    except (OSError, UnicodeError, ValueError) as exc:
+        return {"pretty_name": None, "errors": [f"{path}: {exc}"]}
 
 
 def kubernetes():
@@ -91,7 +107,8 @@ def main():
     os.environ["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:" + os.environ.get("PATH", "")
     os.environ["LC_ALL"] = "C"
     import sys
-    report = {"kubernetes": kubernetes(), "storage": data_directories(sys.argv[1])}
+    report = {"os": operating_system(), "kubernetes": kubernetes(),
+              "storage": data_directories(sys.argv[1])}
     print("__MACHINE_INFO__" + json.dumps(report, ensure_ascii=True))
 
 

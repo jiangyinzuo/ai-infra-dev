@@ -1,7 +1,6 @@
 """无需真实 NPU 的端到端冒烟测试。
 
 运行：uv run --with pytest pytest -q smoketest/
-依赖：ansible-playbook、Bash、SSH 客户端。
 """
 
 from pathlib import Path

@@ -25,6 +25,28 @@ CLI = load_module("machine_info", "machine-info.py")
 PROBE = load_module("machine_probe", "machine_probe.py")
 
 
+@pytest.mark.parametrize("value,expected", [
+    ('"openEuler 22.03 (LTS-SP4)"', "openEuler 22.03 (LTS-SP4)"),
+    ("'Ubuntu 24.04 LTS'", "Ubuntu 24.04 LTS"),
+    ('"Linux #1 $(not-executed)"', "Linux #1 $(not-executed)"),
+    ("Linux", "Linux"),
+])
+def test_os_pretty_name_preserves_release_text(tmp_path, value, expected):
+    release = tmp_path / "os-release"
+    release.write_text(f'NAME="Other"\nPRETTY_NAME={value}\nVERSION_ID="22.03"\n')
+    assert PROBE.operating_system(release) == {"pretty_name": expected, "errors": []}
+
+
+@pytest.mark.parametrize("text", [None, 'NAME="Linux"\n', 'PRETTY_NAME=""\n', 'PRETTY_NAME="unclosed\n'])
+def test_missing_or_invalid_os_release_reports_unknown(tmp_path, text):
+    release = tmp_path / "os-release"
+    if text is not None:
+        release.write_text(text)
+    result = PROBE.operating_system(release)
+    assert result["pretty_name"] is None
+    assert result["errors"]
+
+
 def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(tmp_path):
     config = tmp_path / "ssh-config"
     config.write_text("Host lab-b lab-a\n User root\n# Host lab-disabled\nHost lab-*\n User root\nHost elsewhere\n User root\n")
