@@ -75,7 +75,11 @@ def test_npu_inventory_cli_preserves_each_profile_connection(tmp_path):
     result = subprocess.run([sys.executable, str(ROOT.parent / "ssh_hosts.py"),
                              "--profiles", str(profiles), "--inventory-group", "npu_servers"],
                             cwd=tmp_path, capture_output=True, text=True, check=True)
-    hosts = json.loads(result.stdout)["all"]["children"]["npu_servers"]["hosts"]
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(result.stdout)
+    resolved = subprocess.run(["ansible-inventory", "-i", str(inventory), "--list"],
+                              capture_output=True, text=True, check=True)
+    hosts = json.loads(resolved.stdout)["_meta"]["hostvars"]
     assert set(hosts) == {"local-one", "remote-two"}
     assert hosts["local-one"]["ansible_ssh_executable"] == "/usr/bin/ssh"
     assert hosts["remote-two"]["ansible_ssh_executable"] == "/custom/ssh-usg0"

@@ -47,7 +47,7 @@ import tempfile
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
-from ssh_hosts import DEFAULT_PROFILES, inventory_group, load_targets
+from ssh_hosts import DEFAULT_PROFILES, build_inventory, load_targets
 
 
 def parse_result(target, result):
@@ -66,18 +66,13 @@ def parse_result(target, result):
 
 
 def collect_all(targets, args):
-    # Per-host groups keep connection settings independent of report group names.
-    children = {}
-    for index, target in enumerate(targets):
-        children[f"machine_{index}"] = inventory_group(
-            {target["host"]: {"machine_python": target["python"]}},
-            target["ssh"], target["ssh_config"])
+    inventory_data = build_inventory(targets, lambda target: {"machine_python": target["python"]})
     with tempfile.TemporaryDirectory(prefix="machine-info-") as directory:
         directory = Path(directory)
         inventory = directory / "inventory.json"
         results = directory / "results.json"
         variables = directory / "vars.json"
-        inventory.write_text(json.dumps({"all": {"children": children}}))
+        inventory.write_text(json.dumps(inventory_data))
         variables.write_text(json.dumps({"results_path": str(results),
                                          "directory_glob": args.directory_glob,
                                          "probe_timeout": args.timeout}))

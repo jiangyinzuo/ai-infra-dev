@@ -29,6 +29,18 @@ def inventory_group(hosts: dict, ssh: str, ssh_config: str) -> dict:
     }}
 
 
+def build_inventory(targets, host_variables=None, inventory_group_name=None):
+    """Build inventories while leaving tool-specific variables to the caller."""
+    children = {}
+    for index, target in enumerate(targets):
+        variables = host_variables(target) if host_variables else {}
+        group = inventory_group({target["host"]: variables}, target["ssh"], target["ssh_config"])
+        children[f"target_{index}"] = group
+    if inventory_group_name:
+        children = {inventory_group_name: {"children": children}}
+    return {"all": {"children": children}}
+
+
 @lru_cache(maxsize=1)
 def windows_paths():
     profile = subprocess.check_output(
@@ -91,11 +103,7 @@ def main() -> None:
         targets = load_targets(args)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         parser.error(str(exc))
-    hosts = {}
-    for target in targets:
-        variables = inventory_group({}, target["ssh"], target["ssh_config"])["vars"]
-        hosts[target["host"]] = variables
-    print(json.dumps({"all": {"children": {args.inventory_group: {"hosts": hosts}}}}))
+    print(json.dumps(build_inventory(targets, inventory_group_name=args.inventory_group)))
 
 
 if __name__ == "__main__":

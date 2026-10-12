@@ -53,7 +53,7 @@ import tempfile
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
-from ssh_hosts import DEFAULT_PROFILES, inventory_group, load_targets
+from ssh_hosts import DEFAULT_PROFILES, build_inventory, load_targets
 
 
 NAME = re.compile(r"[a-z_][a-z0-9_-]*\$?", re.ASCII)
@@ -130,16 +130,6 @@ def describe_plan(plan, mode):
             for user in target["users"]]} for target in plan]}
 
 
-def build_inventory(plan):
-    children = {}
-    for index, target in enumerate(plan):
-        children[f"target_{index}"] = inventory_group(
-            {target["host"]: {"ansible_python_interpreter": target["python"],
-                              "managed_users": target["users"]}},
-            target["ssh"], target["ssh_config"])
-    return {"all": {"children": children}}
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--profiles", type=Path, default=DEFAULT_PROFILES)
@@ -159,7 +149,9 @@ def main():
         users = load_users(args.users)
         targets = load_targets(args)
         plan = build_plan(targets, users, args.users.expanduser().resolve().parent)
-        inventory_data = build_inventory(plan)
+        inventory_data = build_inventory(plan, lambda target: {
+            "ansible_python_interpreter": target["python"], "managed_users": target["users"],
+        })
         mode = "apply" if args.apply else "check" if args.check else "plan"
         print(json.dumps(describe_plan(plan, mode), ensure_ascii=False, indent=2), flush=True)
         if not args.apply and not args.check:
