@@ -35,14 +35,26 @@ from ssh_config import host_passwords
 
 
 @contextmanager
-def ssh_environment(executable: str):
+def ssh_environment(executable: str, windows_client: bool = False):
     """ssh-copy-id 固定调用 ssh，通过临时 PATH 转发到指定程序。"""
     resolved = shutil.which(str(Path(executable).expanduser()))
     if resolved is None:
         raise ValueError(f"找不到 SSH 程序：{executable}")
     with tempfile.TemporaryDirectory(prefix="install-ssh-keys-") as directory:
         wrapper = Path(directory) / "ssh"
-        wrapper.write_text(f'#!/bin/sh\nexec {shlex.quote(resolved)} "$@"\n')
+        if windows_client:
+            wrapper.write_text(
+                '#!/usr/bin/env bash\nset -euo pipefail\nargs=()\n'
+                'while (($#)); do\n'
+                '  if [[ "$1" == -i ]]; then\n'
+                '    args+=("-i" "$(wslpath -w "$2")"); shift 2\n'
+                '  else\n'
+                '    args+=("$1"); shift\n'
+                '  fi\ndone\n'
+                f'exec {shlex.quote(resolved)} "${{args[@]}}"\n'
+            )
+        else:
+            wrapper.write_text(f'#!/bin/sh\nexec {shlex.quote(resolved)} "$@"\n')
         wrapper.chmod(0o700)
         yield {**os.environ, "PATH": directory + os.pathsep + os.environ.get("PATH", "")}
 
@@ -179,7 +191,7 @@ def run_batch(args: argparse.Namespace) -> int:
     hosts = {alias: password for alias, password in host_passwords(config).items()
              if any(fnmatch.fnmatchcase(alias, pattern) for pattern in args.host_glob)}
     failures = 0
-    with ssh_environment(args.ssh) as environment:
+    with ssh_environment(args.ssh, args.password_method == "windows-askpass") as environment:
         for host, password in hosts.items():
             command = ["ssh-copy-id", "-i", str(key), "-F", ssh_config,
                        "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", host]
