@@ -18,12 +18,16 @@ SSHCONFIG Example:
 LIMIT:
     只枚举当前文件中的具体 Host 别名，不展开 Include 或通配符 Host。
     未匹配到具体 Host 时报告错误并返回 1，--dry-run 同样适用。
+
+USAGE:
+    python3 ssh/install-ssh-keys.py --group suzhou --dry-run
+    Connections, default keys and password_method come from ssh/hosts.json.
+    --host-glob filters within selected groups; --public-key overrides defaults.
 """
 from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-import fnmatch
 import os
 from pathlib import Path
 import shlex
@@ -33,6 +37,7 @@ import sys
 import tempfile
 
 from ssh_config import host_passwords
+from ssh_hosts import DEFAULT_PROFILES, load_targets
 
 
 @contextmanager
@@ -138,14 +143,12 @@ def print_sshpass_preview(command: list[str], executable: str, has_password: boo
     print(")", flush=True)
 
 
-def print_windows_preview(args: argparse.Namespace, config: Path, ssh_config: str,
-                          key: Path, host: str) -> None:
-    """输出重新读取配置密码的单机命令，不暴露秘密或依赖 sshpass。"""
+def print_windows_preview(args, target, key):
+    """Print a single-host profile command without exposing its password."""
     print(shlex.join([
-        sys.executable, str(Path(__file__).resolve()), "--config", str(config),
-        "--ssh-config", ssh_config, "--ssh", args.ssh,
-        "--public-key", str(key), "--host-glob", host,
-        "--password-method", args.password_method, "--timeout", str(args.timeout),
+        sys.executable, str(Path(__file__).resolve()), "--profiles", str(args.profiles),
+        "--group", target["group"], "--host-glob", target["host"],
+        "--public-key", str(key), "--timeout", str(args.timeout),
     ]), flush=True)
 
 
@@ -153,14 +156,10 @@ def parse_arguments() -> argparse.Namespace:
     """集中定义命令行接口。"""
     parser = argparse.ArgumentParser(description=__doc__, add_help=False)
     parser.add_argument("-h", "--help", action="help", help="显示帮助并退出")
-    parser.add_argument("--config", required=True, help="SSH 配置文件路径（在 WSL 中读取）")
-    parser.add_argument("--ssh-config", help="传给 SSH 客户端的配置路径；默认同 --config，Windows 客户端需 Windows 路径")
-    parser.add_argument("--ssh", default="ssh", help="SSH 程序或包装脚本路径（默认：ssh）")
-    parser.add_argument("--password-method", choices=("sshpass", "windows-askpass"), default="sshpass",
-                        help="配置密码输入机制：WSL SSH 用 sshpass，Windows SSH 用 windows-askpass")
-    # 公钥由 WSL 中的 ssh-copy-id 读取，始终使用 WSL/Linux 路径。
-    parser.add_argument("--public-key", required=True, help="要安装的公钥文件路径（.pub）")
-    parser.add_argument("--host-glob", required=True, action="append", help="主机别名 glob，可重复指定；匹配任一模式即选中，例如 'suzhou-*'")
+    parser.add_argument("--profiles", type=Path, default=DEFAULT_PROFILES)
+    parser.add_argument("--group", required=True, action="append", help="hosts.json group; repeatable")
+    parser.add_argument("--public-key", help="Override group default public key")
+    parser.add_argument("--host-glob", action="append", help="Further filter host aliases")
     parser.add_argument("--dry-run", action="store_true", help="仅打印目标和命令，不连接远端、不修改文件")
     parser.add_argument("--timeout", type=float, default=20, help="每台安装超时秒数，包括交互等待（默认：20）")
     return parser.parse_args()
@@ -186,29 +185,33 @@ def run_batch(args: argparse.Namespace) -> int:
     """筛选目标，再按相同命令计划预览或安装。"""
     if args.timeout <= 0:
         raise ValueError("超时必须大于 0")
-    config = Path(args.config).expanduser().resolve()
-    ssh_config = args.ssh_config if args.ssh_config is not None else str(config)
-    key = Path(args.public_key).expanduser().resolve()
-    hosts = {alias: password for alias, password in host_passwords(config).items()
-             if any(fnmatch.fnmatchcase(alias, pattern) for pattern in args.host_glob)}
-    if not hosts:
-        raise ValueError(f"未找到匹配 {', '.join(args.host_glob)} 的具体 Host：{config}")
+    targets = load_targets(args)
+    passwords = {}
     failures = 0
-    with ssh_environment(args.ssh, args.password_method == "windows-askpass") as environment:
-        for host, password in hosts.items():
-            command = ["ssh-copy-id", "-i", str(key), "-F", ssh_config,
-                       "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", host]
-            if args.dry_run:
-                print(f"# {host}", flush=True)
-                if args.password_method == "windows-askpass":
-                    print_windows_preview(args, config, ssh_config, key, host)
-                else:
-                    print_sshpass_preview(command, args.ssh, password is not None)
+    for target in targets:
+        config = Path(target["config"])
+        if config not in passwords:
+            passwords[config] = host_passwords(config)
+        host = target["host"]
+        password = passwords[config][host]
+        filename = args.public_key or target["public_key"]
+        if not filename:
+            raise ValueError(f"No public key configured for {target['group']}")
+        key = Path(filename).expanduser().resolve()
+        method = target["password_method"]
+        command = ["ssh-copy-id", "-i", str(key), "-F", target["ssh_config"],
+                   "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", host]
+        if args.dry_run:
+            print(f"# {host}", flush=True)
+            if method == "windows-askpass":
+                print_windows_preview(args, target, key)
             else:
-                failures += not install_host(command, host, password, environment,
-                                             args.timeout, args.password_method)
+                print_sshpass_preview(command, target["ssh"], password is not None)
+        else:
+            with ssh_environment(target["ssh"], method == "windows-askpass") as environment:
+                failures += not install_host(command, host, password, environment, args.timeout, method)
     action = "计划" if args.dry_run else "处理"
-    print(f"# {action} {len(hosts)} 台，失败 {failures} 台")
+    print(f"# {action} {len(targets)} 台，失败 {failures} 台")
     return 1 if failures else 0
 
 
