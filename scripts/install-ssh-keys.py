@@ -7,12 +7,6 @@ DEPENDENCIES:
     ssh-copy-id
     sudo apt install sshpass。
 
-USAGE:
-    python3 ~/ai-infra-dev/scripts/install-ssh-keys.py --config ~/.ssh/config \
-        --ssh /usr/bin/ssh --public-key ~/.ssh/id_ed25519.pub \
-        --host-glob 'xiaoqiaoling*' --timeout 120 --dry-run
-
-
 SSHCONFIG Example:
     # IgnoreUnknown 必须在 Password 之前
     IgnoreUnknown Password
@@ -31,52 +25,13 @@ from contextlib import contextmanager
 import fnmatch
 import os
 from pathlib import Path
-import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 
-from sshconf import SshConfigFile
-
-
-def host_passwords(config: Path) -> dict[str, str | None]:
-    """枚举具体别名及所在 Host 段的 Password，字段名不区分大小写。"""
-    # sshconf 不识别关键字的等号分隔写法，先统一为标准空格写法。
-    lines = [re.sub(r"^(\s*\w+)\s*=\s*", r"\1 ", line)
-             for line in config.read_text(encoding="utf-8-sig").splitlines()]
-    # sshconf 直接截断 #，先隐藏密码值，保护引号内的特殊字符。
-    passwords: dict[str, str] = {}
-    for index, line in enumerate(lines):
-        match = re.match(r"^\s*password\s+(.+)$", line, re.IGNORECASE)
-        if match:
-            try:
-                values = shlex.split(match[1], comments=True)
-            except ValueError:
-                raise ValueError("Password 的引号格式无效") from None
-            if len(values) != 1:
-                raise ValueError("Password 必须是单个值；含空格或 # 时请使用引号")
-            token = f"password-{index}"
-            passwords[token] = values[0]
-            lines[index] = f"Password {token}"
-    parsed = SshConfigFile(lines)
-    hosts: dict[str, str | None] = {}
-    for group in parsed.hosts():
-        password = parsed.host(group).get("password")
-        if password is not None:
-            if not isinstance(password, str):
-                raise ValueError("同一 Host 段只能配置一个 Password")
-            password = passwords[password]
-            if "\n" in password or "\r" in password:
-                raise ValueError("Password 不允许包含换行符")
-        for alias in shlex.split(group):
-            if any(char in alias for char in "*?!["):
-                continue
-            if alias.startswith("-") or not re.fullmatch(r"[A-Za-z0-9_.:\-]+", alias):
-                raise ValueError(f"{config}：不支持的主机别名：{alias}")
-            hosts.setdefault(alias, password)
-    return hosts
+from ssh_config import host_passwords
 
 
 @contextmanager
@@ -107,7 +62,39 @@ def authentication_command(command: list[str], password: str | None):
         os.close(descriptor)
 
 
-def copy_key(command: list[str], password: str | None, environment: dict[str, str], timeout: float) -> int:
+@contextmanager
+def windows_askpass(password: str, environment: dict[str, str]):
+    """辅助脚本不含密码；仅通过 WSLENV 传入 Windows 子进程环境。"""
+    profile = subprocess.check_output(
+        ["cmd.exe", "/d", "/c", "chcp 65001 >nul & echo %USERPROFILE%"],
+        cwd="/mnt/c", text=True, encoding="utf-8",
+    ).strip()
+    home = subprocess.check_output(["wslpath", "-u", profile], text=True).strip()
+    with tempfile.TemporaryDirectory(prefix="ssh-askpass-", dir=Path(home) / ".ssh") as directory:
+        helper = Path(directory) / "askpass.cmd"
+        helper.write_text(
+            '@echo off\r\npowershell.exe -NoProfile -NonInteractive -Command '
+            '"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); '
+            "[Console]::Out.WriteLine([Environment]::GetEnvironmentVariable('MY_SSH_PASSWORD'))"
+            '"\r\n', encoding="utf-8",
+        )
+        variables = {
+            "SSH_ASKPASS": subprocess.check_output(["wslpath", "-w", str(helper)], text=True).strip(),
+            "SSH_ASKPASS_REQUIRE": "force", "MY_SSH_PASSWORD": password, "DISPLAY": "unused",
+        }
+        entries = [entry for entry in environment.get("WSLENV", "").split(":")
+                   if entry and entry.split("/")[0] not in variables]
+        yield {**environment, **variables, "WSLENV": ":".join([*entries, *variables])}
+
+
+def copy_key(command: list[str], password: str | None, environment: dict[str, str],
+             timeout: float, password_method: str) -> int:
+    if password is not None and password_method == "windows-askpass":
+        with windows_askpass(password, environment) as windows_environment:
+            return subprocess.run(
+                command, env=windows_environment, cwd="/mnt/c", stdin=subprocess.DEVNULL,
+                timeout=timeout, check=False,
+            ).returncode
     if password is not None and shutil.which("sshpass") is None:
         raise ValueError("配置了 Password，但找不到 sshpass；请先安装 sshpass")
     with authentication_command(command, password) as (arguments, descriptors):
@@ -116,7 +103,7 @@ def copy_key(command: list[str], password: str | None, environment: dict[str, st
         ).returncode
 
 
-def print_preview(command: list[str], executable: str, has_password: bool) -> None:
+def print_sshpass_preview(command: list[str], executable: str, has_password: bool) -> None:
     """输出独立 Bash 子 shell，重建转发环境，不暴露配置密码。"""
     program = shutil.which(str(Path(executable).expanduser()))
     print("(")
@@ -138,13 +125,27 @@ def print_preview(command: list[str], executable: str, has_password: bool) -> No
     print(")", flush=True)
 
 
+def print_windows_preview(args: argparse.Namespace, config: Path, ssh_config: str,
+                          key: Path, host: str) -> None:
+    """输出重新读取配置密码的单机命令，不暴露秘密或依赖 sshpass。"""
+    print(shlex.join([
+        sys.executable, str(Path(__file__).resolve()), "--config", str(config),
+        "--ssh-config", ssh_config, "--ssh", args.ssh,
+        "--public-key", str(key), "--host-glob", host,
+        "--password-method", args.password_method, "--timeout", str(args.timeout),
+    ]), flush=True)
+
+
 def parse_arguments() -> argparse.Namespace:
     """集中定义命令行接口。"""
     parser = argparse.ArgumentParser(description=__doc__, add_help=False)
     parser.add_argument("-h", "--help", action="help", help="显示帮助并退出")
     parser.add_argument("--config", required=True, help="SSH 配置文件路径（在 WSL 中读取）")
+    parser.add_argument("--ssh-config", help="传给 SSH 客户端的配置路径；默认同 --config，Windows 客户端需 Windows 路径")
     parser.add_argument("--ssh", default="ssh", help="SSH 程序或包装脚本路径（默认：ssh）")
-    # 所有本地路径统一使用 WSL/Linux 格式，直接交给指定客户端。
+    parser.add_argument("--password-method", choices=("sshpass", "windows-askpass"), default="sshpass",
+                        help="配置密码输入机制：WSL SSH 用 sshpass，Windows SSH 用 windows-askpass")
+    # 公钥由 WSL 中的 ssh-copy-id 读取，始终使用 WSL/Linux 路径。
     parser.add_argument("--public-key", required=True, help="要安装的公钥文件路径（.pub）")
     parser.add_argument("--host-glob", required=True, action="append", help="主机别名 glob，可重复指定；匹配任一模式即选中，例如 'suzhou-*'")
     parser.add_argument("--dry-run", action="store_true", help="仅打印目标和命令，不连接远端、不修改文件")
@@ -153,11 +154,11 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def install_host(command: list[str], host: str, password: str | None,
-                 environment: dict[str, str], timeout: float) -> bool:
+                 environment: dict[str, str], timeout: float, password_method: str) -> bool:
     """处理单机安装结果；失败不阻断批量处理。"""
     print(f"[安装] {host}", flush=True)
     try:
-        result = copy_key(command, password, environment, timeout)
+        result = copy_key(command, password, environment, timeout, password_method)
         if result:
             print(f"[失败] {host}：安装返回码 {result}", file=sys.stderr)
             return False
@@ -173,19 +174,24 @@ def run_batch(args: argparse.Namespace) -> int:
     if args.timeout <= 0:
         raise ValueError("超时必须大于 0")
     config = Path(args.config).expanduser().resolve()
+    ssh_config = args.ssh_config if args.ssh_config is not None else str(config)
     key = Path(args.public_key).expanduser().resolve()
     hosts = {alias: password for alias, password in host_passwords(config).items()
              if any(fnmatch.fnmatchcase(alias, pattern) for pattern in args.host_glob)}
     failures = 0
     with ssh_environment(args.ssh) as environment:
         for host, password in hosts.items():
-            command = ["ssh-copy-id", "-i", str(key), "-F", str(config),
+            command = ["ssh-copy-id", "-i", str(key), "-F", ssh_config,
                        "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", host]
             if args.dry_run:
                 print(f"# {host}", flush=True)
-                print_preview(command, args.ssh, password is not None)
+                if args.password_method == "windows-askpass":
+                    print_windows_preview(args, config, ssh_config, key, host)
+                else:
+                    print_sshpass_preview(command, args.ssh, password is not None)
             else:
-                failures += not install_host(command, host, password, environment, args.timeout)
+                failures += not install_host(command, host, password, environment,
+                                             args.timeout, args.password_method)
     action = "计划" if args.dry_run else "处理"
     print(f"# {action} {len(hosts)} 台，失败 {failures} 台")
     return 1 if failures else 0

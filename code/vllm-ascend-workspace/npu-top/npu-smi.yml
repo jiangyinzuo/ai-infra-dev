@@ -1,23 +1,10 @@
 ---
-# 安装控制端依赖：uv tool install ansible-core
-# npu_smi_summary.py 与本文件放在同一目录，在控制端运行，无第三方依赖。
-# YAML 只负责查询和调度；原表经 stdin 传给解析器，不落盘。
-# 查询所有服务器（脚本可从任意工作目录调用）：
-#   /path/to/npu-top.sh -f 20
-# 脚本启用 npu_top 回调：只显示利用率、TOP10及错误，不显示成功中间任务或 recap。
-# 直接执行 ansible-playbook -i npu-hosts.ini npu-smi.yml 则使用默认输出。
-# 查询部分服务器：追加 --limit 'npu01,npu02'
-# 指定命令路径：追加 -e npu_smi_bin=/usr/local/sbin/npu-smi
-# 需要 sudo 时：追加 --become；需要 sudo 密码时再追加 --ask-become-pass
-# 精简输出保留 AICore(%)、Memory 和 HBM（已用 / 总量 MB）。
-# ChipProcesses 为当前 (NPU, Chip) 可见唯一 PID 数，与利用率和内存同粒度。
-# npu-smi 每芯片最多显示 8 个进程；该计数不保证是实际进程总数。
-# NPU 是卡编号，Chip 是芯片编号；双芯片卡会有多个 Chip 行。
-# 每次执行采样一次，各服务器并行查询，不保证采样时刻完全一致。
-# 最后按空闲卡数量降序输出 TOP10；并列按主机名排序，--limit 同样限制排名范围。
-# 空闲卡：该卡所有已报告 Chip 的 AICore 都为 0 且可见进程数为 0。
-# 未知利用率或未知进程数不算空闲；HBM 系统占用不影响判定。
-# 查询失败的主机从排名排除并列出，最后仍以失败状态退出。
+# DEPENDENCY: uv tool install ansible-core
+# 主机清单：python3 -m pip install sshconf==0.2.7（与公钥安装器共用解析模块）
+#
+# 查询部分服务器： --limit 'npu01,npu02'
+# 指定命令路径： -e npu_smi_bin=/usr/local/sbin/npu-smi
+# 需要 sudo 时： --become；需要 sudo 密码时再追加 --ask-become-pass
 - name: 查询每台服务器所有 NPU 的利用率
   hosts: npu_servers
   gather_facts: false
@@ -45,6 +32,7 @@
       when: npu_smi_result.rc | default(-1) == 0
       ignore_errors: true
 
+    # npu_top_output：只显示利用率、TOP10及错误，不显示成功中间任务或 recap。
     - name: 显示当前服务器的精简利用率
       tags: [npu_top_output]
       ansible.builtin.debug:

@@ -14,11 +14,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(inventory, *args):
+def run(hosts_file, *args):
     result = subprocess.run(
-        [str(ROOT / "npu-top.sh"), "-i", str(inventory),
+        [str(ROOT / "npu-top.sh"), "-i", str(hosts_file),
          "--limit", "smoke-*", *args],
-        cwd=inventory.parent,
+        cwd=hosts_file.parent,
         text=True,
         capture_output=True,
         timeout=30,
@@ -29,14 +29,14 @@ def run(inventory, *args):
 
 
 @pytest.fixture
-def inventory(tmp_path):
+def hosts_file(tmp_path):
     path = tmp_path / "hosts.ini"
     path.write_text("[npu_servers]\nsmoke-local ansible_connection=local\n", encoding="utf-8")
     return path
 
 
-def test_success_output(inventory):
-    fake = inventory.parent / "npu-smi"
+def test_success_output(hosts_file):
+    fake = hosts_file.parent / "npu-smi"
     fake.write_text(
         "#!/usr/bin/env bash\n"
         "cat <<'EOF'\n"
@@ -48,7 +48,7 @@ def test_success_output(inventory):
         encoding="utf-8",
     )
     fake.chmod(0o755)
-    result = run(inventory, "-e", f"npu_smi_bin={fake}")
+    result = run(hosts_file, "-e", f"npu_smi_bin={fake}")
     assert result.returncode == 0
     assert "NPU=0 Chip=0 AICore=0%" in result.stdout
     assert "smoke-local IdleCards=1/1 NPU=[0]" in result.stdout
@@ -56,8 +56,8 @@ def test_success_output(inventory):
         assert marker not in result.stdout
 
 
-def test_command_failure(inventory):
-    result = run(inventory, "-e", "npu_smi_bin=/bin/false")
+def test_command_failure(hosts_file):
+    result = run(hosts_file, "-e", "npu_smi_bin=/bin/false")
     assert result.returncode == 2
     assert "FAILED!" in result.stdout
     assert "TOP10" in result.stdout
@@ -65,19 +65,19 @@ def test_command_failure(inventory):
     assert "PLAY RECAP" not in result.stdout
 
 
-def test_unreachable(inventory):
+def test_unreachable(hosts_file):
     # 保持绑定但不监听，避免其他进程占用端口并意外连上真实 SSH。
     with socket.socket() as reserved:
         reserved.bind(("127.0.0.1", 0))
         port = reserved.getsockname()[1]
-        inventory.write_text(
+        hosts_file.write_text(
             "[npu_servers]\n"
             f"smoke-unreachable ansible_host=127.0.0.1 ansible_port={port} "
             "ansible_connection=ssh "
             'ansible_ssh_common_args="-o ConnectTimeout=1 -o ConnectionAttempts=1"\n',
             encoding="utf-8",
         )
-        result = run(inventory)
+        result = run(hosts_file)
     assert result.returncode == 2
     assert "UNREACHABLE!" in result.stdout
     assert "TOP10" in result.stdout
