@@ -107,7 +107,7 @@ def main():
     os.environ["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:" + os.environ.get("PATH", "")
     os.environ["LC_ALL"] = "C"
     import sys
-    report = {"os": operating_system(), "kubernetes": kubernetes(),
+    report = {"arch": os.uname().machine, "os": operating_system(), "kubernetes": kubernetes(),
               "storage": data_directories(sys.argv[1])}
     print("__MACHINE_INFO__" + json.dumps(report, ensure_ascii=True))
 
