@@ -10,7 +10,7 @@ apply=false
 
 usage() {
     cat <<'EOF'
-同步`devtools/`目录（Docker镜像除外）
+同步`devtools/`目录（包含公共 proxy.env，Docker镜像除外）
 
 Usage: sync-devtools.sh [options] PLATFORM HOST [HOST ...]
 
@@ -93,7 +93,7 @@ source_dir="$devtools_dir/$platform"
 # Keep an empty common plugin directory syncable before the first download.
 mkdir -p -- "$devtools_dir/nvim-plugins"
 shopt -s nullglob
-sources=("$source_dir" "$devtools_dir/nvim-plugins" "$devtools_dir"/*.py "$devtools_dir"/*.sh)
+sources=("$source_dir" "$devtools_dir/nvim-plugins" "$devtools_dir"/*.py "$devtools_dir"/*.sh "$devtools_dir/proxy.env")
 sources+=("$devtools_dir/images")
 command -v rsync >/dev/null || { echo "error: rsync is required" >&2; exit 1; }
 

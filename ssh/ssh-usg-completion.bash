@@ -32,4 +32,4 @@ _ssh_usg_complete() {
     done < "$config"
     return 0
 }
-complete -F _ssh_usg_complete ssh-usg0 ssh-usg1
+complete -F _ssh_usg_complete ssh-usg0 ssh-usg1 ssh-usg0-proxy ssh-usg1-proxy

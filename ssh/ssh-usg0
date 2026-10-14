@@ -3,5 +3,6 @@ set -euo pipefail
 
 : "${USG0_IP:?Error: USG0_IP is not set}"
 
-exec /mnt/c/Windows/System32/OpenSSH/ssh.exe -b "$USG0_IP" "$@"
+source "$(dirname -- "${BASH_SOURCE[0]}")/ssh-usg-exec.bash"
+ssh_usg_exec "$USG0_IP" 0 "$@"
 

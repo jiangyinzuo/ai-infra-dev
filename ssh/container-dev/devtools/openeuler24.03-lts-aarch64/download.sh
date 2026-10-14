@@ -63,6 +63,26 @@ download_github_asset() {
         "https://github.com/$repo/releases/download/$tag/$asset" "$expected"
 }
 
+# Match exactly one Linux ARM64 asset in GitHub's latest non-prerelease release.
+download_latest_github_asset() {
+    local repo=$1 pattern=$2 release metadata tag file url expected
+    release=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest")
+    tag=$(jq -er '.tag_name' <<< "$release")
+    if ! metadata=$(jq -er --arg pattern "$pattern" '
+        [.assets[] | select(.name | test($pattern))]
+        | if length != 1 then error("expected exactly one matching release asset")
+          else .[0] end
+        | [.name, .browser_download_url,
+           (.digest | select(test("^sha256:[0-9a-fA-F]{64}$")) | sub("^sha256:"; ""))]
+        | @tsv' <<< "$release"); then
+        echo "error: cannot select asset with SHA-256 for $repo ($tag)" >&2
+        return 1
+    fi
+    IFS=$'\t' read -r file url expected <<< "$metadata"
+    printf 'release %s %s: %s\n' "$repo" "$tag" "$file"
+    download_if_changed "$file" "$url" "$expected"
+}
+
 download_node() {
     local node_sha256
     node_sha256=$(curl -fsSL https://nodejs.org/dist/v24.21.0/SHASUMS256.txt \
@@ -97,11 +117,11 @@ submit download_github_asset neovim/neovim nightly nvim-linux-arm64.tar.gz
 submit download_node
 
 submit download_omp
-submit download_github_asset openai/codex rust-v0.162.1 codex-package-aarch64-unknown-linux-musl.tar.gz
-submit download_github_asset BurntSushi/ripgrep 15.2.0 ripgrep-15.2.0-aarch64-unknown-linux-musl.tar.gz
-submit download_github_asset sharkdp/fd v10.5.0 fd-v10.5.0-aarch64-unknown-linux-musl.tar.gz
-submit download_github_asset dandavison/delta 0.20.1 delta-0.20.1-aarch64-unknown-linux-gnu.tar.gz
-submit download_github_asset tree-sitter/tree-sitter v0.27.1 tree-sitter-linux-arm64.gz
+submit download_latest_github_asset openai/codex '^codex-package-aarch64-unknown-linux-musl\.tar\.gz$'
+submit download_latest_github_asset BurntSushi/ripgrep '^ripgrep-[0-9][^-]*-aarch64-unknown-linux-musl\.tar\.gz$'
+submit download_latest_github_asset sharkdp/fd '^fd-v?[0-9][^-]*-aarch64-unknown-linux-musl\.tar\.gz$'
+submit download_latest_github_asset dandavison/delta '^delta-[0-9][^-]*-aarch64-unknown-linux-gnu\.tar\.gz$'
+submit download_latest_github_asset tree-sitter/tree-sitter '^tree-sitter-linux-arm64\.gz$'
 
 for pid in "${pids[@]}"; do
     wait "$pid" || failed=1
