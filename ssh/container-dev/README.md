@@ -39,6 +39,12 @@ bash ~/devtools/update-dev-git-repo.sh --debug
 ./devtools/update-dev-git-repo.sh --host suzhou-a3-130 --debug
 ```
 
+本地 smoke 测试（临时 Git 仓库，不访问 GitHub、不修改用户目录）：
+
+```bash
+uv run --with pytest python -m pytest smoketest -q
+```
+
 ## 更新并同步命令行工具
 
 WSL运行：
