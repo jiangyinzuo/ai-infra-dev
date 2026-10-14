@@ -10,8 +10,10 @@ from sshconf import SshConfigFile
 def host_passwords(config: Path) -> dict[str, str | None]:
     """枚举具体别名及所在 Host 段的 Password，字段名不区分大小写。"""
     # sshconf 不识别关键字的等号分隔写法，先统一为标准空格写法。
-    lines = [re.sub(r"^(\s*\w+)\s*=\s*", r"\1 ", line)
-             for line in config.read_text(encoding="utf-8-sig").splitlines()]
+    lines = [
+        re.sub(r"^(\s*\w+)\s*=\s*", r"\1 ", line)
+        for line in config.read_text(encoding="utf-8-sig").splitlines()
+    ]
     # sshconf 直接截断 #，先隐藏密码值，保护引号内的特殊字符。
     passwords: dict[str, str] = {}
     for index, line in enumerate(lines):

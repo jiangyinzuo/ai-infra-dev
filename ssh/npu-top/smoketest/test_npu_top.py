@@ -15,8 +15,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def run(hosts_file, *args):
     result = subprocess.run(
-        ["bash", str(ROOT / "npu-top-run.sh"), "-i", str(hosts_file),
-         str(ROOT / "npu-smi.yml"), "--limit", "smoke-*", *args],
+        [
+            "bash",
+            str(ROOT / "npu-top-run.sh"),
+            "-i",
+            str(hosts_file),
+            str(ROOT / "npu-smi.yml"),
+            "--limit",
+            "smoke-*",
+            *args,
+        ],
         cwd=hosts_file.parent,
         text=True,
         capture_output=True,
@@ -30,7 +38,9 @@ def run(hosts_file, *args):
 @pytest.fixture
 def hosts_file(tmp_path):
     path = tmp_path / "hosts.ini"
-    path.write_text("[npu_servers]\nsmoke-local ansible_connection=local\n", encoding="utf-8")
+    path.write_text(
+        "[npu_servers]\nsmoke-local ansible_connection=local\n", encoding="utf-8"
+    )
     return path
 
 

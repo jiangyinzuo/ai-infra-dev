@@ -1,144 +1,68 @@
 #!/usr/bin/env python3
-"""Batch-create Linux users through Ansible. Default: print a plan, no SSH.
+"""通过 Ansible 批量管理 Linux 用户及 SSH 密钥；默认仅输出 plan，不连接远端。"""
 
-User configuration (--users, default users.json beside this script):
-    {"alice": {"public_keys": "~/.ssh/id_ed25519.pub"},
-     "bob": {"comment": "Bob", "shell": "/bin/bash", "groups": ["developers"],
-             "public_keys": ["../keys/bob-office.pub", "../keys/bob-dev.pub"]}}
-    Each key is a username; its value is an options object ({} is allowed).
-    public_keys accepts one file path or a list. Paths are relative to this JSON
-    file; ~ is supported. Only public keys, never private keys. Each file must
-    contain one key. Additional groups must already exist.
-
-Usage:
-    python3 ssh/createuser/createuser.py --group suzhou
-    # Check mode connects to targets but does not apply changes:
-    python3 ssh/createuser/createuser.py --group suzhou --check
-    # Apply to one host first:
-    python3 ssh/createuser/createuser.py --group suzhou --host-glob '*-130' --apply
-
-Safety and semantics:
-    --group is required and repeatable; --host-glob further restricts targets.
-    Shared connection profiles: ssh/hosts.json (--profiles can override).
-    Default plan performs local configuration discovery only, no Ansible/SSH.
-    Existing users are updated only for explicitly configured shell/comment/groups
-    and mandatory Docker group membership; supplementary groups and keys are preserved.
-    Configured groups are appended, never used to replace existing memberships.
-    Ensures the docker group exists and adds every managed user to it; Docker itself
-    is not installed. New membership takes effect on the user's next login.
-    Creates home directories and grants full passwordless sudo (NOPASSWD: ALL)
-    to every configured user, including existing accounts. No password/UID/primary
-    group changes. Each root-owned 0440 sudoers drop-in is validated with visudo;
-    sudo must already be installed and sudoers must include /etc/sudoers.d.
-    Only the managed drop-in is validated; no global visudo -c check is run.
-    Existing sudoers issues are not repaired and may affect effective privileges.
-    The SSH private key therefore grants root access; protect it accordingly.
-    Docker group access also grants host-level privileges through the Docker daemon.
-    Missing public_keys uses the target group's public_key from ssh/hosts.json;
-    an explicit path/list overrides it, and [] disables key installation.
-    ${WINDOWS_SSH_HOME} and ${WSL_SSH_HOME} resolve controller SSH directories.
-    Existing accounts may retain password access; new accounts use the OS default.
-    --check queries accounts/groups, checks requested executable shells and validates
-    proposed sudo rules via visudo stdin without installing them. It previews account,
-    sudoers and existing-user key changes; new-user key checks are explicitly deferred
-    until the real home/account exists. It does not prove effective sudo privileges.
-    --ask-become-pass prompts for sudo authentication when necessary.
-    Exit code is Ansible's exit code; default plan exits 0, configuration errors 1.
-"""
 import argparse
 import json
-from pathlib import Path
-import re
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 from ssh_hosts import DEFAULT_PROFILES, build_inventory, load_targets
 
 
-NAME = re.compile(r"[a-z_][a-z0-9_-]*\$?", re.ASCII)
-FIELDS = {"comment", "shell", "groups", "public_keys"}
-
-
-def load_users(path):
-    path = path.expanduser().resolve()
-    users = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(users, dict) or not users:
-        raise ValueError("User configuration must be a nonempty username-to-options object")
-    prepared = []
-    for name, user in users.items():
-        if not isinstance(user, dict) or set(user) - FIELDS:
-            raise ValueError("Each username must map to an object with supported fields only")
-        if not isinstance(name, str) or not NAME.fullmatch(name) or name == "root":
-            raise ValueError("Invalid or reserved username: " + str(name))
-        entry = {"name": name, **{key: value for key, value in user.items() if key != "public_keys"}}
-        for field in ("comment", "shell"):
-            if field in user and (not isinstance(user[field], str) or "\n" in user[field] or "\r" in user[field]):
-                raise ValueError(f"{name}: invalid {field}")
-        if "shell" in user and not user["shell"].startswith("/"):
-            raise ValueError(f"{name}: shell must be an absolute path")
-        groups = user.get("groups", [])
-        if not isinstance(groups, list) or any(not isinstance(g, str) or not NAME.fullmatch(g) for g in groups):
-            raise ValueError(f"{name}: groups must be an array of group names")
-        files = user.get("public_keys")
-        if isinstance(files, str):
-            files = [files]
-        if files is not None and (not isinstance(files, list) or any(not isinstance(f, str) for f in files)):
-            raise ValueError(f"{name}: public_keys must be a file path or an array of file paths")
-        entry["public_keys"] = files
-        prepared.append(entry)
-    return prepared
-
-
-def plan_users(users, base_dir, default_public_key, key_cache):
-    prepared = []
-    for user in users:
-        entry = {k: v for k, v in user.items() if k != "public_keys"}
-        files = user["public_keys"]
-        if files is None:
-            files = [default_public_key] if default_public_key else []
-        keys = []
-        for filename in files:
-            path = Path(filename).expanduser()
-            if not path.is_absolute():
-                path = base_dir / path
-            path = path.resolve()
-            if path not in key_cache:
-                key = path.read_text(encoding="utf-8").strip()
-                if "PRIVATE KEY" in key or len(key.splitlines()) != 1 or len(key.split()) < 2:
-                    raise ValueError(f"{user['name']}: expected a single SSH public key in {path}")
-                if not key.startswith(("ssh-", "ecdsa-", "sk-")):
-                    raise ValueError(f"{user['name']}: unsupported SSH public key in {path}")
-                key_cache[path] = key
-            keys.append(key_cache[path])
-        entry["authorized_keys"] = "\n".join(keys)
-        prepared.append(entry)
-    return prepared
-
-
-def build_plan(targets, users, base_dir):
-    cache = {}
-    return [{**target, "users": plan_users(users, base_dir, target.get("public_key"), cache)}
-            for target in targets]
+def build_plan(targets):
+    """固定管理 jiangyinzuo；私钥仅记录路径，不读取内容。"""
+    private_key = Path.home() / ".ssh/id_ed25519"
+    public_key = private_key.with_suffix(".pub")
+    for path in (private_key, public_key):
+        if not path.is_file():
+            raise ValueError(f"SSH key file not found: {path}")
+    key = public_key.read_text(encoding="utf-8").strip()
+    if (
+        len(key.splitlines()) != 1
+        or len(key.split()) < 2
+        or not key.startswith("ssh-ed25519 ")
+    ):
+        raise ValueError(f"Expected a single Ed25519 public key in {public_key}")
+    user = {
+        "name": "jiangyinzuo",
+        "authorized_keys": key,
+        "ssh_key_files": [
+            {"src": str(private_key), "name": "id_ed25519", "mode": "0600"},
+            {"src": str(public_key), "name": "id_ed25519.pub", "mode": "0644"},
+        ],
+    }
+    return [{**target, "users": [user]} for target in targets]
 
 
 def describe_plan(plan, mode):
-    return {"mode": mode, "hosts": [
-        {"host": target["host"], "group": target["group"], "users": [
+    """输出账号及密钥源路径，不输出密钥内容。"""
+    return {
+        "mode": mode,
+        "users": [
             {k: v for k, v in user.items() if k != "authorized_keys"}
-            | {"public_key_count": len(user["authorized_keys"].splitlines())}
-            for user in target["users"]]} for target in plan]}
+            for user in (plan[0]["users"] if plan else [])
+        ],
+        "hosts": [
+            {
+                "host": target["host"],
+                "group": target["group"],
+            }
+            for target in plan
+        ],
+    }
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--profiles", type=Path, default=DEFAULT_PROFILES)
     parser.add_argument("--group", action="append", required=True)
     parser.add_argument("--host-glob", action="append")
-    parser.add_argument("--users", type=Path, default=SCRIPT_DIR / "users.json",
-                        help="User JSON configuration (default: users.json beside this script)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true")
     mode.add_argument("--check", action="store_true")
@@ -147,29 +71,50 @@ def main():
     args = parser.parse_args()
     if args.workers < 1:
         parser.error("workers must be positive")
+    return args
+
+
+def run_playbook(plan, args):
+    """隔离临时 inventory，并返回 Ansible 退出码。"""
+    inventory_data = build_inventory(
+        plan,
+        lambda target: {
+            "ansible_python_interpreter": target["python"],
+            "managed_users": target["users"],
+        },
+    )
+    with tempfile.TemporaryDirectory(prefix="createuser-") as directory:
+        # inventory 只含公钥和私钥路径；临时目录隔离访问，运行后自动清理。
+        inventory = Path(directory) / "inventory.json"
+        inventory.write_text(json.dumps(inventory_data), encoding="utf-8")
+        inventory.chmod(0o600)
+        command = [
+            "ansible-playbook",
+            "-i",
+            str(inventory),
+            str(SCRIPT_DIR / "createuser.yml"),
+            "--forks",
+            str(args.workers),
+        ]
+        if args.check:
+            command.append("--check")
+        if args.ask_become_pass:
+            command.append("--ask-become-pass")
+        return subprocess.run(command, check=False).returncode
+
+
+def main():
+    args = parse_args()
     try:
-        users = load_users(args.users)
-        targets = load_targets(args)
-        plan = build_plan(targets, users, args.users.expanduser().resolve().parent)
-        inventory_data = build_inventory(plan, lambda target: {
-            "ansible_python_interpreter": target["python"], "managed_users": target["users"],
-        })
+        plan = build_plan(load_targets(args))
         mode = "apply" if args.apply else "check" if args.check else "plan"
-        print(json.dumps(describe_plan(plan, mode), ensure_ascii=False, indent=2), flush=True)
+        print(
+            json.dumps(describe_plan(plan, mode), ensure_ascii=False, indent=2),
+            flush=True,
+        )
         if not args.apply and not args.check:
             return 0
-        with tempfile.TemporaryDirectory(prefix="createuser-") as directory:
-            directory = Path(directory)
-            inventory = directory / "inventory.json"
-            inventory.write_text(json.dumps(inventory_data), encoding="utf-8")
-            inventory.chmod(0o600)
-            command = ["ansible-playbook", "-i", str(inventory), str(SCRIPT_DIR / "createuser.yml"),
-                       "--forks", str(args.workers)]
-            if args.check:
-                command.append("--check")
-            if args.ask_become_pass:
-                command.append("--ask-become-pass")
-            return subprocess.run(command, check=False).returncode
+        return run_playbook(plan, args)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         print("Error: " + str(exc), file=sys.stderr)
         return 1

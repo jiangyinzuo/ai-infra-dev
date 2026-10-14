@@ -31,8 +31,15 @@ def parse_processes(text):
             continue
         if not fields[1].isdigit():
             continue
-        records.append({"npu": int(ids[0]), "chip": int(ids[1]) if chip_level else None,
-                        "pid": int(fields[1]), "name": fields[2], "memory": fields[3]})
+        records.append(
+            {
+                "npu": int(ids[0]),
+                "chip": int(ids[1]) if chip_level else None,
+                "pid": int(fields[1]),
+                "name": fields[2],
+                "memory": fields[3],
+            }
+        )
     return records
 
 
@@ -51,8 +58,18 @@ def process_owner(pid):
     container_id = match[1]
     try:
         result = subprocess.run(
-            ["docker", "inspect", "--type", "container", "--format", "{{json .Name}}", container_id],
-            capture_output=True, text=True, timeout=5,
+            [
+                "docker",
+                "inspect",
+                "--type",
+                "container",
+                "--format",
+                "{{json .Name}}",
+                container_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
     except FileNotFoundError:
         return f"{container_id[:12]}（Docker 不可用）"
@@ -61,7 +78,11 @@ def process_owner(pid):
     except PermissionError:
         return f"{container_id[:12]}（权限不足：Docker）"
     if result.returncode:
-        reason = "权限不足：Docker" if "permission denied" in result.stderr.lower() else "Docker 未识别"
+        reason = (
+            "权限不足：Docker"
+            if "permission denied" in result.stderr.lower()
+            else "Docker 未识别"
+        )
         return f"{container_id[:12]}（{reason}）"
     try:
         name = json.loads(result.stdout)
@@ -74,12 +95,16 @@ def process_owner(pid):
 
 def container_lines(text):
     records = parse_processes(text)
-    owners = {pid: process_owner(pid) for pid in dict.fromkeys(row["pid"] for row in records)}
+    owners = {
+        pid: process_owner(pid) for pid in dict.fromkeys(row["pid"] for row in records)
+    }
     lines = ["NPU / Chip / 宿主机PID / 进程 / 容器 / 进程显存(MB)"]
     for row in records:
         chip = row["chip"] if row["chip"] is not None else "—"
-        lines.append(f'{row["npu"]} / {chip} / {row["pid"]} / {row["name"]} / '
-                     f'{owners[row["pid"]]} / {row["memory"]}')
+        lines.append(
+            f"{row['npu']} / {chip} / {row['pid']} / {row['name']} / "
+            f"{owners[row['pid']]} / {row['memory']}"
+        )
     if not records:
         lines.append("npu-smi 未报告可见进程")
     return lines

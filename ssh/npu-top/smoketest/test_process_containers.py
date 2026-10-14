@@ -3,7 +3,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
-    "process_containers", Path(__file__).resolve().parents[1] / "npu_process_containers.py")
+    "process_containers",
+    Path(__file__).resolve().parents[1] / "npu_process_containers.py",
+)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
@@ -24,7 +26,9 @@ def test_chip_process_keeps_chip_association():
     rows = MODULE.parse_processes("""| NPU Chip | Process id | Process name | Process memory(MB) |
 | 2 1 | 456 | inference | 8192 |
 """)
-    assert rows == [{"npu": 2, "chip": 1, "pid": 456, "name": "inference", "memory": "8192"}]
+    assert rows == [
+        {"npu": 2, "chip": 1, "pid": 456, "name": "inference", "memory": "8192"}
+    ]
 
 
 def test_exited_and_denied_process_are_distinct():

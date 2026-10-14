@@ -24,6 +24,7 @@ USAGE:
     Connections, default keys and password_method come from ssh/hosts.json.
     --host-glob filters within selected groups; --public-key overrides defaults.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,19 +51,22 @@ def ssh_environment(executable: str, windows_client: bool = False):
         wrapper = Path(directory) / "ssh"
         if windows_client:
             wrapper.write_text(
-                '#!/usr/bin/env bash\nset -euo pipefail\nargs=()\n'
-                'while (($#)); do\n'
+                "#!/usr/bin/env bash\nset -euo pipefail\nargs=()\n"
+                "while (($#)); do\n"
                 '  if [[ "$1" == -i ]]; then\n'
                 '    args+=("-i" "$(wslpath -w "$2")"); shift 2\n'
-                '  else\n'
+                "  else\n"
                 '    args+=("$1"); shift\n'
-                '  fi\ndone\n'
+                "  fi\ndone\n"
                 f'exec {shlex.quote(resolved)} "${{args[@]}}"\n'
             )
         else:
             wrapper.write_text(f'#!/bin/sh\nexec {shlex.quote(resolved)} "$@"\n')
         wrapper.chmod(0o700)
-        yield {**os.environ, "PATH": directory + os.pathsep + os.environ.get("PATH", "")}
+        yield {
+            **os.environ,
+            "PATH": directory + os.pathsep + os.environ.get("PATH", ""),
+        }
 
 
 @contextmanager
@@ -87,52 +91,77 @@ def windows_askpass(password: str, environment: dict[str, str]):
     with tempfile.TemporaryDirectory(prefix="ssh-askpass-", dir=home) as directory:
         helper = Path(directory) / "askpass.cmd"
         helper.write_text(
-            '@echo off\r\npowershell.exe -NoProfile -NonInteractive -Command '
+            "@echo off\r\npowershell.exe -NoProfile -NonInteractive -Command "
             '"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); '
             "[Console]::Out.WriteLine([Environment]::GetEnvironmentVariable('MY_SSH_PASSWORD'))"
-            '"\r\n', encoding="utf-8",
+            '"\r\n',
+            encoding="utf-8",
         )
         variables = {
-            "SSH_ASKPASS": subprocess.check_output(["wslpath", "-w", str(helper)], text=True).strip(),
-            "SSH_ASKPASS_REQUIRE": "force", "MY_SSH_PASSWORD": password, "DISPLAY": "unused",
+            "SSH_ASKPASS": subprocess.check_output(
+                ["wslpath", "-w", str(helper)], text=True
+            ).strip(),
+            "SSH_ASKPASS_REQUIRE": "force",
+            "MY_SSH_PASSWORD": password,
+            "DISPLAY": "unused",
         }
-        entries = [entry for entry in environment.get("WSLENV", "").split(":")
-                   if entry and entry.split("/")[0] not in variables]
+        entries = [
+            entry
+            for entry in environment.get("WSLENV", "").split(":")
+            if entry and entry.split("/")[0] not in variables
+        ]
         yield {**environment, **variables, "WSLENV": ":".join([*entries, *variables])}
 
 
-def copy_key(command: list[str], password: str | None, environment: dict[str, str],
-             timeout: float, password_method: str) -> int:
+def copy_key(
+    command: list[str],
+    password: str | None,
+    environment: dict[str, str],
+    timeout: float,
+    password_method: str,
+) -> int:
     if password is not None and password_method == "windows-askpass":
         with windows_askpass(password, environment) as windows_environment:
             return subprocess.run(
-                command, env=windows_environment, cwd="/mnt/c", stdin=subprocess.DEVNULL,
-                timeout=timeout, check=False,
+                command,
+                env=windows_environment,
+                cwd="/mnt/c",
+                stdin=subprocess.DEVNULL,
+                timeout=timeout,
+                check=False,
             ).returncode
     if password is not None and shutil.which("sshpass") is None:
         raise ValueError("配置了 Password，但找不到 sshpass；请先安装 sshpass")
     with authentication_command(command, password) as (arguments, descriptors):
         return subprocess.run(
-            arguments, pass_fds=descriptors, env=environment, timeout=timeout, check=False,
+            arguments,
+            pass_fds=descriptors,
+            env=environment,
+            timeout=timeout,
+            check=False,
         ).returncode
 
 
-def print_sshpass_preview(command: list[str], executable: str, has_password: bool) -> None:
+def print_sshpass_preview(
+    command: list[str], executable: str, has_password: bool
+) -> None:
     """输出独立 Bash 子 shell，重建转发环境，不暴露配置密码。"""
     program = shutil.which(str(Path(executable).expanduser()))
     print("(")
     print("  set -e")
     print(f"  export SSH_PROGRAM={shlex.quote(program or executable)}")
-    print('  ssh_dir=$(mktemp -d)')
+    print("  ssh_dir=$(mktemp -d)")
     print("  trap 'rm -rf -- \"$ssh_dir\"' EXIT")
-    print("  printf '%s\\n' '#!/bin/sh' 'exec \"$SSH_PROGRAM\" \"$@\"' > \"$ssh_dir/ssh\"")
+    print(
+        "  printf '%s\\n' '#!/bin/sh' 'exec \"$SSH_PROGRAM\" \"$@\"' > \"$ssh_dir/ssh\""
+    )
     print('  chmod 700 "$ssh_dir/ssh"')
     print('  export PATH="$ssh_dir:$PATH"')
     if has_password:
         print("  # 安全起见不输出配置密码；粘贴执行时隐藏输入。")
         print("  IFS= read -r -s -p 'SSH 密码：' password </dev/tty")
         print("  printf '\\n' >/dev/tty")
-        print("  exec 3<<<\"$password\"")
+        print('  exec 3<<<"$password"')
         print("  unset password")
         command = ["sshpass", "-d", "3", *command]
     print("  " + shlex.join(command))
@@ -141,11 +170,25 @@ def print_sshpass_preview(command: list[str], executable: str, has_password: boo
 
 def print_windows_preview(args, target, key):
     """Print a single-host profile command without exposing its password."""
-    print(shlex.join([
-        sys.executable, str(Path(__file__).resolve()), "--profiles", str(args.profiles),
-        "--group", target["group"], "--host-glob", target["host"],
-        "--public-key", str(key), "--timeout", str(args.timeout),
-    ]), flush=True)
+    print(
+        shlex.join(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--profiles",
+                str(args.profiles),
+                "--group",
+                target["group"],
+                "--host-glob",
+                target["host"],
+                "--public-key",
+                str(key),
+                "--timeout",
+                str(args.timeout),
+            ]
+        ),
+        flush=True,
+    )
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -153,16 +196,35 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, add_help=False)
     parser.add_argument("-h", "--help", action="help", help="显示帮助并退出")
     parser.add_argument("--profiles", type=Path, default=DEFAULT_PROFILES)
-    parser.add_argument("--group", required=True, action="append", help="hosts.json group; repeatable")
+    parser.add_argument(
+        "--group", required=True, action="append", help="hosts.json group; repeatable"
+    )
     parser.add_argument("--public-key", help="Override group default public key")
-    parser.add_argument("--host-glob", action="append", help="Further filter host aliases")
-    parser.add_argument("--dry-run", action="store_true", help="仅打印目标和命令，不连接远端、不修改文件")
-    parser.add_argument("--timeout", type=float, default=20, help="每台安装超时秒数，包括交互等待（默认：20）")
+    parser.add_argument(
+        "--host-glob", action="append", help="Further filter host aliases"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="仅打印目标和命令，不连接远端、不修改文件",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=20,
+        help="每台安装超时秒数，包括交互等待（默认：20）",
+    )
     return parser.parse_args()
 
 
-def install_host(command: list[str], host: str, password: str | None,
-                 environment: dict[str, str], timeout: float, password_method: str) -> bool:
+def install_host(
+    command: list[str],
+    host: str,
+    password: str | None,
+    environment: dict[str, str],
+    timeout: float,
+    password_method: str,
+) -> bool:
     """处理单机安装结果；失败不阻断批量处理。"""
     print(f"[安装] {host}", flush=True)
     try:
@@ -195,8 +257,18 @@ def run_batch(args: argparse.Namespace) -> int:
             raise ValueError(f"No public key configured for {target['group']}")
         key = Path(filename).expanduser().resolve()
         method = target["password_method"]
-        command = ["ssh-copy-id", "-i", str(key), "-F", target["ssh_config"],
-                   "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new", host]
+        command = [
+            "ssh-copy-id",
+            "-i",
+            str(key),
+            "-F",
+            target["ssh_config"],
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            host,
+        ]
         if args.dry_run:
             print(f"# {host}", flush=True)
             if method == "windows-askpass":
@@ -204,8 +276,12 @@ def run_batch(args: argparse.Namespace) -> int:
             else:
                 print_sshpass_preview(command, target["ssh"], password is not None)
         else:
-            with ssh_environment(target["ssh"], method == "windows-askpass") as environment:
-                failures += not install_host(command, host, password, environment, args.timeout, method)
+            with ssh_environment(
+                target["ssh"], method == "windows-askpass"
+            ) as environment:
+                failures += not install_host(
+                    command, host, password, environment, args.timeout, method
+                )
     action = "计划" if args.dry_run else "处理"
     print(f"# {action} {len(targets)} 台，失败 {failures} 台")
     return 1 if failures else 0

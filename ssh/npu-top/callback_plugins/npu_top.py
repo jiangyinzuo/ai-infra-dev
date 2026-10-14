@@ -31,7 +31,9 @@ class CallbackModule(DefaultCallback):
     def v2_runner_on_ok(self, result):
         if "npu_top_output" not in result.task.tags:
             return
-        self._display.display(f"[{result.host.get_name()}] {result.task.get_name().strip()}")
+        self._display.display(
+            f"[{result.host.get_name()}] {result.task.get_name().strip()}"
+        )
         message = result.result.get("msg", "")
         lines = message if isinstance(message, list) else [message]
         for line in lines:

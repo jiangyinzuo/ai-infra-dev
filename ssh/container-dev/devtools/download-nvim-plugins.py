@@ -41,9 +41,13 @@ def resolve_repositories(config, names, overrides):
             candidates.setdefault(repo.rsplit("/", 1)[1], set()).add(repo)
     result = {}
     for name in names:
-        choices = {overrides[name]} if name in overrides else candidates.get(name, set())
+        choices = (
+            {overrides[name]} if name in overrides else candidates.get(name, set())
+        )
         if len(choices) != 1:
-            raise ValueError(f"{name}: repository missing or ambiguous ({sorted(choices)}); use --repos")
+            raise ValueError(
+                f"{name}: repository missing or ambiguous ({sorted(choices)}); use --repos"
+            )
         repo = next(iter(choices))
         if not isinstance(repo, str) or not REPO.fullmatch(repo):
             raise ValueError(f"{name}: invalid repository {repo!r}")
@@ -62,7 +66,9 @@ def sha256(path):
 def atomic_write(path, content):
     temp = None
     try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".tmp.", delete=False) as stream:
+        with tempfile.NamedTemporaryFile(
+            dir=path.parent, prefix=path.name + ".tmp.", delete=False
+        ) as stream:
             temp = Path(stream.name)
             stream.write(content)
         temp.replace(path)
@@ -82,16 +88,23 @@ def check_archive(path):
 
 
 def download(url, destination, cached):
-    if (cached.get("url") == url and destination.is_file()
-            and sha256(destination) == cached.get("sha256")):
+    if (
+        cached.get("url") == url
+        and destination.is_file()
+        and sha256(destination) == cached.get("sha256")
+    ):
         print(f"skip {destination.name} (URL and SHA-256 match)", flush=True)
         return cached
     print(f"download {destination.name}", flush=True)
     temp = None
     try:
-        with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=destination.name + ".tmp.", delete=False) as stream:
+        with tempfile.NamedTemporaryFile(
+            dir=destination.parent, prefix=destination.name + ".tmp.", delete=False
+        ) as stream:
             temp = Path(stream.name)
-            request = urllib.request.Request(url, headers={"User-Agent": "nvim-plugin-source-downloader"})
+            request = urllib.request.Request(
+                url, headers={"User-Agent": "nvim-plugin-source-downloader"}
+            )
             with urllib.request.urlopen(request, timeout=120) as response:
                 for chunk in iter(lambda: response.read(1024 * 1024), b""):
                     stream.write(chunk)
@@ -105,11 +118,21 @@ def download(url, destination, cached):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--lock", type=Path, default=Path.home() / ".config/nvim/lazy-lock.json")
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent / "nvim-plugins")
-    parser.add_argument("--repos", type=Path, help="JSON repository overrides keyed by lock plugin name")
-    parser.add_argument("--jobs", type=int, default=8, help="concurrent downloads (default: 8)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--lock", type=Path, default=Path.home() / ".config/nvim/lazy-lock.json"
+    )
+    parser.add_argument(
+        "--output", type=Path, default=Path(__file__).resolve().parent / "nvim-plugins"
+    )
+    parser.add_argument(
+        "--repos", type=Path, help="JSON repository overrides keyed by lock plugin name"
+    )
+    parser.add_argument(
+        "--jobs", type=int, default=8, help="concurrent downloads (default: 8)"
+    )
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
@@ -126,16 +149,22 @@ def main():
 
     # Bootstrap lazy.nvim separately because it is not present in this lock file.
     if "lazy.nvim" not in lock:
-        downloads["lazy.nvim.tar.gz"] = "https://github.com/folke/lazy.nvim/archive/refs/tags/v11.17.5.tar.gz"
+        downloads["lazy.nvim.tar.gz"] = (
+            "https://github.com/folke/lazy.nvim/archive/refs/tags/v11.17.5.tar.gz"
+        )
     for name, entry in lock.items():
         repo = repositories[name]
         commit = entry["commit"]
-        downloads[f"{name}.tar.gz"] = f"https://github.com/{repo}/archive/{commit}.tar.gz"
+        downloads[f"{name}.tar.gz"] = (
+            f"https://github.com/{repo}/archive/{commit}.tar.gz"
+        )
 
     failures = []
     with ThreadPoolExecutor(max_workers=args.jobs) as executor:
         futures = {
-            executor.submit(download, url, args.output / name, hashes.get(name, {})): name
+            executor.submit(
+                download, url, args.output / name, hashes.get(name, {})
+            ): name
             for name, url in downloads.items()
         }
         for future in as_completed(futures):
@@ -144,10 +173,11 @@ def main():
                 hashes[name] = future.result()
             except Exception as error:
                 failures.append(f"{name}: {error}")
-    atomic_write(manifest, (json.dumps(hashes, indent=2, sort_keys=True) + "\n").encode())
+    atomic_write(
+        manifest, (json.dumps(hashes, indent=2, sort_keys=True) + "\n").encode()
+    )
     if failures:
         raise OSError("download failed:\n" + "\n".join(failures))
-
 
 
 if __name__ == "__main__":

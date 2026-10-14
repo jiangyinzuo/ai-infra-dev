@@ -24,6 +24,7 @@ class ChipUsage(TypedDict):
     hbm: str
     processes: int | None
 
+
 BUS_ID = re.compile(r"[0-9A-Fa-f]+:[0-9A-Fa-f]+:[0-9A-Fa-f]+\.[0-9A-Fa-f]+")
 METRICS = re.compile(
     r"(?P<usage>\d+(?:\.\d+)?|N/A|NA)\s+"
@@ -37,9 +38,12 @@ def usage_row(npu: int, chip: int | None, metrics: str) -> ChipUsage:
     if match is None:
         raise ValueError(f"无法解析利用率和内存：{metrics}")
     return {
-        "npu": npu, "chip": chip, "aicore": match["usage"],
+        "npu": npu,
+        "chip": chip,
+        "aicore": match["usage"],
         "memory": re.sub(r"\s*/\s*", " / ", match["memory"]),
-        "hbm": re.sub(r"\s*/\s*", " / ", match["hbm"]), "processes": None,
+        "hbm": re.sub(r"\s*/\s*", " / ", match["hbm"]),
+        "processes": None,
     }
 
 
@@ -138,15 +142,15 @@ def format_row(row: ChipUsage) -> str:
     if usage not in ("N/A", "NA"):
         usage += "%"
     processes = row["processes"] if row["processes"] is not None else "N/A"
-    device = f'NPU={row["npu"]}'
+    device = f"NPU={row['npu']}"
     metric = "NPUUtil" if row["chip"] is None else "AICore"
     process_label = "Processes" if row["chip"] is None else "ChipProcesses"
     if row["chip"] is not None:
-        device += f' Chip={row["chip"]}'
+        device += f" Chip={row['chip']}"
     return (
-        f'{device} {metric}={usage} '
-        f'Memory={row["memory"]} MB HBM={row["hbm"]} MB '
-        f'{process_label}={processes}'
+        f"{device} {metric}={usage} "
+        f"Memory={row['memory']} MB HBM={row['hbm']} MB "
+        f"{process_label}={processes}"
     )
 
 
@@ -155,7 +159,9 @@ def idle_cards(rows: list[ChipUsage]) -> list[int]:
     cards: dict[int, bool] = {}
     for row in rows:
         usage = row["aicore"]
-        idle = usage not in ("N/A", "NA") and float(usage) == 0 and row["processes"] == 0
+        idle = (
+            usage not in ("N/A", "NA") and float(usage) == 0 and row["processes"] == 0
+        )
         cards[row["npu"]] = cards.get(row["npu"], True) and idle
     return sorted(card for card, idle in cards.items() if idle)
 
@@ -184,8 +190,12 @@ def rank_hosts(results: dict) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--json", action="store_true", help="输出结构化汇总供 Ansible 使用")
-    mode.add_argument("--rank", action="store_true", help="读取主机汇总结果 JSON，输出 TOP10")
+    mode.add_argument(
+        "--json", action="store_true", help="输出结构化汇总供 Ansible 使用"
+    )
+    mode.add_argument(
+        "--rank", action="store_true", help="读取主机汇总结果 JSON，输出 TOP10"
+    )
     args = parser.parse_args()
     try:
         text = sys.stdin.read()
@@ -196,8 +206,16 @@ def main() -> int:
         rows = parse_summary(text)
         lines = [format_row(row) for row in rows]
         if args.json:
-            print(json.dumps({"rows": rows, "lines": lines, "idle_cards": idle_cards(rows),
-                              "total_cards": len({row["npu"] for row in rows})}))
+            print(
+                json.dumps(
+                    {
+                        "rows": rows,
+                        "lines": lines,
+                        "idle_cards": idle_cards(rows),
+                        "total_cards": len({row["npu"] for row in rows}),
+                    }
+                )
+            )
         else:
             for line in lines:
                 print(line)

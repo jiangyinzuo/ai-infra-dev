@@ -1,10 +1,10 @@
 ---
-- name: Create users and install public keys
+- name: 管理用户及 SSH 密钥
   hosts: all
   gather_facts: false
   become: true
   tasks:
-    - name: Query existing accounts without creating them
+    - name: 查询已有账户，不创建用户
       ansible.builtin.getent:
         database: passwd
         key: "{{ item.name }}"
@@ -14,25 +14,15 @@
         label: "{{ item.name }}"
       register: account_queries
 
-    - name: Verify requested supplementary groups exist
-      ansible.builtin.getent:
-        database: group
-        key: "{{ item.1 }}"
-      loop: "{{ managed_users | subelements('groups', skip_missing=True) }}"
-      loop_control:
-        label: "{{ item.0.name }} / {{ item.1 }}"
 
-    - name: Verify explicitly configured shells are executable
+    - name: 检查 Bash 是否可执行
       ansible.builtin.command:
-        argv: [test, -x, "{{ item.shell }}"]
-      when: item.shell is defined
-      loop: "{{ managed_users }}"
-      loop_control:
-        label: "{{ item.name }}"
+        argv: [test, -x, /bin/bash]
       changed_when: false
       check_mode: false
 
-    - name: Validate each proposed sudo rule without writing policy files
+    # 只校验托管规则；check mode 也运行 visudo，但不写文件或执行全局 visudo -c。
+    - name: 校验拟应用的 sudo 规则，不写入配置文件
       ansible.builtin.command:
         argv: [/usr/sbin/visudo, -cf, /dev/stdin]
         stdin: "{{ item.name }} ALL=(ALL:ALL) NOPASSWD: ALL"
@@ -41,43 +31,40 @@
         label: "{{ item.name }}"
       changed_when: false
       check_mode: false
-    - name: Verify sudoers loads the managed drop-in directory
+    - name: 读取 sudoers，检查托管规则目录的加载配置
       ansible.builtin.slurp:
         src: /etc/sudoers
       register: sudoers_config
 
-    - name: Require an active sudoers.d include
+    - name: 确认 sudoers.d 包含指令已启用
       ansible.builtin.assert:
         that:
           - "(sudoers_config.content | b64decode) is search('(?m)^\\s*(?:#|@)includedir\\s+/etc/sudoers[.]d/?\\s*(?:#.*)?$')"
         fail_msg: /etc/sudoers must include /etc/sudoers.d; no accounts changed.
 
-    - name: Ensure sudoers drop-in directory exists
+    - name: 确保 sudoers 规则目录存在
       ansible.builtin.file:
         path: /etc/sudoers.d
         state: directory
         owner: root
         group: root
         mode: '0750'
-    - name: Ensure Docker access group exists
+    - name: 确保 Docker 访问用户组存在
       ansible.builtin.group:
         name: docker
         state: present
 
-    - name: Create accounts without replacing existing supplementary groups
+    - name: 创建或更新账户，统一使用 Bash
       ansible.builtin.user:
         name: "{{ item.name }}"
-        comment: "{{ item.comment | default(omit) }}"
-        shell: "{{ item.shell | default(omit) }}"
-        groups: "{{ item.groups | default(omit, true) }}"
-        append: "{{ true if (item.groups | default([]) | length > 0) else omit }}"
+        shell: /bin/bash
         create_home: true
         state: present
       loop: "{{ managed_users }}"
       loop_control:
         label: "{{ item.name }}"
 
-    - name: Add managed users to Docker group without replacing existing groups
+    - name: 将托管用户加入 Docker 组，保留其他组成员关系
       ansible.builtin.user:
         name: "{{ item.name }}"
         groups: docker
@@ -86,7 +73,7 @@
       loop_control:
         label: "{{ item.name }}"
 
-    - name: Add configured SSH public keys without removing existing keys
+    - name: 添加配置的 SSH 登录公钥，保留已有公钥
       ansible.posix.authorized_key:
         user: "{{ item.name }}"
         key: "{{ item.authorized_keys }}"
@@ -101,7 +88,7 @@
         label: "{{ item.name }}"
         index_var: user_index
 
-    - name: Report public key checks deferred until the new account exists
+    - name: 提示新用户的公钥检查需等待账户创建
       ansible.builtin.debug:
         msg: "{{ item.name }}: account creation is predicted; {{ item.authorized_keys.splitlines() | length }} public key(s) planned. Actual home, authorized_keys contents and permissions cannot be checked until the account exists."
       when:
@@ -113,7 +100,52 @@
         label: "{{ item.name }}"
         index_var: user_index
 
-    - name: Grant passwordless sudo with a validated per-user rule
+    # passwd 字段 4/2 分别为实际 home/GID，不假定 /home/用户名或同名主用户组。
+    # check mode 不会创建账户，后续跳过尚不存在的用户并明确提示。
+    - name: 创建账户后查询实际 home 目录及主用户组
+      ansible.builtin.getent:
+        database: passwd
+
+    - name: 确保 SSH 密钥目录存在并设置权限
+      ansible.builtin.file:
+        path: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh"
+        state: directory
+        owner: "{{ item.name }}"
+        group: "{{ ansible_facts.getent_passwd[item.name][2] }}"
+        mode: '0700'
+      when:
+        - item.ssh_key_files | length > 0
+        - item.name in ansible_facts.getent_passwd
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # copy 按内容及权限收敛；仅管理指定文件，不清理其他密钥。
+    # no_log 防止失败结果泄露密钥，diff=false 禁止输出私钥差异。
+    - name: 同步 SSH 密钥文件，不输出密钥内容
+      ansible.builtin.copy:
+        src: "{{ item.1.src }}"
+        dest: "{{ ansible_facts.getent_passwd[item.0.name][4] }}/.ssh/{{ item.1.name }}"
+        owner: "{{ item.0.name }}"
+        group: "{{ ansible_facts.getent_passwd[item.0.name][2] }}"
+        mode: "{{ item.1.mode }}"
+      when: item.0.name in ansible_facts.getent_passwd
+      loop: "{{ managed_users | subelements('ssh_key_files') }}"
+      no_log: true
+      diff: false
+
+    - name: 提示 check mode 下新用户的密钥部署检查已延后
+      ansible.builtin.debug:
+        msg: "{{ item.name }}: SSH identity file checks deferred until account creation."
+      when:
+        - ansible_check_mode
+        - item.ssh_key_files | length > 0
+        - item.name not in ansible_facts.getent_passwd
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: 校验并安装各用户的免密 sudo 规则
       ansible.builtin.copy:
         dest: "/etc/sudoers.d/99-createuser-{{ item.name }}"
         content: "{{ item.name }} ALL=(ALL:ALL) NOPASSWD: ALL\n"
