@@ -9,7 +9,9 @@ python3 -m pip install sshconf==0.2.7
 uv tool install --force --with ansible ansible-core
 ```
 
-## ssh-usg0 / ssh-usg1 / ssh-usg0-proxy / ssh-usg1-proxy
+## ssh连接基础脚本
+
+### ssh-usg0 / ssh-usg1 / ssh-usg0-proxy / ssh-usg1-proxy
 
 一些服务器需要通过windows的ssh.exe -b <IP> 才能连接，`ssh-usg0`和`ssh-usg1`就是对这一命令的封装脚本。
 
@@ -31,7 +33,16 @@ Bash completion:
 source ./ssh-usg-completion.bash
 ```
 
-## hosts.json
+### `hosts.json` 和 `ssh_hosts.py`
 
-在wsl中，同时支持`~/.ssh/config`和依赖bind address的Windows `.../.ssh/config`，
-详见 `hosts.json` 和 `ssh_hosts.py`。
+在wsl中，同时支持
+- ssh + `~/.ssh/config`
+- ssh.exe -b <ip> + `/mnt/c/.../.ssh/config`
+
+## machine-info: 查看机器基本情况
+
+## npu-top: 查看npu使用率
+
+## createuser: 批量创建用户
+
+## continer-dev: 初始化容器开发环境

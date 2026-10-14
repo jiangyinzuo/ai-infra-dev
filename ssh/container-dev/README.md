@@ -31,9 +31,13 @@ WSL运行：
 bash ~/devtools/update-dev-git-repo.sh
 ```
 
-Git SSH 通过临时 `GIT_SSH_COMMAND` 使用 `$USG_IP:3128` 的 HTTP CONNECT 代理，不读取其他代理变量或修改全局配置。服务器需要 Git、OpenSSH 和 `nc`；自动识别 Nmap Ncat（`--proxy-type http --proxy`）与 OpenBSD netcat（`-X connect -x`）。`USG_IP` 由 SSH 包装器传入，远端需已配置 GitHub SSH 密钥和主机信任。
-
-保留 `git@github.com:jiangyinzuo/...` 的仓库 URL，但临时将 SSH 连接目标指定为 `ssh.github.com:443`，避免网关对 `github.com:22` 返回 HTTP 403 拦截页。使用 `HostKeyAlias=github.com` 保留 GitHub 主机信任身份，不关闭主机密钥校验；远端缺少已核验的主机密钥或 GitHub 身份密钥时，仍需先配置，脚本不会自动接受未知主机或复制私钥。
+连接失败时加 `--debug`
+```bash
+# 服务器
+bash ~/devtools/update-dev-git-repo.sh --debug
+# WSL（先同步更新后的脚本）
+./devtools/update-dev-git-repo.sh --host suzhou-a3-130 --debug
+```
 
 ## 更新并同步命令行工具
 
