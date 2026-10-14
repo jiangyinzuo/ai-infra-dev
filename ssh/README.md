@@ -1,3 +1,5 @@
+# SSH连接相关脚本
+
 ## Install Dependencies
 
 ```bash
@@ -8,6 +10,11 @@ uv tool install --force --with ansible ansible-core
 ## ssh-usg0 / ssh-usg1
 
 一些服务器需要通过windows的ssh.exe -b <IP> 才能连接，`ssh-usg0`和`ssh-usg1`就是对这一命令的封装脚本。
+
+Bash completion:
+```bash
+source ~/ai-infra-dev/ssh/ssh-usg-completion.bash
+```
 
 ## hosts.json
 
