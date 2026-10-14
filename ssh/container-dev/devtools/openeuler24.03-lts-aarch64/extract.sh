@@ -36,7 +36,6 @@ done
 
 if ((${#archives[@]} == 0 && ${#gzip_archives[@]} == 0)); then
     echo 'No supported archives found.'
-    exit 0
 fi
 
 for archive in "${archives[@]}"; do
@@ -56,3 +55,13 @@ for archive in "${gzip_archives[@]}"; do
     gzip -dc -- "$archive" > "$file"
     [[ $file != tree-sitter ]] || chmod +x -- "$file"
 done
+
+# 只添加一次；path.env 尚未同步时不影响 shell 启动。
+bashrc="$HOME/.bashrc"
+source_line='[[ ! -f "$HOME/devtools/openeuler24.03-lts-aarch64/path.env" ]] || source "$HOME/devtools/openeuler24.03-lts-aarch64/path.env"'
+if [[ -f $bashrc ]] && grep -Fqx -- "$source_line" "$bashrc"; then
+    printf 'skip %s (path.env already configured)\n' "$bashrc"
+else
+    printf '\n%s\n' "$source_line" >> "$bashrc"
+    printf 'updated %s; run: source ~/.bashrc\n' "$bashrc"
+fi

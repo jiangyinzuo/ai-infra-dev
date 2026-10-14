@@ -69,13 +69,23 @@ def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(tmp_path):
                         "config": str(config),
                         "ssh": "/usr/bin/ssh",
                         "password_method": "sshpass",
-                    }
+                    },
+                    {
+                        "name": "lianqiuhu",
+                        "host_glob": "lianqiuhu*",
+                        "config": str(config),
+                        "ssh": "/usr/bin/ssh",
+                        "password_method": "sshpass",
+                    },
                 ]
             }
         )
     )
     args = argparse.Namespace(profiles=profiles, group=["lab"], host_glob=["*-a"])
     assert [target["host"] for target in CLI.load_targets(args)] == ["lab-a"]
+    args.group = None
+    args.host_glob = None
+    assert [target["host"] for target in CLI.load_targets(args)] == ["lab-a", "lab-b"]
     args.host_glob = ["missing-*"]
     with pytest.raises(ValueError, match="No hosts selected"):
         CLI.load_targets(args)

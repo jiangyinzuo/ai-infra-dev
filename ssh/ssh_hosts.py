@@ -105,10 +105,6 @@ def load_targets(args):
             for h in host_passwords(config)
             if fnmatch.fnmatchcase(h, profile["host_glob"])
         ]
-        if not matches:
-            raise ValueError(
-                f"No concrete Host matches {profile['host_glob']} in {config}"
-            )
         for host in sorted(matches):
             if args.host_glob and not any(
                 fnmatch.fnmatchcase(host, p) for p in args.host_glob

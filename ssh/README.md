@@ -30,7 +30,7 @@ uv tool install --force --with ansible ansible-core
 
 Bash completion:
 ```bash
-source ./ssh-usg-completion.bash
+source ./completion.bash
 ```
 
 ### `hosts.json` 和 `ssh_hosts.py`
@@ -41,8 +41,10 @@ source ./ssh-usg-completion.bash
 
 ## machine-info: 查看机器基本情况
 
+输出到 `machine-info/`：`machines-output.md` 保存本次报告，`machines-output.csv` 按 Host 更新 OS、Arch，供同步工具选择平台；未查询或采集失败的数据保留。
+
 ## npu-top: 查看npu使用率
 
 ## createuser: 批量创建用户
 
-## continer-dev: 初始化容器开发环境
+## container-dev: 初始化容器开发环境

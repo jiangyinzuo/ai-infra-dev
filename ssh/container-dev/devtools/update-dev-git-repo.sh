@@ -67,4 +67,7 @@ for repo in ai-infra-dev vimrc; do
     printf ' %q' "${git_args[@]}"
     printf '\n'
     GIT_SSH_COMMAND="$git_ssh_command" git "${git_args[@]}"
+    if [[ $repo == vimrc && ${git_args[0]} == clone ]]; then
+        (cd -- "$destination" && ./install/setup.sh)
+    fi
 done

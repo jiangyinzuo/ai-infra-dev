@@ -1,45 +1,19 @@
 #!/usr/bin/env python3
-"""Collect Kubernetes status and /data* filesystem capacity via Ansible.
+"""通过 Ansible 只读采集系统、Kubernetes 状态及 /data* 文件系统容量。
 
-Examples:
-    python3 ssh/machine-info/machine-info.py
-    python3 ssh/machine-info/machine-info.py --group suzhou --host-glob '*-130'
-    python3 ssh/machine-info/machine-info.py --format json --output /tmp/machines.json
-    python3 ssh/machine-info/machine-info.py --output /tmp/machines.md
+在 ssh/ 目录执行：
+  ./machine-info/machine-info.py --group suzhou --host-glob '*-130'
+  ./machine-info/machine-info.py --group suzhou
 
-Prerequisites:
-    Offline smoke: uv run --with pytest --with sshconf==0.2.7 python -m pytest -q ssh/machine-info/smoketest
-    Remote: Python 3, GNU df; systemd for service states; SSH key authentication.
-    USG: source ssh/ssh-get-usg-ip to export USG0_IP / USG1_IP first.
-    No password injection, remote writes, sudo, or Kubernetes API queries.
-
-Profiles (--profiles, default ssh/hosts.json, shared with npu-top):
-    groups: list of objects with name, host_glob, config, ssh; optional
-    ssh_config (client-native path, defaults to config) and python (default python3).
-    config is read locally using the existing SSH parser: concrete Host aliases
-    only, no Include or wildcard expansion. Commented hosts are not selected.
-    Paths support ~ and ${ENV_VAR}; ${REPO} is this repository. The two
-    ${WINDOWS_SSH_CONFIG...} paths are discovered via cmd.exe and wslpath
-    only when a selected profile uses them. Profiles contain no passwords.
-    machine-info.yml uses raw like npu-top; the shared ssh/ssh_hosts.py builds
-    SSH inventory variables. --workers controls Ansible forks; --timeout limits
-    each remote probe. Temporary inventory/results live only on the controller.
-
-Output:
-    OS: PRETTY_NAME from /etc/os-release (JSON: os.pretty_name).
-    Arch: kernel machine architecture, e.g. aarch64 or x86_64 (JSON: arch).
-    Kubernetes: one column combining installed / client-only / not-detected /
-    unknown with component versions; service states remain a separate column.
-    No node Ready claim. JSON retains separate status, versions and services.
-    Storage: matching directories (including links), resolved paths, filesystem,
-    mount, total/used/available capacity and use%. Capacity is df filesystem
-    usage, NOT du directory usage. Shared filesystem rows must not be summed.
-    Markdown uses GiB; JSON retains integer bytes and detailed evidence/errors.
-    Exit 0: complete collection (stopped services are not collection errors).
-    Exit 1: setup, host, or field collection error; partial results are retained.
+输出到脚本目录：machines-output.md 保存本次报告，machines-output.csv 按 Host 更新 OS、Arch。
+未查询或采集失败的数据保留。
+容量是文件系统用量，不是目录大小。
+远端需 Python 3、GNU df 和 SSH 密钥登录；USG 连接前需设置 USG0_IP/USG1_IP。
+退出码：0 表示采集完整，1 表示有错误（保留已采集结果）。
 """
 
 import argparse
+import csv
 from datetime import datetime, timezone
 import json
 import os
@@ -231,23 +205,58 @@ def markdown(report):
     return "\n".join(lines) + "\n"
 
 
+def write_reports(report):
+    """写入脚本目录：覆盖 Markdown，按 Host 合并 CSV。"""
+    path = SCRIPT_DIR / "machines-output.csv"
+    hosts = {}
+    if path.exists():
+        with path.open(newline="", encoding="utf-8") as stream:
+            reader = csv.DictReader(stream)
+            if reader.fieldnames != ["Host", "OS", "Arch"]:
+                raise ValueError(f"{path}: expected Host,OS,Arch columns")
+            hosts = {row["Host"]: (row["OS"], row["Arch"]) for row in reader}
+    for record in report["machines"]:
+        host = record["host"]
+        previous_os, previous_arch = hosts.get(host, ("Unknown", "Unknown"))
+        hosts[host] = (
+            record.get("os", {}).get("pretty_name") or previous_os,
+            record.get("arch") or previous_arch,
+        )
+    (SCRIPT_DIR / "machines-output.md").write_text(markdown(report), encoding="utf-8")
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["Host", "OS", "Arch"])
+        writer.writerows((host, *values) for host, values in sorted(hosts.items()))
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profiles", type=Path, default=DEFAULT_PROFILES)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
+    )
+    parser._optionals.title = "参数"
+    parser.add_argument("-h", "--help", action="help", help="显示帮助并退出")
     parser.add_argument(
-        "--group", action="append", help="Select group; repeatable, default all"
+        "--profiles",
+        type=Path,
+        default=DEFAULT_PROFILES,
+        help="连接配置，默认 hosts.json",
+    )
+    parser.add_argument("--group", action="append", help="选择组，可重复；默认全部")
+    parser.add_argument(
+        "--host-glob", action="append", help="按主机名通配符筛选，可重复"
     )
     parser.add_argument(
-        "--host-glob", action="append", help="Further filter aliases; repeatable"
+        "--directory-glob", default="/data*", help="目录通配符，默认 /data*"
     )
-    parser.add_argument("--directory-glob", default="/data*")
-    parser.add_argument("--workers", type=int, default=8)
-    parser.add_argument("--timeout", type=float, default=120)
-    parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
-    parser.add_argument("--output", type=Path, help="Write report instead of stdout")
+    parser.add_argument("--workers", type=int, default=8, help="并发数，默认 8")
+    parser.add_argument(
+        "--timeout", type=float, default=120, help="单机采集超时秒数，默认 120"
+    )
     args = parser.parse_args()
     if args.workers < 1 or args.timeout <= 0:
-        parser.error("workers and timeout must be positive")
+        parser.error("并发数和超时必须大于 0")
     try:
         targets = load_targets(args)
         machines = collect_all(targets, args)
@@ -256,15 +265,7 @@ def main():
             "directory_glob": args.directory_glob,
             "machines": machines,
         }
-        text = (
-            json.dumps(report, ensure_ascii=False, indent=2) + "\n"
-            if args.format == "json"
-            else markdown(report)
-        )
-        if args.output:
-            args.output.write_text(text, encoding="utf-8")
-        else:
-            print(text, end="")
+        write_reports(report)
         return int(
             any(
                 "error" in r

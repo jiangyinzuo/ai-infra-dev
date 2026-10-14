@@ -40,6 +40,13 @@ def workspace(tmp_path):
         source = sources / name
         git("init", str(source), env=env)
         (source / "content").write_text("initial\n")
+        if name == "vimrc":
+            install = source / "install"
+            install.mkdir()
+            setup = install / "setup.sh"
+            setup.write_text('#!/bin/sh\nset -eu\npwd >> "$HOME/setup-runs"\n')
+            setup.chmod(0o755)
+            git("add", "install/setup.sh", cwd=source, env=env)
         git("add", "content", cwd=source, env=env)
         git("commit", "-m", "initial", cwd=source, env=env)
     binaries = tmp_path / "bin"
@@ -86,6 +93,7 @@ def test_clone_then_fast_forward(workspace, args):
     home, sources, env = workspace
     result = run_script(env, *args)
     assert result.returncode == 0, result.stderr
+    assert (home / "setup-runs").read_text().splitlines() == [str(home / "vimrc")]
     for name in ("ai-infra-dev", "vimrc"):
         assert (home / name / "content").read_text() == "initial\n"
         source = sources / name
@@ -93,11 +101,22 @@ def test_clone_then_fast_forward(workspace, args):
         git("commit", "-am", "update", cwd=source, env=env)
     result = run_script(env, *args)
     assert result.returncode == 0, result.stderr
+    assert (home / "setup-runs").read_text().splitlines() == [str(home / "vimrc")]
     for name in ("ai-infra-dev", "vimrc"):
         assert (home / name / "content").read_text() == "updated\n"
         assert git("rev-parse", "HEAD", cwd=home / name, env=env) == git(
             "rev-parse", "HEAD", cwd=sources / name, env=env
         )
+
+
+def test_setup_failure_is_reported(workspace):
+    home, sources, env = workspace
+    source = sources / "vimrc"
+    (source / "install/setup.sh").write_text("#!/bin/sh\nexit 23\n")
+    git("commit", "-am", "failing setup", cwd=source, env=env)
+    result = run_script(env)
+    assert result.returncode == 23
+    assert (home / "vimrc/.git").is_dir()
 
 
 def test_divergence_preserves_local_commit(workspace):

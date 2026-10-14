@@ -122,6 +122,7 @@ submit download_latest_github_asset BurntSushi/ripgrep '^ripgrep-[0-9][^-]*-aarc
 submit download_latest_github_asset sharkdp/fd '^fd-v?[0-9][^-]*-aarch64-unknown-linux-musl\.tar\.gz$'
 submit download_latest_github_asset dandavison/delta '^delta-[0-9][^-]*-aarch64-unknown-linux-gnu\.tar\.gz$'
 submit download_latest_github_asset tree-sitter/tree-sitter '^tree-sitter-linux-arm64\.gz$'
+submit download_latest_github_asset tmux/tmux-builds '^tmux-[0-9][^-]*-linux-arm64\.tar\.gz$'
 
 for pid in "${pids[@]}"; do
     wait "$pid" || failed=1
