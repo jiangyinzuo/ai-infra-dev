@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""按 Host 前缀选用 Windows/WSL SSH，并透传远端环境。"""
+
+import os
+import shlex
+import sys
+
+from ssh_routes import SSH_ROUTES
+
+ENV_KEYS = (
+    "USG_IP",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "SUDOCODE_API_KEY",
+    "OPENAI_API_KEY",
+)
+VALUE_OPTIONS = set("BbcDEeFIiJLlmOopQRSWw")
+
+
+def parse_connection(argv):
+    """保留原 SSH 参数，只解析目标位置和影响远端 shell 的选项。"""
+    options = []
+    passthrough = False
+    terminal = False
+    index = 0
+    while index < len(argv):
+        word = argv[index]
+        if word == "--":
+            options.append(word)
+            index += 1
+            break
+        if not word.startswith("-") or word == "-":
+            break
+        options.append(word)
+        index += 1
+        for position, flag in enumerate(word[1:], 1):
+            if flag in VALUE_OPTIONS:
+                if position == len(word) - 1:
+                    if index == len(argv):
+                        raise ValueError(f"missing value for -{flag}")
+                    options.append(argv[index])
+                    index += 1
+                break
+            passthrough |= flag in "sNGV"
+            terminal |= flag in "tT"
+    if index == len(argv):
+        raise ValueError("请指定 SSH Host：suzhou*、lianqiuhu* 或 xiaoqiaoling*")
+    return options, argv[index:], passthrough, terminal
+
+
+def build_command(argv):
+    options, target, passthrough, terminal = parse_connection(argv)
+    host = target[0].rsplit("@", 1)[-1]
+    route = next(
+        (value for prefix, value in SSH_ROUTES.items() if host.startswith(prefix)), None
+    )
+    if route is None:
+        raise ValueError(f"unsupported SSH Host: {host}")
+    executable, bind_variable = route
+    client = [executable]
+    environment = {key: os.environ[key] for key in ENV_KEYS if key in os.environ}
+    if bind_variable:
+        ip = os.environ.get(bind_variable)
+        if not ip:
+            raise ValueError(f"{bind_variable} is not set")
+        client += ["-b", ip]
+        environment["USG_IP"] = ip
+        for key in ENV_KEYS[1:7]:
+            environment[key] = f"http://{ip}:3128"
+    if passthrough:
+        return [*client, *options, *target]
+    exports = "".join(
+        f"export {key}={shlex.quote(value)}; " for key, value in environment.items()
+    )
+    if len(target) > 1:
+        command = exports + " ".join(target[1:])
+    else:
+        command = exports + 'exec "${SHELL:-/bin/sh}" -l'
+        if not terminal and sys.stdin.isatty():
+            options.insert(0, "-t")
+    return [*client, *options, target[0], command]
+
+
+def main():
+    try:
+        command = build_command(sys.argv[1:])
+        os.execv(command[0], command)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

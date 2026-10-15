@@ -7,26 +7,65 @@
 ```bash
 python3 -m pip install sshconf==0.2.7
 uv tool install --force --with ansible ansible-core
+sudo apt install sshpass。
+```
+
+## sshconfig示例
+
+`$HOME/.ssh/config`
+```sshconfig
+IgnoreUnknown Password
+Host xiaoqiaoling-a3-xx
+    Hostname 10.246.63.xx
+    User root
+    PassWord xxxxx
+Host github.com
+    HostName ssh.github.com
+    Port 443
+    User git
+    ProxyCommand ncat --proxy 172.23.125.152:3128 --proxy-type http %h %p
+```
+
+`/mnt/c/.../.ssh/config`
+```sshconfig
+IgnoreUnknown Password
+Host suzhou-a3-xx
+    HostName 80.5.9.xx
+    User root
+    PassWord  xxxxx
+Host suzhou-a3-xx
+    HostName 80.5.17.xx
+    User root
+    PassWord  xxxxx
+Host lianqiuhu-950pr-xx
+    HostName 141.61.41.xx
+    User root
+    PassWord  xxxxx
+Host lianqiuhu-950dt-xx
+    HostName 141.61.141.xx
+    User root
+    PassWord  xxxxx
 ```
 
 ## ssh连接基础脚本
 
-### ssh-usg0 / ssh-usg1 / ssh-usg0-proxy / ssh-usg1-proxy
+### ssh2
 
-一些服务器需要通过windows的ssh.exe -b <IP> 才能连接，`ssh-usg0`和`ssh-usg1`就是对这一命令的封装脚本。
-
-```bash
-./ssh-usg0 suzhou-a3-130
-./ssh-usg1 lianqiuhu-950pr-193
-```
-
-`ssh-usg0-proxy` / `ssh-usg1-proxy`，会在远程服务器导出 `http_proxy`、`https_proxy`、`all_proxy`、`HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`，值均为 `http://$USG_IP:3128`。
-相当于`ssh-usg0`登录后，`source $HOME/devtools/proxy.env`
+Python 3.9+ 入口，按 Host 前缀选择客户端，路由维护在 `ssh_routes.py`：
+- `suzhou*`：Windows SSH，绑定 `$USG0_IP`。
+- `lianqiuhu*`：Windows SSH，绑定 `$USG1_IP`。
+- `xiaoqiaoling*`：WSL `/usr/bin/ssh`，不绑定网卡。
 
 ```bash
-./ssh-usg0-proxy suzhou-a3-130
-./ssh-usg1-proxy lianqiuhu-950pr-193 'curl -k -I https://github.com'
+./ssh2 suzhou-a3-130
+./ssh2 lianqiuhu-950pr-193 'curl -k -I https://github.com'
+./ssh2 xiaoqiaoling-a3-24
 ```
+
+网关连接导出 `USG_IP` 和六个大小写 HTTP/HTTPS/ALL 代理变量；WSL SSH 透传本地已设置的同名变量。两者均透传已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`，未设置的不覆盖远端值。SFTP、仅转发及配置查询不注入环境。
+
+密钥会进入 SSH 进程参数，勿分享包含远端命令的调试日志。
+
 
 Bash completion:
 ```bash
@@ -35,15 +74,22 @@ source ./completion.bash
 
 ### `hosts.json` 和 `ssh_hosts.py`
 
-在wsl中，同时支持
-- ssh + `~/.ssh/config`
-- ssh.exe -b <ip> + `/mnt/c/.../.ssh/config`
+`hosts.json` 仅维护组名到 `windows`/`wsl` 的映射，按组名加 `*` 匹配主机。`ssh_hosts.py` 的 `SSH_SOURCES` dataclass 常量定义配置路径、公钥和密钥安装方式；所有组通过 `ssh2` 连接。
 
 ## machine-info: 查看机器基本情况
 
-输出到 `machine-info/`：`machines-output.md` 保存本次报告，`machines-output.csv` 按 Host 更新 OS、Arch，供同步工具选择平台；未查询或采集失败的数据保留。
+输出到 `machine-info/`：`machines-output.md` 保存本次报告，`machines-output.csv` 按 Host 更新 `OS,Arch,NPUPlatform`，保留未查询或采集失败的数据。NPU 平台通过 `sudo -n npu-smi info -t board -i 0` 的 PCI Device ID 判断：`0xD803 → a3`、`0xD802 → a2`，其他为 `unknown`；需免密 sudo，缺少 npu-smi 不算采集错误。
 
 ## npu-top: 查看npu使用率
+
+```bash
+./npu-top/cli.py --group suzhou --host-glob '*-130'
+./npu-top/cli.py --group xiaoqiaoling --containers
+# -f、--limit、--become 等参数直接传给 Ansible
+./npu-top/cli.py --group lianqiuhu -f 20
+# 自定义 inventory
+./npu-top/cli.py -i /path/to/inventory --containers
+```
 
 ## createuser: 批量创建用户
 

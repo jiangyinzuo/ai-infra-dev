@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-: "${USG1_IP:?Error: USG1_IP is not set}"
-
-source "$(dirname -- "${BASH_SOURCE[0]}")/ssh-usg-exec.bash"
-ssh_usg_exec "$USG1_IP" 1 "$@"

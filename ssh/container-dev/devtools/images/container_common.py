@@ -1,0 +1,65 @@
+"""容器平台选择与远程调度。"""
+
+import csv
+import os
+from pathlib import Path
+import platform
+import re
+import shlex
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parent
+
+PLATFORMS = {"a3": "800I-A3-py311-openEuler24.03-lts-aarch64"}
+
+
+def add_target_args(parser):
+    parser.add_argument("--host", help="SSH Host 别名或 localhost；WSL 必填")
+    parser.add_argument(
+        "--npu-platform", choices=PLATFORMS, help="覆盖本地 NPU 探测；WSL 本地下载必填"
+    )
+
+
+def detect_local_platform():
+    sys.path.insert(0, str(ROOT.parent))
+    from machine_probe import npu_platform
+
+    result = npu_platform()
+    if result["platform"] not in PLATFORMS:
+        detail = "; ".join(result["errors"] or result["models"]) or result["status"]
+        raise ValueError(f"无法识别本地 NPU 平台：{detail}；请指定 --npu-platform a3")
+    return result["platform"]
+
+
+def dispatch(args, script, options):
+    wsl = "microsoft" in platform.release().lower()
+    if wsl and not args.host:
+        raise ValueError("WSL 必须指定 --host（本地使用 localhost）")
+    if not args.host or args.host == "localhost":
+        if not args.npu_platform:
+            if wsl:
+                raise ValueError("WSL 本地下载必须指定 --npu-platform a3")
+            args.npu_platform = detect_local_platform()
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args.host):
+        raise ValueError("--host 必须是 SSH config 中的 Host 别名")
+    ssh_dir = ROOT.parents[2]
+
+    path = ssh_dir / "machine-info/machines-output.csv"
+    with path.open(newline="", encoding="utf-8") as stream:
+        rows = {row["Host"]: row for row in csv.DictReader(stream)}
+    row = rows.get(args.host)
+    if row is None:
+        raise ValueError(f"{path}: 没有主机 {args.host}")
+    npu = row.get("NPUPlatform", "").lower()
+    if npu not in PLATFORMS:
+        raise ValueError(f"{args.host}: 不支持或未探测到 NPU 平台 {npu!r}")
+    if args.npu_platform and args.npu_platform != npu:
+        raise ValueError("指定平台与机器 CSV 不一致")
+    ssh = [str(ssh_dir / "ssh2")]
+    command = 'python3 "$HOME"/devtools/images/' + shlex.quote(script)
+    command += " " + shlex.join(["--npu-platform", npu, *options])
+    return subprocess.run(
+        [*ssh, "jiangyinzuo@" + args.host, command], check=False
+    ).returncode

@@ -6,7 +6,7 @@
     - name: Run the Python probe without remote module files
       ansible.builtin.raw: >-
         {{ machine_python | default('python3') | quote }} -c
-        {{ lookup('ansible.builtin.file', playbook_dir ~ '/machine_probe.py') | quote }}
+        {{ lookup('ansible.builtin.file', playbook_dir ~ '/../container-dev/devtools/machine_probe.py') | quote }}
         {{ directory_glob | quote }}
       vars:
         ansible_ssh_use_tty: false

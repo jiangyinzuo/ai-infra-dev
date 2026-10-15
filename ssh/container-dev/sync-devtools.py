@@ -12,6 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parent
 SSH_DIR = ROOT.parent
 DEVTOOLS = ROOT / "devtools"
+
 PLATFORMS = {
     ("openeuler", "aarch64"): "openeuler24.03-lts-aarch64",
     ("openeuler", "arm64"): "openeuler24.03-lts-aarch64",
@@ -37,7 +38,7 @@ def build_plan(hosts):
     path = SSH_DIR / "machine-info/machines-output.csv"
     with path.open(newline="", encoding="utf-8") as stream:
         reader = csv.DictReader(stream)
-        if reader.fieldnames != ["Host", "OS", "Arch"]:
+        if not {"Host", "OS", "Arch"}.issubset(reader.fieldnames or []):
             raise ValueError(f"{path}: expected Host,OS,Arch columns")
         machines = {row["Host"]: row for row in reader}
     plans = []
@@ -55,13 +56,7 @@ def build_plan(hosts):
             ) from None
         if not source.is_dir():
             raise ValueError(f"source directory not found: {source}")
-        match host:
-            case str() if host.startswith("suzhou"):
-                ssh = str(SSH_DIR / "ssh-usg0")
-            case str() if host.startswith("lianqiuhu"):
-                ssh = str(SSH_DIR / "ssh-usg1")
-            case _:
-                ssh = "ssh"
+        ssh = str(SSH_DIR / "ssh2")
         plans.append((host, source, ssh))
     return plans
 

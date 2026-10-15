@@ -21,6 +21,27 @@
       changed_when: false
       check_mode: false
 
+    - name: 选择 home 目录并检查迁移条件
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_python_interpreter }}"
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/home_plan.py') }}"
+          - "{{ item.name }}"
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: home_plans
+      changed_when: false
+      check_mode: false
+
+    - name: 显示 home 选址
+      ansible.builtin.debug:
+        msg: "{{ item.item.name }}: {{ (item.stdout | from_json).home }}{{ '（迁移）' if (item.stdout | from_json).move else '' }}"
+      loop: "{{ home_plans.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
     # 只校验托管规则；check mode 也运行 visudo，但不写文件或执行全局 visudo -c。
     - name: 校验拟应用的 sudo 规则，不写入配置文件
       ansible.builtin.command:
@@ -58,11 +79,14 @@
       ansible.builtin.user:
         name: "{{ item.name }}"
         shell: /bin/bash
+        home: "{{ (home_plans.results[user_index].stdout | from_json).home }}"
+        move_home: "{{ (home_plans.results[user_index].stdout | from_json).move }}"
         create_home: true
         state: present
       loop: "{{ managed_users }}"
       loop_control:
         label: "{{ item.name }}"
+        index_var: user_index
 
     - name: 将托管用户加入 Docker 组，保留其他组成员关系
       ansible.builtin.user:

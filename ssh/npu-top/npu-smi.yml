@@ -16,7 +16,7 @@
       ignore_errors: true
       ignore_unreachable: true
 
-    - name: 在控制端解析利用率、内存和进程数量
+    - name: 在 WSL 解析利用率、内存和进程数量
       ansible.builtin.command:
         argv:
           - "{{ ansible_playbook_python }}"

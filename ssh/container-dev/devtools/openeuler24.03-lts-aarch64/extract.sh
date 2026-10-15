@@ -40,11 +40,30 @@ fi
 
 for archive in "${archives[@]}"; do
     printf 'extract %s\n' "$archive"
+    destination=$script_dir
+    case $archive in
+        fzf-*-linux_arm64.tar.gz)
+            version=${archive#fzf-}
+            version=${version%-linux_arm64.tar.gz}
+            support="$script_dir/fzf-${version}-support"
+            for script in fzf-preview.sh fzf-tmux; do
+                [[ -f $support/$script ]] || { echo "error: missing $support/$script" >&2; exit 1; }
+            done
+            destination="$HOME/plugged/fzf/bin"
+            mkdir -p "$destination"
+            ;;
+    esac
     # 工具解压默认覆盖同名文件，保留已有目录的权限和时间，不恢复归档所有者，并忽略 `TAR_OPTIONS`（避免 `--keep-old-files` 阻止更新）。
     # 目标目录必须对执行用户可写；不会自动 sudo 或修正 root 所有的目录。解压会保留目标中的额外文件
     # 不应与正在使用这些工具的任务同时执行。
-    env -u TAR_OPTIONS tar --extract --file="$archive" --directory="$script_dir" \
+    env -u TAR_OPTIONS tar --extract --file="$archive" --directory="$destination" \
         --no-overwrite-dir --no-same-owner --no-same-permissions
+    case $archive in
+        fzf-*-linux_arm64.tar.gz)
+            cp -- "$support/fzf-preview.sh" "$support/fzf-tmux" "$destination/"
+            chmod +x -- "$destination/fzf" "$destination/fzf-preview.sh" "$destination/fzf-tmux"
+            ;;
+    esac
 done
 
 for archive in "${gzip_archives[@]}"; do

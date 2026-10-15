@@ -26,7 +26,7 @@ while (($#)); do
     esac
 done
 source "$script_dir/remote-exec.sh"
-remote_run_if_wsl required -proxy "$remote_target" update-dev-git-repo.sh "${debug_args[@]}"
+remote_run_if_wsl required "$remote_target" update-dev-git-repo.sh "${debug_args[@]}"
 
 command -v git >/dev/null || { echo 'error: git is required' >&2; exit 1; }
 command -v ssh >/dev/null || { echo 'error: ssh is required' >&2; exit 1; }

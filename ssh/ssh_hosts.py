@@ -2,6 +2,7 @@
 """从 SSH config 生成 Ansible JSON 主机清单（依赖 sshconf）。"""
 
 import argparse
+from dataclasses import dataclass
 import fnmatch
 import json
 from pathlib import Path
@@ -15,6 +16,27 @@ REPO = Path(__file__).resolve().parent.parent
 DEFAULT_PROFILES = Path(__file__).resolve().parent / "hosts.json"
 
 from ssh_config import host_passwords
+
+
+@dataclass(frozen=True)
+class SSHSource:
+    config: str
+    ssh_config: str
+    public_key: str
+    password_method: str
+
+
+SSH_SOURCES = {
+    "windows": SSHSource(
+        "${WINDOWS_SSH_CONFIG}",
+        "${WINDOWS_SSH_CONFIG_NATIVE}",
+        "${WINDOWS_SSH_HOME}/id_ed25519.pub",
+        "windows-askpass",
+    ),
+    "wsl": SSHSource(
+        "~/.ssh/config", "~/.ssh/config", "${WSL_SSH_HOME}/id_ed25519.pub", "sshpass"
+    ),
+}
 
 
 def inventory_group(hosts: dict, ssh: str, ssh_config: str) -> dict:
@@ -75,9 +97,13 @@ def windows_paths():
 
 
 def load_targets(args):
-    profiles = json.loads(args.profiles.read_text())["groups"]
-    selected = [p for p in profiles if not args.group or p["name"] in args.group]
-    missing = set(args.group or []) - {p["name"] for p in selected}
+    profiles = json.loads(DEFAULT_PROFILES.read_text())["groups"]
+    selected = {
+        name: source
+        for name, source in profiles.items()
+        if not args.group or name in args.group
+    }
+    missing = set(args.group or []) - selected.keys()
     if missing:
         raise ValueError("Unknown groups: " + ", ".join(sorted(missing)))
     variables = {
@@ -85,7 +111,7 @@ def load_targets(args):
         "REPO": str(REPO),
         "WSL_SSH_HOME": str(Path.home() / ".ssh"),
     }
-    if any("${WINDOWS_SSH_" in json.dumps(p) for p in selected):
+    if "windows" in selected.values():
         variables.update(windows_paths())
 
     def expand(value):
@@ -98,12 +124,13 @@ def load_targets(args):
         return os.path.expanduser(re.sub(r"\$\{([^}]+)\}", replace, value))
 
     targets = []
-    for profile in selected:
-        config = Path(expand(profile["config"]))
+    for name, source_name in selected.items():
+        if source_name not in SSH_SOURCES:
+            raise ValueError(f"Unknown SSH source: {source_name}")
+        source = SSH_SOURCES[source_name]
+        config = Path(expand(source.config))
         matches = [
-            h
-            for h in host_passwords(config)
-            if fnmatch.fnmatchcase(h, profile["host_glob"])
+            h for h in host_passwords(config) if fnmatch.fnmatchcase(h, name + "*")
         ]
         for host in sorted(matches):
             if args.host_glob and not any(
@@ -112,16 +139,14 @@ def load_targets(args):
                 continue
             targets.append(
                 {
-                    "group": profile["name"],
+                    "group": name,
                     "host": host,
-                    "ssh": expand(profile["ssh"]),
-                    "ssh_config": expand(profile.get("ssh_config", str(config))),
-                    "python": profile.get("python", "python3"),
-                    "public_key": expand(profile["public_key"])
-                    if "public_key" in profile
-                    else None,
+                    "ssh": str(Path(__file__).resolve().parent / "ssh2"),
+                    "ssh_config": expand(source.ssh_config),
+                    "python": "python3",
+                    "public_key": expand(source.public_key),
                     "config": str(config),
-                    "password_method": profile["password_method"],
+                    "password_method": source.password_method,
                 }
             )
     if not targets:
@@ -131,7 +156,6 @@ def load_targets(args):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profiles", type=Path, default=DEFAULT_PROFILES)
     parser.add_argument(
         "--group", action="append", help="Profile group to select; repeatable"
     )

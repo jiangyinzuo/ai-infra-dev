@@ -9,11 +9,11 @@ NOTE: 同步前需要在 `ssh/` 运行 `./machine-info/machine-info.py` 生成 `
 - Neovim插件
 - 命令行工具
 - Docker镜像
-- vllm-ascend仓？
+- vllm-ascend仓？pip install?
 
 ## 更新开发 Git 仓库
 
-在服务器的 `~/ai-infra-dev`、`~/vimrc` 克隆 `jiangyinzuo` 的同名 GitHub 仓库；已有仓库执行 `git pull --ff-only`，不自动丢弃本地修改或合并分叉。
+在服务器的 `~/ai-infra-dev`、`~/vimrc` 克隆 `jiangyinzuo` 的同名 GitHub 仓库；已有仓库执行 `git pull --ff-only`。
 
 `vimrc` 首次克隆成功后，在仓库目录执行 `./install/setup.sh`；已有仓库 pull 后不重复安装。安装失败时返回其退出码，仓库保留，需要手动重跑 setup。原 `init-vimrc.sh` 已删除，不再执行其中的 `openeuler-ascend.sh`。
 
@@ -54,6 +54,8 @@ WSL运行：
 
 ## 更新并同步命令行工具
 
+fzf 下载最新稳定 release 的 Linux ARM64 程序及同版本 `fzf-preview.sh`、`fzf-tmux`，解压安装到 `$HOME/plugged/fzf/bin/`。
+
 WSL运行：
 ```bash
 # 默认并发 8，逐文件校验 SHA-256
@@ -64,25 +66,35 @@ WSL运行：
 ./devtools/openeuler24.03-lts-aarch64/extract.sh --host suzhou-a3-130
 ```
 
-## 创建Docker容器
+## 构建nvim插件
 
+经过上面两步后，服务器环境上同时有了nvim和插件。
 ```bash
-# 查看当前服务器镜像
-ssh-usg0 suzhou-a3-130 docker images vllm-ascend
+nvim --headless "+Lazy! build telescope-fzf-native.nvim" +qa
 ```
 
+## 容器镜像与创建
+
+目前支持 NPU 平台 `a3`。WSL 必须指定 `--host`；远程平台读取 `ssh/machine-info/machines-output.csv` 的 `NPUPlatform`，先用 machine-info 采集。远程脚本需先同步到服务器。
+
+Python 脚本兼容 3.9 及以上版本，本地无需切换解释器。
+
 ```bash
-# 本地WSL或服务器下载
-./devtools/images/a3/download-a3-container.sh
+# 查看服务器已有镜像
+ssh2 suzhou-a3-130 docker images vllm-ascend
+
+# WSL 本地下载，必须指定平台；归档保存到 images/
+./devtools/images/download-container.py --host localhost --npu-platform a3 --date 20261012 --version 26.2.0
+# 下载到 SSH Host 对应服务器，平台由 CSV 选择
+./devtools/images/download-container.py --host suzhou-a3-130
+# 远程创建，默认交互选择镜像与容器名（不会启动容器）
+./devtools/images/create-container.py --host suzhou-a3-130
+# 服务器直接执行
+python3 ~/devtools/images/download-container.py
+docker load -i ~/devtools/images/vllm-ascend_dev-26.2.0.day20261012-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz
+python3 ~/devtools/images/create-container.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
 ```
 
-创建容器:
-```bash
-docker load -i ~/devtools/images/a3/vllm-ascend_dev-26.2.0.day20261012-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz
-# 未设置 IMAGE_NAME 时按创建时间从新到旧列出镜像，回车选最新。
-# 未设置 CONTAINER_NAME 时提示输入，默认 jiangyinzuo-dev<最大现有编号+1>。
-./devtools/images/a3/run-a3-container.sh
-# 环境变量可分别跳过对应选择提示：
-# IMAGE_NAME=9824ebc97c4d CONTAINER_NAME=jiangyinzuo-dev1 ./devtools/images/a3/run-a3-container.sh
-```
+创建时继承已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`、`USG_IP` 及大小写 HTTP/HTTPS/ALL 代理变量。Docker 环境可被有 Docker 权限的用户通过 inspect 查看，勿分享该输出。
 
+服务器本地通过 `sudo -n npu-smi info -t board -i 0` 的 PCI Device ID 探测平台，需免密 sudo；与 machine-info 共用 `devtools/machine_probe.py`。`0xD803` 为 A3，`0xD802` 为 A2；当前容器工具仅支持 A3，可用 `--npu-platform a3` 手动指定。WSL 本地下载仍需指定平台，禁止本机创建容器。

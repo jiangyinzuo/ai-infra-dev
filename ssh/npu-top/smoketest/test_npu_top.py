@@ -6,6 +6,7 @@
 from pathlib import Path
 import socket
 import subprocess
+import sys
 
 import pytest
 
@@ -16,11 +17,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def run(hosts_file, *args):
     result = subprocess.run(
         [
-            "bash",
-            str(ROOT / "npu-top-run.sh"),
+            sys.executable,
+            str(ROOT / "cli.py"),
             "-i",
             str(hosts_file),
-            str(ROOT / "npu-smi.yml"),
             "--limit",
             "smoke-*",
             *args,

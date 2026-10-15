@@ -23,7 +23,68 @@ def load_module(name, filename):
 
 
 CLI = load_module("machine_info", "machine-info.py")
-PROBE = load_module("machine_probe", "machine_probe.py")
+PROBE = load_module("machine_probe", "../container-dev/devtools/machine_probe.py")
+
+
+@pytest.mark.parametrize(
+    "device,expected", [("0xD803", "a3"), ("0xD802", "a2"), ("0xFFFF", "unknown")]
+)
+def test_npu_platform_from_board_pci_device_id(device, expected):
+    text = (
+        (ROOT / "smoketest/fixtures/npu-board-a3.txt")
+        .read_text()
+        .replace("0xD803", device)
+    )
+    with (
+        patch.object(PROBE.shutil, "which", return_value="/bin/npu-smi"),
+        patch.object(
+            PROBE,
+            "command",
+            return_value={"returncode": 0, "stdout": text, "stderr": ""},
+        ),
+    ):
+        result = PROBE.npu_platform()
+    assert result["platform"] == expected
+    assert result["models"] == []
+    assert result["status"] == "ok"
+    assert result["errors"] == []
+    assert result["evidence"] == ["PCI Device ID: " + device.lower()]
+
+
+def test_missing_npu_smi_is_not_collection_failure():
+    with (
+        patch.object(PROBE.shutil, "which", return_value=None),
+        patch.object(PROBE, "command") as command,
+    ):
+        result = PROBE.npu_platform()
+    command.assert_not_called()
+    assert result == {
+        "platform": "unknown",
+        "models": [],
+        "evidence": [],
+        "status": "not-found",
+        "errors": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"returncode": 1, "stdout": "| 0 910C | OK |", "stderr": "driver unavailable"},
+        {"returncode": None, "stdout": "", "stderr": "timed out"},
+        {"returncode": 0, "stdout": "npu-smi version 910C; hostname a3", "stderr": ""},
+    ],
+)
+def test_npu_failure_does_not_infer_platform(response):
+    with (
+        patch.object(PROBE.shutil, "which", return_value="npu-smi"),
+        patch.object(PROBE, "command", return_value=response),
+    ):
+        result = PROBE.npu_platform()
+    assert result["status"] == "failed"
+    assert result["platform"] == "unknown"
+    assert result["models"] == []
+    assert result["errors"]
 
 
 @pytest.mark.parametrize(
@@ -53,35 +114,21 @@ def test_missing_or_invalid_os_release_reports_unknown(tmp_path, text):
     assert result["errors"]
 
 
-def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(tmp_path):
-    config = tmp_path / "ssh-config"
+def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".ssh").mkdir()
+    config = tmp_path / ".ssh/config"
     config.write_text(
         "Host lab-b lab-a\n User root\n# Host lab-disabled\nHost lab-*\n User root\nHost elsewhere\n User root\n"
     )
     profiles = tmp_path / "profiles.json"
-    profiles.write_text(
-        json.dumps(
-            {
-                "groups": [
-                    {
-                        "name": "lab",
-                        "host_glob": "lab-*",
-                        "config": str(config),
-                        "ssh": "/usr/bin/ssh",
-                        "password_method": "sshpass",
-                    },
-                    {
-                        "name": "lianqiuhu",
-                        "host_glob": "lianqiuhu*",
-                        "config": str(config),
-                        "ssh": "/usr/bin/ssh",
-                        "password_method": "sshpass",
-                    },
-                ]
-            }
-        )
-    )
-    args = argparse.Namespace(profiles=profiles, group=["lab"], host_glob=["*-a"])
+    profiles.write_text(json.dumps({"groups": {"lab": "wsl", "lianqiuhu": "wsl"}}))
+    import ssh_hosts
+
+    monkeypatch.setattr(ssh_hosts, "DEFAULT_PROFILES", profiles)
+    args = argparse.Namespace(group=["lab"], host_glob=["*-a"])
     assert [target["host"] for target in CLI.load_targets(args)] == ["lab-a"]
     args.group = None
     args.host_glob = None
@@ -94,49 +141,39 @@ def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(tmp_path):
         CLI.load_targets(args)
 
 
-def test_npu_inventory_cli_preserves_each_profile_connection(tmp_path):
+def test_npu_inventory_cli_preserves_each_profile_connection(tmp_path, monkeypatch):
     config = tmp_path / "ssh-config"
     config.write_text("Host local-one remote-two\n User root\n")
     profiles = tmp_path / "hosts.json"
-    profiles.write_text(
+    profiles.write_text(json.dumps({"groups": {"local": "wsl", "remote": "windows"}}))
+    import ssh_hosts
+    from dataclasses import replace
+
+    monkeypatch.setattr(ssh_hosts, "DEFAULT_PROFILES", profiles)
+
+    monkeypatch.setitem(
+        ssh_hosts.SSH_SOURCES,
+        "wsl",
+        replace(
+            ssh_hosts.SSH_SOURCES["wsl"], config=str(config), ssh_config=str(config)
+        ),
+    )
+    monkeypatch.setattr(
+        ssh_hosts,
+        "windows_paths",
+        lambda: {
+            "WINDOWS_SSH_CONFIG": str(config),
+            "WINDOWS_SSH_CONFIG_NATIVE": "C:\\Users\\example user\\.ssh\\config",
+            "WINDOWS_SSH_HOME": str(tmp_path),
+        },
+    )
+    targets = ssh_hosts.load_targets(argparse.Namespace(group=None, host_glob=None))
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(
         json.dumps(
-            {
-                "groups": [
-                    {
-                        "name": "local",
-                        "host_glob": "local-*",
-                        "config": str(config),
-                        "ssh": "/usr/bin/ssh",
-                        "password_method": "sshpass",
-                    },
-                    {
-                        "name": "remote",
-                        "host_glob": "remote-*",
-                        "config": str(config),
-                        "ssh_config": "C:\\Users\\example user\\.ssh\\config",
-                        "ssh": "/custom/ssh-usg0",
-                        "password_method": "windows-askpass",
-                    },
-                ]
-            }
+            ssh_hosts.build_inventory(targets, inventory_group_name="npu_servers")
         )
     )
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT.parent / "ssh_hosts.py"),
-            "--profiles",
-            str(profiles),
-            "--inventory-group",
-            "npu_servers",
-        ],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    inventory = tmp_path / "inventory.json"
-    inventory.write_text(result.stdout)
     resolved = subprocess.run(
         ["ansible-inventory", "-i", str(inventory), "--list"],
         capture_output=True,
@@ -145,8 +182,8 @@ def test_npu_inventory_cli_preserves_each_profile_connection(tmp_path):
     )
     hosts = json.loads(resolved.stdout)["_meta"]["hostvars"]
     assert set(hosts) == {"local-one", "remote-two"}
-    assert hosts["local-one"]["ansible_ssh_executable"] == "/usr/bin/ssh"
-    assert hosts["remote-two"]["ansible_ssh_executable"] == "/custom/ssh-usg0"
+    for host in ("local-one", "remote-two"):
+        assert hosts[host]["ansible_ssh_executable"] == str(ROOT.parent / "ssh2")
     import shlex
 
     assert (

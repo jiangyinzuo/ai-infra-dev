@@ -4,6 +4,7 @@ import glob
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import shlex
@@ -52,6 +53,46 @@ def operating_system(path=Path("/etc/os-release")):
         raise ValueError("PRETTY_NAME is missing")
     except (OSError, UnicodeError, ValueError) as exc:
         return {"pretty_name": None, "errors": [f"{path}: {exc}"]}
+
+
+NPU_PLATFORMS = {"0xd803": "a3", "0xd802": "a2"}
+
+
+def npu_platform():
+    """通过第 0 张卡的 PCI Device ID 识别平台。"""
+    result = {
+        "platform": "unknown",
+        "models": [],
+        "evidence": [],
+        "status": "not-found",
+        "errors": [],
+    }
+    program = shutil.which("npu-smi")
+    if program is None:
+        return result
+    response = command(["sudo", "-n", program, "info", "-t", "board", "-i", "0"])
+    result["status"] = "failed"
+    if response["returncode"] != 0:
+        result["errors"].append(
+            "npu-smi board: " + (response["stderr"] or "command failed")
+        )
+        return result
+    fields = {}
+    for line in response["stdout"].splitlines():
+        key, separator, value = line.partition(":")
+        if separator:
+            fields[key.strip()] = value.strip()
+    device = fields.get("PCI Device ID", "").lower()
+    if not re.fullmatch(r"0x[0-9a-f]{4}", device):
+        result["errors"].append("npu-smi board: missing or invalid PCI Device ID")
+        return result
+    result["status"] = "ok"
+    result["platform"] = NPU_PLATFORMS.get(device, "unknown")
+    result["evidence"] = ["PCI Device ID: " + device]
+    model = fields.get("Model")
+    if model and model != "NA":
+        result["models"] = [model]
+    return result
 
 
 def kubernetes():
@@ -178,6 +219,7 @@ def main():
     report = {
         "arch": os.uname().machine,
         "os": operating_system(),
+        "npu": npu_platform(),
         "kubernetes": kubernetes(),
         "storage": data_directories(sys.argv[1]),
     }

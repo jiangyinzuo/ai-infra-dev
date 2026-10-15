@@ -1,4 +1,4 @@
-# Python 格式化
+## Python 格式化
 
 `ssh/ruff.toml` 统一配置本目录及子目录的 Python 格式。修改 Python 文件后，从仓库根目录执行：
 

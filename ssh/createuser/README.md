@@ -1,42 +1,60 @@
 # 批量管理服务器用户
 
-`createuser.py` 通过 Ansible 固定管理 `jiangyinzuo` 账号、SSH 密钥、Docker 用户组及 sudo 权限。支持创建新用户和更新已有用户；默认仅输出 plan，不连接远端。
+通过 Ansible 管理 `jiangyinzuo` 账号、SSH 密钥、Docker 用户组及 sudo 权限。支持创建新用户和更新已有用户；默认仅输出 plan，不连接远端。
 
 ## 使用方式
 
+以下命令在 `ssh/` 目录执行。
+
 ```bash
 # 本地预览
-python3 ssh/createuser/createuser.py --group suzhou
+./createuser/cli.py --group suzhou
 
 # 连接目标检查，不应用修改
-python3 ssh/createuser/createuser.py --group suzhou --host-glob '*-130' --check
+./createuser/cli.py --group suzhou --host-glob '*-130' --check
 
 # 先在单台服务器应用
-python3 ssh/createuser/createuser.py --group suzhou --host-glob '*-130' --apply
+./createuser/cli.py --group suzhou --host-glob '*-130' --apply
 
-# 批量应用；需要 sudo 密码时追加 --ask-become-pass
-python3 ssh/createuser/createuser.py --group suzhou --group lianqiuhu --apply
+# 批量应用
+./createuser/cli.py --group suzhou --group lianqiuhu --apply
 ```
+
+在 `ssh/` 执行 `source ./completion.bash` 后，可用 Tab 补全选项、组名和主机名。
 
 | 参数 | 含义 |
 |---|---|
 | `--group` | 必填，可重复；选择连接配置中的目标组 |
 | `--host-glob` | 进一步筛选主机，可重复 |
-| `--profiles` | 连接配置，默认 `ssh/hosts.json` |
 | `--check` | 执行 Ansible check mode，连接远端预览变更，不应用修改，与 `--apply` 互斥 |
 | `--apply` | 应用修改 |
-| `--ask-become-pass` | 提示输入 sudo 认证密码 |
 | `--workers` | Ansible 并发数，默认 5，必须为正整数 |
 
-控制端需具备 Python 依赖、Ansible 及 playbook 使用的 `ansible.posix` collection；远端需满足连接配置中的 Python 环境，并已安装 sudo。`--help` 可查看命令行参数。
+WSL 需安装 Python 依赖、Ansible 和 `ansible.posix` collection；远端需 Python 3 和 sudo。
+
+`--apply` 先检查 root 能否使用对应客户端的 `id_ed25519` 免密登录，成功即跳过公钥安装；否则使用 SSH config 的 `Password`，未配置时隐藏提示输入 root 密码，通过 ssh-copy-id 追加 `id_ed25519.pub`，验证成功后再管理 jiangyinzuo。
+
+root 使用 Windows/WSL SSH 配置对应的密钥对。需安装 ssh-copy-id；Windows 密码认证使用 askpass，WSL 还需 sshpass。首次安装需服务器允许 root 密码登录，密码不写入 inventory 或命令行。
+
+默认 plan 不连接远端。`--check` 需 root 已能免密登录，不上传公钥；连接后预览用户配置和 home 迁移，不应用修改。Ansible 以 root 执行，无需 sudo 密码。
 
 ## 固定账号与密钥
 
 账号固定为 `jiangyinzuo`，shell 为 `/bin/bash`，不提供用户配置文件。
 
-使用控制端（WSL）的 `~/.ssh/id_ed25519.pub` 追加登录授权，并同步该公钥及 `~/.ssh/id_ed25519` 到远端用户 `.ssh/`。同名文件按内容更新，私钥权限为 `0600`，其他密钥和已有登录授权保留。控制端必须存在这对密钥；不再使用连接组中的默认公钥。
+将 WSL 的 `~/.ssh/id_ed25519.pub` 追加到登录授权，并同步该公钥和私钥到用户 `.ssh/`。WSL 必须存在这对密钥；同名文件按内容更新，私钥权限为 `0600`，其他密钥和已有授权保留。
 
 GitHub 公钥登记和主机信任需另行配置。
+
+## Home 目录
+
+- 新用户从已存在的 `/home`、`/data`、`/data1`、`/data2`、`/data3` 中选择可用空间最多的位置，例如 `/data3/jiangyinzuo`。
+- 已有 home 所在盘可用空间不足 10 GiB 时自动迁移；空间充足则不移动。
+    - 不在旧路径创建符号链接，原绝对路径不再有效。
+- 所有候选位置均不足 10 GiB 时报错。迁移还会拒绝以下情况：
+    - 用户有运行进程、目标目录已存在，或 home 包含挂载点。
+    - 目标无法容纳旧数据并保留 10 GiB 可用空间。
+- `--check` 显示目标 home，但不创建或迁移。迁移前请备份重要数据，退出该用户会话并停止其任务。
 
 ## 重复执行与权限
 

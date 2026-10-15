@@ -41,6 +41,40 @@ def extract(workspace):
     )
 
 
+def test_fzf_installs_all_three_tools_in_plugin_bin(workspace):
+    home, tools, env = workspace
+    support = tools / "fzf-0.74.5-support"
+    support.mkdir()
+    for name in ("fzf-preview.sh", "fzf-tmux"):
+        (support / name).write_text(f"#!/bin/sh\nprintf '{name}'\n")
+    binary = b"#!/bin/sh\nprintf fzf-smoke\n"
+    with tarfile.open(tools / "fzf-0.74.5-linux_arm64.tar.gz", "w:gz") as archive:
+        entry = tarfile.TarInfo("fzf")
+        entry.size = len(binary)
+        archive.addfile(entry, io.BytesIO(binary))
+    destination = home / "plugged/fzf/bin"
+    destination.mkdir(parents=True)
+    (destination / "keep").write_text("preserved")
+    for _ in range(2):
+        result = extract(workspace)
+        assert result.returncode == 0, result.stderr
+    for name, expected in (
+        ("fzf", "fzf-smoke"),
+        ("fzf-preview.sh", "fzf-preview.sh"),
+        ("fzf-tmux", "fzf-tmux"),
+    ):
+        result = subprocess.run(
+            [str(destination / name)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert result.stdout == expected
+    assert (destination / "keep").read_text() == "preserved"
+    assert not (tools / "fzf").exists()
+
+
 def test_no_archives_configures_bashrc_once(workspace):
     home, tools, env = workspace
     bashrc = home / ".bashrc"

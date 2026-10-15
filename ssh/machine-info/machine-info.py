@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""通过 Ansible 只读采集系统、Kubernetes 状态及 /data* 文件系统容量。
+"""通过 Ansible 只读采集系统、NPU 平台、Kubernetes 状态及 /data* 文件系统容量。
 
 在 ssh/ 目录执行：
   ./machine-info/machine-info.py --group suzhou --host-glob '*-130'
   ./machine-info/machine-info.py --group suzhou
 
-输出到脚本目录：machines-output.md 保存本次报告，machines-output.csv 按 Host 更新 OS、Arch。
-未查询或采集失败的数据保留。
+输出到脚本目录：machines-output.md 保存本次报告，machines-output.csv 按 Host 更新 OS、Arch、NPUPlatform。
+NPUPlatform 通过 sudo -n npu-smi info -t board -i 0 的 PCI Device ID 判断：D803=a3、D802=a2。
+未查询或采集失败的数据保留；旧三列 CSV 自动升级，原有行的平台为 unknown。
+缺少 npu-smi 不算采集错误；已知平台在检测失败或命令缺失时保留。
 容量是文件系统用量，不是目录大小。
 远端需 Python 3、GNU df 和 SSH 密钥登录；USG 连接前需设置 USG0_IP/USG1_IP。
 退出码：0 表示采集完整，1 表示有错误（保留已采集结果）。
@@ -24,7 +26,7 @@ import tempfile
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
-from ssh_hosts import DEFAULT_PROFILES, build_inventory, load_targets
+from ssh_hosts import build_inventory, load_targets
 
 
 def parse_result(target, result):
@@ -121,13 +123,13 @@ def markdown(report):
         "Capacity is for each directory's filesystem, not directory contents. Shared filesystems must not be summed.",
         "Versions are local component versions; running kubelet does not imply node Ready. not-detected is not proof of absence.",
         "",
-        "| Group | Host | OS | Arch | Kubernetes | Service states |",
-        "|---|---|---|---|---|---|",
+        "| Group | Host | OS | Arch | NPU platform | NPU model / evidence | Kubernetes | Service states |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for record in report["machines"]:
         if "error" in record:
             lines.append(
-                f"| {cell(record['group'])} | {cell(record['host'])} | — | — | Query failed | {cell(record['error'])} |"
+                f"| {cell(record['group'])} | {cell(record['host'])} | — | — | — | — | Query failed | {cell(record['error'])} |"
             )
             continue
         k8s = record["kubernetes"]
@@ -141,6 +143,12 @@ def markdown(report):
             )
             or "No detected services"
         )
+        npu = record.get("npu", {})
+        npu_evidence = "; ".join(npu.get("models", []))
+        if npu.get("evidence"):
+            npu_evidence += "; " + "; ".join(npu["evidence"])
+        if not npu_evidence:
+            npu_evidence = npu.get("status", "not-found")
         lines.append(
             "| "
             + " | ".join(
@@ -151,6 +159,8 @@ def markdown(report):
                         record["host"],
                         record["os"]["pretty_name"] or "Unknown",
                         record["arch"],
+                        npu.get("platform", "unknown"),
+                        npu_evidence,
                         kubernetes,
                         states,
                     ],
@@ -192,8 +202,8 @@ def markdown(report):
         record["host"] + ": " + message
         for record in report["machines"]
         if "error" not in record
-        for section in ("os", "kubernetes", "storage")
-        for message in record[section]["errors"]
+        for section in ("os", "npu", "kubernetes", "storage")
+        for message in record.get(section, {}).get("errors", [])
     ]
     if errors:
         lines += [
@@ -212,20 +222,34 @@ def write_reports(report):
     if path.exists():
         with path.open(newline="", encoding="utf-8") as stream:
             reader = csv.DictReader(stream)
-            if reader.fieldnames != ["Host", "OS", "Arch"]:
-                raise ValueError(f"{path}: expected Host,OS,Arch columns")
-            hosts = {row["Host"]: (row["OS"], row["Arch"]) for row in reader}
+            columns = ["Host", "OS", "Arch", "NPUPlatform"]
+            if reader.fieldnames not in (columns[:3], columns):
+                raise ValueError(f"{path}: expected Host,OS,Arch,NPUPlatform columns")
+            hosts = {
+                row["Host"]: (
+                    row["OS"],
+                    row["Arch"],
+                    row.get("NPUPlatform") or "unknown",
+                )
+                for row in reader
+            }
     for record in report["machines"]:
         host = record["host"]
-        previous_os, previous_arch = hosts.get(host, ("Unknown", "Unknown"))
+        previous_os, previous_arch, previous_npu = hosts.get(
+            host, ("Unknown", "Unknown", "unknown")
+        )
+        npu = record.get("npu", {})
         hosts[host] = (
             record.get("os", {}).get("pretty_name") or previous_os,
             record.get("arch") or previous_arch,
+            npu.get("platform", "unknown")
+            if npu.get("status") == "ok"
+            else previous_npu,
         )
     (SCRIPT_DIR / "machines-output.md").write_text(markdown(report), encoding="utf-8")
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
-        writer.writerow(["Host", "OS", "Arch"])
+        writer.writerow(["Host", "OS", "Arch", "NPUPlatform"])
         writer.writerows((host, *values) for host, values in sorted(hosts.items()))
 
 
@@ -237,12 +261,6 @@ def main():
     )
     parser._optionals.title = "参数"
     parser.add_argument("-h", "--help", action="help", help="显示帮助并退出")
-    parser.add_argument(
-        "--profiles",
-        type=Path,
-        default=DEFAULT_PROFILES,
-        help="连接配置，默认 hosts.json",
-    )
     parser.add_argument("--group", action="append", help="选择组，可重复；默认全部")
     parser.add_argument(
         "--host-glob", action="append", help="按主机名通配符筛选，可重复"
@@ -270,7 +288,8 @@ def main():
             any(
                 "error" in r
                 or any(
-                    r[section]["errors"] for section in ("os", "kubernetes", "storage")
+                    r.get(section, {}).get("errors", [])
+                    for section in ("os", "npu", "kubernetes", "storage")
                 )
                 for r in machines
             )

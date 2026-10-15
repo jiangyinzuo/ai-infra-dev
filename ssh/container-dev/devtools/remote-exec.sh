@@ -4,21 +4,17 @@
 ssh_command_for_host() {
     local ssh_dir
     ssh_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-    case $1 in
-        suzhou*) printf '%s/ssh-usg0%s' "$ssh_dir" "${2:-}" ;;
-        lianqiuhu*) printf '%s/ssh-usg1%s' "$ssh_dir" "${2:-}" ;;
-        *) command -v ssh ;;
-    esac
+    printf '%s/ssh2' "$ssh_dir"
 }
 
 remote_extract_if_wsl() {
-    remote_run_if_wsl prompt '' "$@"
+    remote_run_if_wsl prompt "$@"
 }
 
-# Policy and wrapper suffix are internal parameters, not remote script arguments.
+# Policy is an internal parameter, not a remote script argument.
 remote_run_if_wsl() {
-    local policy=$1 suffix=$2 target=$3 relative_script=$4 host ssh_command command argument
-    shift 4
+    local policy=$1 target=$2 relative_script=$3 host ssh_command command argument
+    shift 3
     if [[ $(uname -r) != *[Mm]icrosoft* ]]; then
         [[ -z $target ]] || { echo 'error: --host is only supported on WSL' >&2; exit 2; }
         return
@@ -39,7 +35,7 @@ remote_run_if_wsl() {
     }
     [[ $target == *@* ]] || target="jiangyinzuo@$target"
     host=${target##*@}
-    ssh_command=$(ssh_command_for_host "$host" "$suffix")
+    ssh_command=$(ssh_command_for_host "$host")
     # Quote relative script and arguments for the remote POSIX shell.
     command="bash \"\$HOME\"/devtools/'${relative_script//\'/\'\\\'\'}'"
     for argument in "$@"; do

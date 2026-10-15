@@ -10,7 +10,8 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
-from ssh_hosts import DEFAULT_PROFILES, build_inventory, load_targets
+from ssh_hosts import build_inventory, load_targets
+from bootstrap import ensure_root_access
 
 
 def build_plan(targets):
@@ -60,13 +61,11 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--profiles", type=Path, default=DEFAULT_PROFILES)
     parser.add_argument("--group", action="append", required=True)
     parser.add_argument("--host-glob", action="append")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true")
     mode.add_argument("--check", action="store_true")
-    parser.add_argument("--ask-become-pass", action="store_true")
     parser.add_argument("--workers", type=int, default=5)
     args = parser.parse_args()
     if args.workers < 1:
@@ -74,15 +73,24 @@ def parse_args():
     return args
 
 
+def host_variables(target):
+    private_key = str(Path(target["public_key"]).with_suffix(""))
+    if target["password_method"] == "windows-askpass":
+        private_key = subprocess.check_output(
+            ["wslpath", "-w", private_key], text=True
+        ).strip()
+    return {
+        "ansible_python_interpreter": target["python"],
+        "managed_users": target["users"],
+        "ansible_user": "root",
+        "ansible_become": False,
+        "ansible_private_key_file": private_key,
+    }
+
+
 def run_playbook(plan, args):
     """隔离临时 inventory，并返回 Ansible 退出码。"""
-    inventory_data = build_inventory(
-        plan,
-        lambda target: {
-            "ansible_python_interpreter": target["python"],
-            "managed_users": target["users"],
-        },
-    )
+    inventory_data = build_inventory(plan, host_variables)
     with tempfile.TemporaryDirectory(prefix="createuser-") as directory:
         # inventory 只含公钥和私钥路径；临时目录隔离访问，运行后自动清理。
         inventory = Path(directory) / "inventory.json"
@@ -98,8 +106,6 @@ def run_playbook(plan, args):
         ]
         if args.check:
             command.append("--check")
-        if args.ask_become_pass:
-            command.append("--ask-become-pass")
         return subprocess.run(command, check=False).returncode
 
 
@@ -114,6 +120,8 @@ def main():
         )
         if not args.apply and not args.check:
             return 0
+        for target in plan:
+            ensure_root_access(target, check=args.check)
         return run_playbook(plan, args)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         print("Error: " + str(exc), file=sys.stderr)

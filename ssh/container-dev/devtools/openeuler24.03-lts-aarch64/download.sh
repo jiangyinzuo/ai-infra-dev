@@ -83,6 +83,21 @@ download_latest_github_asset() {
     download_if_changed "$file" "$url" "$expected"
 }
 
+download_fzf() {
+    local release tag version script expected
+    release=$(curl -fsSL https://api.github.com/repos/junegunn/fzf/releases/latest)
+    tag=$(jq -er '.tag_name' <<< "$release")
+    version=${tag#v}
+    download_github_asset junegunn/fzf "$tag" "fzf-${version}-linux_arm64.tar.gz"
+    mkdir -p "fzf-${version}-support"
+    for script in fzf-preview.sh fzf-tmux; do
+        expected=$(curl -fsSL "https://api.github.com/repos/junegunn/fzf/contents/bin/$script?ref=$tag" \
+            | jq -er '.content' | base64 -d | sha256sum | cut -d ' ' -f1)
+        download_if_changed "fzf-${version}-support/$script" \
+            "https://raw.githubusercontent.com/junegunn/fzf/$tag/bin/$script" "$expected"
+    done
+}
+
 download_node() {
     local node_sha256
     node_sha256=$(curl -fsSL https://nodejs.org/dist/v24.21.0/SHASUMS256.txt \
@@ -123,6 +138,7 @@ submit download_latest_github_asset sharkdp/fd '^fd-v?[0-9][^-]*-aarch64-unknown
 submit download_latest_github_asset dandavison/delta '^delta-[0-9][^-]*-aarch64-unknown-linux-gnu\.tar\.gz$'
 submit download_latest_github_asset tree-sitter/tree-sitter '^tree-sitter-linux-arm64\.gz$'
 submit download_latest_github_asset tmux/tmux-builds '^tmux-[0-9][^-]*-linux-arm64\.tar\.gz$'
+submit download_fzf
 
 for pid in "${pids[@]}"; do
     wait "$pid" || failed=1

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""在控制端解析 npu-smi info；从 stdin 读取原表，向 stdout 输出精简行。
+"""在 WSL 解析 npu-smi info；从 stdin 读取原表，向 stdout 输出精简行。
 
 独立使用：npu-smi info | python3 npu_smi_summary.py
 按表头区分芯片级 AICore 与设备级 NPU Util，不按工具版本或卡型号推断。
