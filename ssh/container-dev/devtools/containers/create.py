@@ -25,6 +25,10 @@ def green(text):
     return f"\033[32m{text}\033[0m"
 
 
+def yellow(text):
+    return f"\033[33m{text}\033[0m"
+
+
 def run_docker(command, **kwargs):
     print(shlex.join(command), flush=True)
     return subprocess.run(command, **kwargs)
@@ -52,19 +56,14 @@ class Image:
 
 
 def initialize_user(container, username: str, uid, gid, home):
-    """只更新容器账号文件，不启动容器或修改挂载目录。"""
+    """通过 root exec 更新容器账号文件，不修改共享 HOME。"""
     with tempfile.TemporaryDirectory(prefix="container-user-") as directory:
         directory = Path(directory)
         for filename in ("passwd", "group"):
-            run_docker(
-                [
-                    "docker",
-                    "cp",
-                    f"{container}:/etc/{filename}",
-                    str(directory / filename),
-                ],
-                check=True,
+            content = docker_output(
+                "exec", "-u", "0", container, "cat", f"/etc/{filename}"
             )
+            (directory / filename).write_text(content)
         passwd = directory / "passwd"
         group = directory / "group"
         users = [
@@ -103,7 +102,22 @@ def initialize_user(container, username: str, uid, gid, home):
         for path in changed:
             path.chmod(0o644)
             run_docker(
-                ["docker", "cp", str(path), f"{container}:/etc/{path.name}"], check=True
+                [
+                    "docker",
+                    "exec",
+                    "-i",
+                    "-u",
+                    "0",
+                    container,
+                    "sh",
+                    "-c",
+                    'cat > "$1" && chmod 644 "$1"',
+                    "sh",
+                    f"/etc/{path.name}",
+                ],
+                input=path.read_text(),
+                text=True,
+                check=True,
             )
 
 
@@ -196,26 +210,57 @@ def create(args):
     volumes += [path for path in ("/data1", "/data2", "/data3") if Path(path).is_dir()]
     for path in volumes:
         command += ["-v", f"{path}:{path}"]
+    # HOME 共享，但 Python 工具入口和依赖必须隔离，避免宿主机/容器解释器不同导致冲突。
+    local_paths = [f"{home}/.local/{part}" for part in ("bin", "lib")]
+    for path in local_paths:
+        command += ["--mount", f"type=volume,dst={path},volume-nocopy"]
     print(green(f"创建容器 {name}，镜像 {reference} ({image.id})"), flush=True)
     run_docker([*command, "-it", image.id, "bash"], check=True)
+    run_docker(["docker", "start", name], check=True)
     initialize_user(name, username, os.getuid(), os.getgid(), home)
     if image.is_openeuler(reference):
+        repo = Path(home) / "devtools/openeuler24.03-lts-aarch64/openEuler.repo"
         run_docker(
             [
                 "docker",
-                "cp",
-                f"{home}/devtools/openeuler24.03-lts-aarch64/openEuler.repo",
-                f"{name}:/etc/yum.repos.d/openEuler.repo",
+                "exec",
+                "-i",
+                "-u",
+                "0",
+                name,
+                "sh",
+                "-c",
+                "mkdir -p /etc/yum.repos.d && cat > /etc/yum.repos.d/openEuler.repo",
             ],
+            input=repo.read_text(),
+            text=True,
             check=True,
         )
-    run_docker(["docker", "start", name], check=True)
+    # 新 volume 默认属于 root；只修改独立 volume 根目录，不递归 chown 共享 HOME。
+    run_docker(
+        [
+            "docker",
+            "exec",
+            "-u",
+            "0",
+            name,
+            "chown",
+            f"{os.getuid()}:{os.getgid()}",
+            *local_paths,
+        ],
+        check=True,
+    )
     actual_user = docker_output("exec", name, "id", "-un").strip()
     if actual_user != username:
         raise ValueError(
             f"容器 {name} 用户校验失败：期望 {username}，实际 {actual_user!r}"
         )
     print(green(f"容器 {name} 已启动，用户 {username}"), flush=True)
+    print(yellow("进入容器："))
+    print(shlex.join(["docker", "exec", "-it", name, "bash"]))
+    print(yellow("删除容器及独立 volume（先停止容器）："))
+    print(shlex.join(["docker", "stop", name]))
+    print(shlex.join(["docker", "rm", "-v", name]))
     return 0
 
 

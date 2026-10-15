@@ -156,6 +156,7 @@ def test_create_copies_repo_only_for_openeuler(
     options = args("localhost", "a3")
     options.image = image
     options.name = "smoke-container"
+    monkeypatch.setattr(module.Path, "read_text", lambda path, **kwargs: "[smoke]\n")
     inherited = (
         "SUDOCODE_API_KEY",
         "OPENAI_API_KEY",
@@ -184,14 +185,28 @@ def test_create_copies_repo_only_for_openeuler(
     ]
     assert set(inherited).issubset(environment)
     assert not any("smoke-value-" in value for value in calls[0])
-    assert calls[-1] == ["docker", "start", "smoke-container"]
-    assert len(calls) == (3 if copy_repo else 2)
+    assert calls[1] == ["docker", "start", "smoke-container"]
+    paths = [str(module.Path.home() / ".local" / part) for part in ("bin", "lib")]
+    mounts = [
+        calls[0][i + 1] for i, value in enumerate(calls[0][:-1]) if value == "--mount"
+    ]
+    assert mounts == [f"type=volume,dst={path},volume-nocopy" for path in paths]
+    assert calls[-1] == [
+        "docker",
+        "exec",
+        "-u",
+        "0",
+        "smoke-container",
+        "chown",
+        f"{module.os.getuid()}:{module.os.getgid()}",
+        *paths,
+    ]
+    assert len(calls) == (4 if copy_repo else 3)
     if copy_repo:
-        assert calls[1][-1] == "smoke-container:/etc/yum.repos.d/openEuler.repo"
+        assert calls[2][:6] == ["docker", "exec", "-i", "-u", "0", "smoke-container"]
 
 
 def test_container_account_files_preserve_image_users(setup, monkeypatch, tmp_path):
-    import shutil
 
     module = load("create")
     etc = tmp_path / "etc"
@@ -199,16 +214,15 @@ def test_container_account_files_preserve_image_users(setup, monkeypatch, tmp_pa
     (etc / "passwd").write_text("root:x:0:0:root:/root:/bin/bash\n")
     (etc / "group").write_text("root:x:0:\n")
 
-    def docker_copy(command, **kwargs):
-        assert command[:2] == ["docker", "cp"]
-        source, destination = command[2:]
-        if ":/etc/" in source:
-            shutil.copyfile(etc / source.rsplit("/", 1)[-1], destination)
-        else:
-            shutil.copyfile(source, etc / destination.rsplit("/", 1)[-1])
+    def docker_exec(command, **kwargs):
+        assert command[:2] == ["docker", "exec"]
+        path = etc / command[-1].rsplit("/", 1)[-1]
+        if "cat" in command:
+            return subprocess.CompletedProcess(command, 0, stdout=path.read_text())
+        path.write_text(kwargs["input"])
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(module.subprocess, "run", docker_copy)
+    monkeypatch.setattr(module.subprocess, "run", docker_exec)
     module.initialize_user("smoke", "jiangyinzuo", 9011, 9012, "/data3/jiangyinzuo")
     expected = "root:x:0:0:root:/root:/bin/bash\njiangyinzuo:!:9011:9012::/data3/jiangyinzuo:/bin/bash\n"
     assert (etc / "passwd").read_text() == expected

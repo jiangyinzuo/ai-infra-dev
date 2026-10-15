@@ -1,6 +1,5 @@
 # Docker容器开发环境
 
-
 用于向远程服务器的宿主机同步
 - vimrc和ai-infra-dev仓库
 - Neovim插件
@@ -69,6 +68,19 @@ WSL运行：
 ./devtools/openeuler24.03-lts-aarch64/extract.sh --host suzhou-a3-130
 ```
 
+## pip 安装
+
+```bash
+# 容器内执行
+pip install pylint pyrefly
+# 宿主机让容器执行
+docker exec jiangyinzuo-dev1 pip install pylint pyrefly
+# WSL让宿主机执行
+ssh2 suzhou-a3-130 pip install pylint pyrefly
+# WSL让容器执行
+ssh2 suzhou-a3-130 docker exec jiangyinzuo-dev1 pip install pylint pyrefly
+```
+
 ## 构建nvim插件
 
 经过上面两步后，服务器环境上同时有了nvim和插件。
@@ -98,7 +110,22 @@ docker load -i ~/devtools/containers/vllm-ascend_dev-26.2.0.day20261012-800I-A3-
 python3 ~/devtools/containers/create.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
 ```
 
-创建后配置与宿主机用户名、UID/GID 和 home 一致的账号，再启动并校验用户名；不修改挂载目录所有权。普通提示为绿色，镜像选择和 Docker 命令保持默认颜色。
+HOME 仍共享；每个新容器的 `~/.local/bin`、`~/.local/lib` 使用独立空 volume，避免 Python 工具和依赖互相覆盖。容器内需重新安装工具；删除容器时用 `docker rm -v` 一并清理这些 volume，已有容器不受影响。
+
+```bash
+# 进入容器
+docker exec -it jiangyinzuo-dev1 bash
+# 停止并删除容器，同时清理独立 volume
+docker stop jiangyinzuo-dev1
+docker rm -v jiangyinzuo-dev1
+# 忘记 -v 时，查看遗留 volume 并按需清理（会询问确认）
+docker volume ls --filter dangling=true
+docker volume prune
+```
+
+`prune` 会清理未被任何容器引用的匿名 volume，不限于本工具创建的 volume；确认数据不再需要后再执行。
+
+创建并启动后配置与宿主机用户名、UID/GID 和 home 一致的账号，初始化独立目录权限并校验用户名；不修改共享 HOME 所有权。普通提示为绿色，进入和删除提示为黄色，镜像列表和 Docker 命令保持默认颜色。
 执行前向标准输出打印实际 Docker 命令；透传密钥仅显示变量名，不显示值。
 
 创建时继承已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`、`USG_IP` 及大小写 HTTP/HTTPS/ALL 代理变量。Docker 环境可被有 Docker 权限的用户通过 inspect 查看，勿分享该输出。
