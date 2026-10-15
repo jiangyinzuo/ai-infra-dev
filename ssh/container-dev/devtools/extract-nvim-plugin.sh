@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: extract-nvim-plugin.sh [--jobs N] [--host USER@HOST]
+# Usage: extract-nvim-plugin.sh [--jobs N] [--host HOST]; user: jiangyinzuo.
 # On WSL, require an SSH target and run the already-synced ~/devtools script.
 # Run up to N tar processes concurrently (default: 8).
 # Read sibling nvim-plugins/*.tar.gz, stripping the GitHub archive's root directory.
@@ -18,12 +18,12 @@ while (($#)); do
             shift 2
             ;;
         --host)
-            (($# >= 2)) || { echo 'error: --host requires USER@HOST' >&2; exit 2; }
+            (($# >= 2)) || { echo 'error: --host requires HOST' >&2; exit 2; }
             remote_target=$2
             shift 2
             ;;
         -h|--help)
-            echo 'Usage: extract-nvim-plugin.sh [--jobs N] [--host USER@HOST] (default jobs: 8)'
+            echo 'Usage: extract-nvim-plugin.sh [--jobs N] [--host HOST] (user: jiangyinzuo; default jobs: 8)'
             exit 0
             ;;
         *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
@@ -31,8 +31,12 @@ while (($#)); do
 done
 [[ $jobs =~ ^[1-9][0-9]*$ ]] || { echo 'error: --jobs requires a positive integer' >&2; exit 2; }
 
-source "$script_dir/remote-exec.sh"
-remote_extract_if_wsl "$remote_target" extract-nvim-plugin.sh --jobs "$jobs"
+if [[ $(uname -r) == *[Mm]icrosoft* ]]; then
+    remote_args=()
+    [[ -z $remote_target ]] || remote_args=(--host "$remote_target")
+    exec python3 "$script_dir/remote_exec.py" "${remote_args[@]}" extract-nvim-plugin.sh --jobs "$jobs"
+fi
+[[ -z $remote_target ]] || { echo 'error: --host is only supported on WSL' >&2; exit 2; }
 command -v tar >/dev/null || { echo 'error: tar is required' >&2; exit 1; }
 shopt -s nullglob
 archives=("$script_dir"/nvim-plugins/*.tar.gz)

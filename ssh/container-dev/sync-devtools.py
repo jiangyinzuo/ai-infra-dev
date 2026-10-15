@@ -12,13 +12,8 @@ import sys
 ROOT = Path(__file__).resolve().parent
 SSH_DIR = ROOT.parent
 DEVTOOLS = ROOT / "devtools"
-REMOTE_USER = "jiangyinzuo"
-REMOTE_DIR = "~/devtools"
-
-PLATFORMS = {
-    ("openeuler", "aarch64"): "openeuler24.03-lts-aarch64",
-    ("openeuler", "arm64"): "openeuler24.03-lts-aarch64",
-}
+sys.path.insert(0, str(DEVTOOLS))
+from config import REMOTE_USER, REMOTE_DIR, TOOL_PLATFORMS
 
 
 def parse_args():
@@ -51,7 +46,7 @@ def build_plan(hosts):
         os_name = row["OS"].strip().lower().split(maxsplit=1)
         key = (os_name[0] if os_name else "", row["Arch"].strip().lower())
         try:
-            source = DEVTOOLS / PLATFORMS[key]
+            source = DEVTOOLS / TOOL_PLATFORMS[key]
         except KeyError:
             raise ValueError(
                 f"{host}: unsupported OS/Arch: {row['OS']} / {row['Arch']}"
@@ -92,6 +87,8 @@ def synchronize(plans, args):
             command.append("--dry-run")
         # 镜像目录只同步目录和脚本，不传输归档。
         command += [
+            "--exclude=__pycache__/",
+            "--exclude=*.pyc",
             "--include=/containers/**/",
             "--include=/containers/**.sh",
             "--include=/containers/**.py",

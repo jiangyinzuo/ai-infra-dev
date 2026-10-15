@@ -6,10 +6,9 @@ from pathlib import Path
 import shlex
 import sys
 
-from ssh_routes import SSH_ROUTES
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "container-dev/devtools"))
-from forwarded_env import ENV_KEYS, PROXY_ENV_KEYS
+from config import ENV_KEYS, PROXY_ENV_KEYS, SSH_ROUTES
 
 VALUE_OPTIONS = set("BbcDEeFIiJLlmOopQRSWw")
 

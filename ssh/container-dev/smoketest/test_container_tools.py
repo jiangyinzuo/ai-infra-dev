@@ -84,7 +84,7 @@ def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
         calls.append(command)
         return subprocess.CompletedProcess(command, 7)
 
-    monkeypatch.setattr(common.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     assert (
         common.dispatch(args("suzhou-one"), "download.py", ["--date", "20261012"]) == 7
     )
@@ -141,12 +141,17 @@ def test_create_copies_repo_only_for_openeuler(
 ):
     module = load("create")
     monkeypatch.setattr(module.platform, "release", lambda: "Linux")
+    monkeypatch.setattr(module, "initialize_user", lambda *args: None)
     import json
 
     monkeypatch.setattr(
         module,
         "docker_output",
-        lambda *args: json.dumps([{"Id": "sha256:resolved", "RepoTags": tags}]),
+        lambda *args: (
+            json.dumps([{"Id": "sha256:resolved", "RepoTags": tags}])
+            if args[0] == "image"
+            else module.pwd.getpwuid(module.os.getuid()).pw_name
+        ),
     )
     options = args("localhost", "a3")
     options.image = image
@@ -179,6 +184,37 @@ def test_create_copies_repo_only_for_openeuler(
     ]
     assert set(inherited).issubset(environment)
     assert not any("smoke-value-" in value for value in calls[0])
-    assert (len(calls) == 2) == copy_repo
+    assert calls[-1] == ["docker", "start", "smoke-container"]
+    assert len(calls) == (3 if copy_repo else 2)
     if copy_repo:
         assert calls[1][-1] == "smoke-container:/etc/yum.repos.d/openEuler.repo"
+
+
+def test_container_account_files_preserve_image_users(setup, monkeypatch, tmp_path):
+    import shutil
+
+    module = load("create")
+    etc = tmp_path / "etc"
+    etc.mkdir()
+    (etc / "passwd").write_text("root:x:0:0:root:/root:/bin/bash\n")
+    (etc / "group").write_text("root:x:0:\n")
+
+    def docker_copy(command, **kwargs):
+        assert command[:2] == ["docker", "cp"]
+        source, destination = command[2:]
+        if ":/etc/" in source:
+            shutil.copyfile(etc / source.rsplit("/", 1)[-1], destination)
+        else:
+            shutil.copyfile(source, etc / destination.rsplit("/", 1)[-1])
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(module.subprocess, "run", docker_copy)
+    module.initialize_user("smoke", "jiangyinzuo", 9011, 9012, "/data3/jiangyinzuo")
+    expected = "root:x:0:0:root:/root:/bin/bash\njiangyinzuo:!:9011:9012::/data3/jiangyinzuo:/bin/bash\n"
+    assert (etc / "passwd").read_text() == expected
+    assert "jiangyinzuo:x:9012:" in (etc / "group").read_text()
+    module.initialize_user("smoke", "jiangyinzuo", 9011, 9012, "/data3/jiangyinzuo")
+    assert (etc / "passwd").read_text() == expected
+    with pytest.raises(ValueError, match="已属于"):
+        module.initialize_user("smoke", "other", 9011, 9012, "/data3/other")
+    assert (etc / "passwd").read_text() == expected

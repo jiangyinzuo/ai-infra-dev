@@ -23,18 +23,18 @@
 ```bash
 # WSL：先同步 devtools，必须显式指定 --host
 ./sync-devtools.py --apply suzhou-a3-130
-./devtools/update-dev-git-repo.sh --host suzhou-a3-130
+./devtools/update-dev-git-repo.py --host suzhou-a3-130
 
 # 服务器：直接执行，不指定 --host
-bash ~/devtools/update-dev-git-repo.sh
+python3 ~/devtools/update-dev-git-repo.py
 ```
 
 连接失败时加 `--debug`
 ```bash
 # 服务器
-bash ~/devtools/update-dev-git-repo.sh --debug
+python3 ~/devtools/update-dev-git-repo.py --debug
 # WSL（先同步更新后的脚本）
-./devtools/update-dev-git-repo.sh --host suzhou-a3-130 --debug
+./devtools/update-dev-git-repo.py --host suzhou-a3-130 --debug
 ```
 
 本地 smoke 测试（临时 Git 仓库，不访问 GitHub、不修改用户目录）：
@@ -90,7 +90,7 @@ ssh2 suzhou-a3-130 docker images vllm-ascend
 ./devtools/containers/download.py --host localhost --npu-platform a3 --date 20261012 --version 26.2.0
 # 下载到 SSH Host 对应服务器，平台由 CSV 选择
 ./devtools/containers/download.py --host suzhou-a3-130
-# 远程创建，默认交互选择镜像与容器名（不会启动容器）
+# 远程创建并启动，默认交互选择镜像与容器名
 ./devtools/containers/create.py --host suzhou-a3-130
 # 服务器直接执行
 python3 ~/devtools/containers/download.py
@@ -98,7 +98,10 @@ docker load -i ~/devtools/containers/vllm-ascend_dev-26.2.0.day20261012-800I-A3-
 python3 ~/devtools/containers/create.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
 ```
 
+创建后配置与宿主机用户名、UID/GID 和 home 一致的账号，再启动并校验用户名；不修改挂载目录所有权。普通提示为绿色，镜像选择和 Docker 命令保持默认颜色。
+执行前向标准输出打印实际 Docker 命令；透传密钥仅显示变量名，不显示值。
+
 创建时继承已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`、`USG_IP` 及大小写 HTTP/HTTPS/ALL 代理变量。Docker 环境可被有 Docker 权限的用户通过 inspect 查看，勿分享该输出。
-透传变量名单统一维护在 `devtools/forwarded_env.py`，SSH 与 Docker 共用；该文件随 devtools 同步。
+共享配置统一维护在 `devtools/config.py`，随 devtools 同步；仅包含配置和变量名，不包含密钥值。
 
 服务器本地通过 `sudo -n npu-smi info -t board -i 0` 的 PCI Device ID 探测平台，需免密 sudo；与 machine-info 共用 `devtools/machine_probe.py`。`0xD803` 为 A3，`0xD802` 为 A2；当前容器工具仅支持 A3，可用 `--npu-platform a3` 手动指定。WSL 本地下载仍需指定平台，禁止本机创建容器。

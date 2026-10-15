@@ -19,7 +19,6 @@ def workspace(tmp_path):
     shutil.copy2(
         DEVTOOLS / "openeuler24.03-lts-aarch64/extract.sh", tools / "extract.sh"
     )
-    shutil.copy2(DEVTOOLS / "remote-exec.sh", tools.parent / "remote-exec.sh")
     binaries = tmp_path / "bin"
     binaries.mkdir()
     uname = binaries / "uname"

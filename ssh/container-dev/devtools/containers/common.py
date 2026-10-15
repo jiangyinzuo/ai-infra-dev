@@ -1,23 +1,24 @@
 """容器平台选择与远程调度。"""
 
 import csv
-import os
 from pathlib import Path
 import platform
 import re
-import shlex
-import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent
 
-PLATFORMS = {"a3": "800I-A3-py311-openEuler24.03-lts-aarch64"}
+sys.path.insert(0, str(ROOT.parent))
+from config import NPU_PLATFORMS
+from remote_exec import run_remote
 
 
 def add_target_args(parser):
     parser.add_argument("--host", help="SSH Host 别名或 localhost；WSL 必填")
     parser.add_argument(
-        "--npu-platform", choices=PLATFORMS, help="覆盖本地 NPU 探测；WSL 本地下载必填"
+        "--npu-platform",
+        choices=NPU_PLATFORMS,
+        help="覆盖本地 NPU 探测；WSL 本地下载必填",
     )
 
 
@@ -26,7 +27,7 @@ def detect_local_platform():
     from machine_probe import npu_platform
 
     result = npu_platform()
-    if result["platform"] not in PLATFORMS:
+    if result["platform"] not in NPU_PLATFORMS:
         detail = "; ".join(result["errors"] or result["models"]) or result["status"]
         raise ValueError(f"无法识别本地 NPU 平台：{detail}；请指定 --npu-platform a3")
     return result["platform"]
@@ -53,13 +54,10 @@ def dispatch(args, script, options):
     if row is None:
         raise ValueError(f"{path}: 没有主机 {args.host}")
     npu = row.get("NPUPlatform", "").lower()
-    if npu not in PLATFORMS:
+    if npu not in NPU_PLATFORMS:
         raise ValueError(f"{args.host}: 不支持或未探测到 NPU 平台 {npu!r}")
     if args.npu_platform and args.npu_platform != npu:
         raise ValueError("指定平台与机器 CSV 不一致")
-    ssh = [str(ssh_dir / "ssh2")]
-    command = 'python3 "$HOME"/devtools/containers/' + shlex.quote(script)
-    command += " " + shlex.join(["--npu-platform", npu, *options])
-    return subprocess.run(
-        [*ssh, "jiangyinzuo@" + args.host, command], check=False
-    ).returncode
+    return run_remote(
+        args.host, "containers/" + script, ["--npu-platform", npu, *options]
+    )

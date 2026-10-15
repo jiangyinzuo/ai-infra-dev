@@ -2,7 +2,6 @@
 """从 SSH config 生成 Ansible JSON 主机清单（依赖 sshconf）。"""
 
 import argparse
-from dataclasses import dataclass
 import fnmatch
 import json
 from pathlib import Path
@@ -10,33 +9,14 @@ import shlex
 import os
 import re
 import subprocess
+import sys
 from functools import lru_cache
 
 REPO = Path(__file__).resolve().parent.parent
-DEFAULT_PROFILES = Path(__file__).resolve().parent / "hosts.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent / "container-dev/devtools"))
+from config import HOST_GROUPS, SSH_SOURCES
 
 from ssh_config import host_passwords
-
-
-@dataclass(frozen=True)
-class SSHSource:
-    config: str
-    ssh_config: str
-    public_key: str
-    password_method: str
-
-
-SSH_SOURCES = {
-    "windows": SSHSource(
-        "${WINDOWS_SSH_CONFIG}",
-        "${WINDOWS_SSH_CONFIG_NATIVE}",
-        "${WINDOWS_SSH_HOME}/id_ed25519.pub",
-        "windows-askpass",
-    ),
-    "wsl": SSHSource(
-        "~/.ssh/config", "~/.ssh/config", "${WSL_SSH_HOME}/id_ed25519.pub", "sshpass"
-    ),
-}
 
 
 def inventory_group(hosts: dict, ssh: str, ssh_config: str) -> dict:
@@ -97,10 +77,9 @@ def windows_paths():
 
 
 def load_targets(args):
-    profiles = json.loads(DEFAULT_PROFILES.read_text())["groups"]
     selected = {
         name: source
-        for name, source in profiles.items()
+        for name, source in HOST_GROUPS.items()
         if not args.group or name in args.group
     }
     missing = set(args.group or []) - selected.keys()

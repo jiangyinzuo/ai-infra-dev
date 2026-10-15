@@ -17,6 +17,7 @@ def workspace(tmp_path):
     tools = container / "devtools"
     tools.mkdir(parents=True)
     shutil.copy2(ROOT / "sync-devtools.py", container / "sync-devtools.py")
+    shutil.copy2(ROOT / "devtools/config.py", tools / "config.py")
     (tools / "openeuler24.03-lts-aarch64").mkdir()
     (tools / "proxy.env").touch()
     binaries = tmp_path / "bin"

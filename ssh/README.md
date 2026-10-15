@@ -51,7 +51,7 @@ Host lianqiuhu-950dt-xx
 
 ### ssh2
 
-Python 3.9+ 入口，按 Host 前缀选择客户端，路由维护在 `ssh_routes.py`：
+Python 3.9+ 入口，按 Host 前缀选择客户端，配置维护在 `container-dev/devtools/config.py`：
 - `suzhou*`：Windows SSH，绑定 `$USG0_IP`。
 - `lianqiuhu*`：Windows SSH，绑定 `$USG1_IP`。
 - `xiaoqiaoling*`：WSL `/usr/bin/ssh`，不绑定网卡。
@@ -72,9 +72,9 @@ Bash completion:
 source ./completion.bash
 ```
 
-### `hosts.json` 和 `ssh_hosts.py`
+### 共享配置
 
-`hosts.json` 仅维护组名到 `windows`/`wsl` 的映射，按组名加 `*` 匹配主机。`ssh_hosts.py` 的 `SSH_SOURCES` dataclass 常量定义配置路径、公钥和密钥安装方式；所有组通过 `ssh2` 连接。
+`container-dev/devtools/config.py` 统一维护主机分组、Windows/WSL SSH 路由、配置路径、公钥、远端用户、平台和环境变量名单。组名加 `*` 匹配主机；所有组通过 `ssh2` 连接。
 
 ## machine-info: 查看机器基本情况
 

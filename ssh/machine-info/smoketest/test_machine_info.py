@@ -123,11 +123,9 @@ def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(
     config.write_text(
         "Host lab-b lab-a\n User root\n# Host lab-disabled\nHost lab-*\n User root\nHost elsewhere\n User root\n"
     )
-    profiles = tmp_path / "profiles.json"
-    profiles.write_text(json.dumps({"groups": {"lab": "wsl", "lianqiuhu": "wsl"}}))
     import ssh_hosts
 
-    monkeypatch.setattr(ssh_hosts, "DEFAULT_PROFILES", profiles)
+    monkeypatch.setattr(ssh_hosts, "HOST_GROUPS", {"lab": "wsl", "lianqiuhu": "wsl"})
     args = argparse.Namespace(group=["lab"], host_glob=["*-a"])
     assert [target["host"] for target in CLI.load_targets(args)] == ["lab-a"]
     args.group = None
@@ -144,12 +142,10 @@ def test_inventory_filters_concrete_hosts_and_rejects_empty_selection(
 def test_npu_inventory_cli_preserves_each_profile_connection(tmp_path, monkeypatch):
     config = tmp_path / "ssh-config"
     config.write_text("Host local-one remote-two\n User root\n")
-    profiles = tmp_path / "hosts.json"
-    profiles.write_text(json.dumps({"groups": {"local": "wsl", "remote": "windows"}}))
     import ssh_hosts
     from dataclasses import replace
 
-    monkeypatch.setattr(ssh_hosts, "DEFAULT_PROFILES", profiles)
+    monkeypatch.setattr(ssh_hosts, "HOST_GROUPS", {"local": "wsl", "remote": "windows"})
 
     monkeypatch.setitem(
         ssh_hosts.SSH_SOURCES,

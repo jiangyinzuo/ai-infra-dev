@@ -37,7 +37,14 @@ _ssh_usg_complete() {
     done
     return 0
 }
-_ssh2_complete() { _ssh_usg_complete "$HOME/.ssh/config"; }
+_ssh2_complete() {
+    _ssh_usg_complete "$HOME/.ssh/config"
+    local current=${COMP_WORDS[COMP_CWORD]}
+    if [[ $current != *@* && jiangyinzuo@ == "$current"* ]]; then
+        COMPREPLY+=(jiangyinzuo@)
+        compopt -o nospace 2>/dev/null || true
+    fi
+}
 complete -F _ssh2_complete ssh2
 
 _sync_devtools_complete() {
@@ -85,7 +92,7 @@ _update_dev_git_repo_complete() {
         *) _complete_values -h --help --host --debug ;;
     esac
 }
-complete -F _update_dev_git_repo_complete update-dev-git-repo.sh
+complete -F _update_dev_git_repo_complete update-dev-git-repo.py
 
 _ssh_completion_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -100,7 +107,7 @@ _complete_values() {
 
 _profile_cli_complete() {
     local current=${COMP_WORDS[COMP_CWORD]} previous=${COMP_WORDS[COMP_CWORD-1]}
-    local profiles="$_ssh_completion_dir/hosts.json" group command=${COMP_WORDS[0]}
+    local group command=${COMP_WORDS[0]}
     local -a options=(-h --help --group --host-glob)
     # ./cli.py 按当前目录区分；带路径调用按入口目录区分。
     case $command in
@@ -118,7 +125,7 @@ _profile_cli_complete() {
         --group)
             while IFS= read -r group; do
                 [[ $group != "$current"* ]] || COMPREPLY+=("$group")
-            done < <(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["groups"]))' "$profiles" 2>/dev/null)
+            done < <(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from config import HOST_GROUPS; print("\n".join(HOST_GROUPS))' "$_ssh_completion_dir/container-dev/devtools" 2>/dev/null)
             ;;
         --host-glob|--limit|-l) _ssh_usg_complete "$HOME/.ssh/config" ;;
         -i|--inventory)

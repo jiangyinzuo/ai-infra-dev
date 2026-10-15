@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: extract.sh [--host USER@HOST]; WSL requires a remote extraction target.
+# Usage: extract.sh [--host HOST]; WSL remote user: jiangyinzuo.
 # Extract tar archives and single-file gzip archives beside this script only.
 # Do not recurse; container images live separately under ../containers/.
 # Keep the archives; existing extracted files may be overwritten.
@@ -10,19 +10,23 @@ remote_target=
 while (($#)); do
     case $1 in
         --host)
-            (($# >= 2)) || { echo 'error: --host requires USER@HOST' >&2; exit 2; }
+            (($# >= 2)) || { echo 'error: --host requires HOST' >&2; exit 2; }
             remote_target=$2
             shift 2
             ;;
         -h|--help)
-            echo 'Usage: extract.sh [--host USER@HOST]'
+            echo 'Usage: extract.sh [--host HOST] (user: jiangyinzuo)'
             exit 0
             ;;
         *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
-source "$script_dir/../remote-exec.sh"
-remote_extract_if_wsl "$remote_target" "${script_dir##*/}/extract.sh"
+if [[ $(uname -r) == *[Mm]icrosoft* ]]; then
+    remote_args=()
+    [[ -z $remote_target ]] || remote_args=(--host "$remote_target")
+    exec python3 "$script_dir/../remote_exec.py" "${remote_args[@]}" "${script_dir##*/}/extract.sh"
+fi
+[[ -z $remote_target ]] || { echo 'error: --host is only supported on WSL' >&2; exit 2; }
 cd -- "$script_dir"
 
 command -v tar >/dev/null || { echo "error: tar is required" >&2; exit 1; }

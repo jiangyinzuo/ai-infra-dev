@@ -9,11 +9,11 @@ import subprocess
 import sys
 import tempfile
 
-from common import ROOT, PLATFORMS, add_target_args, dispatch
+from common import ROOT, NPU_PLATFORMS, add_target_args, dispatch
 
 
 def download(args):
-    tag = f"dev-{args.version}.day{args.date}-{PLATFORMS[args.npu_platform]}"
+    tag = f"dev-{args.version}.day{args.date}-{NPU_PLATFORMS[args.npu_platform]}"
     image = f"vllm-ascend:{tag}"
     directory = ROOT
     directory.mkdir(exist_ok=True)
