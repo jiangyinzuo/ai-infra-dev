@@ -2,5 +2,5 @@
 omp*
 *.gz
 # 容器归档及下载中的临时文件
-/devtools/images/*.tar
-/devtools/images/*.tmp.*
+/devtools/containers/*.tar
+/devtools/containers/*.tmp.*

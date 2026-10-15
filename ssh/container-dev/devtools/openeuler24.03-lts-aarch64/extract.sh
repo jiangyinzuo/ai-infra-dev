@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Usage: extract.sh [--host USER@HOST]; WSL requires a remote extraction target.
 # Extract tar archives and single-file gzip archives beside this script only.
-# Do not recurse; container images live separately under ../images/.
+# Do not recurse; container images live separately under ../containers/.
 # Keep the archives; existing extracted files may be overwritten.
 script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 remote_target=

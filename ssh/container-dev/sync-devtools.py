@@ -12,6 +12,8 @@ import sys
 ROOT = Path(__file__).resolve().parent
 SSH_DIR = ROOT.parent
 DEVTOOLS = ROOT / "devtools"
+REMOTE_USER = "jiangyinzuo"
+REMOTE_DIR = "~/devtools"
 
 PLATFORMS = {
     ("openeuler", "aarch64"): "openeuler24.03-lts-aarch64",
@@ -20,10 +22,10 @@ PLATFORMS = {
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=f"{__doc__} 固定同步到 {REMOTE_USER}@HOST:{REMOTE_DIR}/。"
+    )
     parser.add_argument("hosts", nargs="+", metavar="HOST")
-    parser.add_argument("-u", "--user", default="jiangyinzuo", help="远端用户")
-    parser.add_argument("-d", "--remote-dir", default="~/devtools", help="远端目录")
     parser.add_argument(
         "--apply", dest="apply", action="store_true", help="执行同步并创建远端目录"
     )
@@ -77,32 +79,32 @@ def synchronize(plans, args):
         *sorted(DEVTOOLS.glob("*.py")),
         *sorted(DEVTOOLS.glob("*.sh")),
         DEVTOOLS / "proxy.env",
-        DEVTOOLS / "images",
+        DEVTOOLS / "containers",
     ]
     for host, source, ssh in plans:
         command = ["rsync", "-av", "--info=progress2", "-e", shlex.quote(ssh)]
         if args.apply:
             command += [
                 "--rsync-path",
-                f"mkdir -p -- {remote_path(args.remote_dir)} && exec rsync",
+                f"mkdir -p -- {remote_path(REMOTE_DIR)} && exec rsync",
             ]
         else:
             command.append("--dry-run")
         # 镜像目录只同步目录和脚本，不传输归档。
         command += [
-            "--include=/images/**/",
-            "--include=/images/**.sh",
-            "--include=/images/**.py",
-            "--exclude=/images/**",
+            "--include=/containers/**/",
+            "--include=/containers/**.sh",
+            "--include=/containers/**.py",
+            "--exclude=/containers/**",
         ]
         command += [
             str(source),
             *(str(path) for path in common),
-            f"{args.user}@{host}:{args.remote_dir}/",
+            f"{REMOTE_USER}@{host}:{REMOTE_DIR}/",
         ]
         mode = "sync" if args.apply else "dry-run"
         print(
-            f"\033[32m{mode} {source} + common -> {args.user}@{host}:{args.remote_dir}\033[0m",
+            f"\033[32m{mode} {source} + common -> {REMOTE_USER}@{host}:{REMOTE_DIR}\033[0m",
             flush=True,
         )
         result = subprocess.run(command, check=False)

@@ -2,22 +2,15 @@
 """按 Host 前缀选用 Windows/WSL SSH，并透传远端环境。"""
 
 import os
+from pathlib import Path
 import shlex
 import sys
 
 from ssh_routes import SSH_ROUTES
 
-ENV_KEYS = (
-    "USG_IP",
-    "http_proxy",
-    "https_proxy",
-    "all_proxy",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "ALL_PROXY",
-    "SUDOCODE_API_KEY",
-    "OPENAI_API_KEY",
-)
+sys.path.insert(0, str(Path(__file__).resolve().parent / "container-dev/devtools"))
+from forwarded_env import ENV_KEYS, PROXY_ENV_KEYS
+
 VALUE_OPTIONS = set("BbcDEeFIiJLlmOopQRSWw")
 
 
@@ -69,7 +62,7 @@ def build_command(argv):
             raise ValueError(f"{bind_variable} is not set")
         client += ["-b", ip]
         environment["USG_IP"] = ip
-        for key in ENV_KEYS[1:7]:
+        for key in PROXY_ENV_KEYS:
             environment[key] = f"http://{ip}:3128"
     if passthrough:
         return [*client, *options, *target]

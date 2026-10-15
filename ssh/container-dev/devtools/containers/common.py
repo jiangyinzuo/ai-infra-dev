@@ -58,7 +58,7 @@ def dispatch(args, script, options):
     if args.npu_platform and args.npu_platform != npu:
         raise ValueError("指定平台与机器 CSV 不一致")
     ssh = [str(ssh_dir / "ssh2")]
-    command = 'python3 "$HOME"/devtools/images/' + shlex.quote(script)
+    command = 'python3 "$HOME"/devtools/containers/' + shlex.quote(script)
     command += " " + shlex.join(["--npu-platform", npu, *options])
     return subprocess.run(
         [*ssh, "jiangyinzuo@" + args.host, command], check=False

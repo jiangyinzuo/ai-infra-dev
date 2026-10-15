@@ -1,8 +1,5 @@
 # Docker容器开发环境
 
-NOTE: 同步前需要在 `ssh/` 运行 `./machine-info/machine-info.py` 生成 `machine-info/machines-output.csv`。
-
-按 Host 查找 OS/Arch，当前仅支持 openEuler + aarch64/arm64，自动选择 `openeuler24.03-lts-aarch64`。
 
 用于向远程服务器的宿主机同步
 - vimrc和ai-infra-dev仓库
@@ -10,6 +7,12 @@ NOTE: 同步前需要在 `ssh/` 运行 `./machine-info/machine-info.py` 生成 `
 - 命令行工具
 - Docker镜像
 - vllm-ascend仓？pip install?
+
+同步目标固定为 `jiangyinzuo@HOST:~/devtools/`，默认仅预览，使用 `--apply` 执行。
+
+自动根据OS + Arch同步对应文件：
+- 同步前需要在 `ssh/` 运行 `./machine-info/machine-info.py` 生成 `machine-info/machines-output.csv`。
+- 当前仅支持 openEuler + aarch64/arm64，自动选择 `openeuler24.03-lts-aarch64`。
 
 ## 更新开发 Git 仓库
 
@@ -83,18 +86,19 @@ Python 脚本兼容 3.9 及以上版本，本地无需切换解释器。
 # 查看服务器已有镜像
 ssh2 suzhou-a3-130 docker images vllm-ascend
 
-# WSL 本地下载，必须指定平台；归档保存到 images/
-./devtools/images/download-container.py --host localhost --npu-platform a3 --date 20261012 --version 26.2.0
+# WSL 本地下载，必须指定平台；归档保存到 containers/
+./devtools/containers/download.py --host localhost --npu-platform a3 --date 20261012 --version 26.2.0
 # 下载到 SSH Host 对应服务器，平台由 CSV 选择
-./devtools/images/download-container.py --host suzhou-a3-130
+./devtools/containers/download.py --host suzhou-a3-130
 # 远程创建，默认交互选择镜像与容器名（不会启动容器）
-./devtools/images/create-container.py --host suzhou-a3-130
+./devtools/containers/create.py --host suzhou-a3-130
 # 服务器直接执行
-python3 ~/devtools/images/download-container.py
-docker load -i ~/devtools/images/vllm-ascend_dev-26.2.0.day20261012-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz
-python3 ~/devtools/images/create-container.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
+python3 ~/devtools/containers/download.py
+docker load -i ~/devtools/containers/vllm-ascend_dev-26.2.0.day20261012-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz
+python3 ~/devtools/containers/create.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
 ```
 
 创建时继承已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`、`USG_IP` 及大小写 HTTP/HTTPS/ALL 代理变量。Docker 环境可被有 Docker 权限的用户通过 inspect 查看，勿分享该输出。
+透传变量名单统一维护在 `devtools/forwarded_env.py`，SSH 与 Docker 共用；该文件随 devtools 同步。
 
 服务器本地通过 `sudo -n npu-smi info -t board -i 0` 的 PCI Device ID 探测平台，需免密 sudo；与 machine-info 共用 `devtools/machine_probe.py`。`0xD803` 为 A3，`0xD802` 为 A2；当前容器工具仅支持 A3，可用 `--npu-platform a3` 手动指定。WSL 本地下载仍需指定平台，禁止本机创建容器。

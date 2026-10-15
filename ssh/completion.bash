@@ -41,19 +41,16 @@ _ssh2_complete() { _ssh_usg_complete "$HOME/.ssh/config"; }
 complete -F _ssh2_complete ssh2
 
 _sync_devtools_complete() {
-    local current=${COMP_WORDS[COMP_CWORD]} previous=${COMP_WORDS[COMP_CWORD-1]}
+    local current=${COMP_WORDS[COMP_CWORD]}
     COMPREPLY=()
-    case $previous in
-        -u|--user|-d|--remote-dir) return 0 ;;
-    esac
     case $current in
         -*)
-            _complete_values -h --help -u --user -d --remote-dir --apply --dry-run
+            _complete_values -h --help --apply --dry-run
             ;;
         *)
             _ssh_usg_complete "$HOME/.ssh/config"
             if [[ -z $current ]]; then
-                COMPREPLY+=(-h --help -u --user -d --remote-dir --apply --dry-run)
+                COMPREPLY+=(-h --help --apply --dry-run)
             fi
             ;;
     esac
@@ -73,12 +70,12 @@ _container_complete() {
     esac
     local options='-h --help --host --npu-platform'
     case ${COMP_WORDS[0]} in
-        *download-container.py) options+=' --date --version' ;;
-        *create-container.py) options+=' --image --name' ;;
+        *download.py) options+=' --date --version' ;;
+        *create.py) options+=' --image --name' ;;
     esac
     _complete_values $options
 }
-complete -F _container_complete download-container.py create-container.py
+complete -F _container_complete download.py create.py
 
 _update_dev_git_repo_complete() {
     local current=${COMP_WORDS[COMP_CWORD]} previous=${COMP_WORDS[COMP_CWORD-1]}

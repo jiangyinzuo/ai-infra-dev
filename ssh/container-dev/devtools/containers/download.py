@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 
-from container_common import ROOT, PLATFORMS, add_target_args, dispatch
+from common import ROOT, PLATFORMS, add_target_args, dispatch
 
 
 def download(args):
@@ -56,7 +56,7 @@ def main():
     try:
         remote = dispatch(
             args,
-            "download-container.py",
+            "download.py",
             ["--date", args.date, "--version", args.version],
         )
         return download(args) if remote is None else remote

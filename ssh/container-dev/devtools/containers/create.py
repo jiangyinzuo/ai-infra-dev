@@ -12,7 +12,10 @@ import socket
 import subprocess
 import sys
 
-from container_common import add_target_args, dispatch
+from common import add_target_args, dispatch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from forwarded_env import ENV_KEYS
 
 
 def docker_output(*args):
@@ -107,17 +110,7 @@ def create(args):
     ]:
         command += ["-e", value]
     # 仅传变量名，避免密钥值出现在 Docker 命令行中。
-    for key in (
-        "SUDOCODE_API_KEY",
-        "OPENAI_API_KEY",
-        "USG_IP",
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-    ):
+    for key in ENV_KEYS:
         if key in os.environ:
             command += ["-e", key]
     volumes = [
@@ -163,7 +156,7 @@ def main():
             )
             if value:
                 options += ["--" + key, value]
-        remote = dispatch(args, "create-container.py", options)
+        remote = dispatch(args, "create.py", options)
         return create(args) if remote is None else remote
     except (OSError, ValueError, EOFError, subprocess.SubprocessError) as exc:
         print(f"error: {exc}", file=sys.stderr)

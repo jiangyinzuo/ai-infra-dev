@@ -6,13 +6,13 @@ import sys
 
 import pytest
 
-IMAGES = Path(__file__).resolve().parents[1] / "devtools/images"
-sys.path.insert(0, str(IMAGES))
-import container_common as common
+CONTAINERS = Path(__file__).resolve().parents[1] / "devtools/containers"
+sys.path.insert(0, str(CONTAINERS))
+import common
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location(name, IMAGES / f"{name}.py")
+    spec = importlib.util.spec_from_file_location(name, CONTAINERS / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -20,7 +20,7 @@ def load(name):
 
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
-    root = tmp_path / "ssh/container-dev/devtools/images"
+    root = tmp_path / "ssh/container-dev/devtools/containers"
     root.mkdir(parents=True)
     monkeypatch.setattr(common, "ROOT", root)
     monkeypatch.setattr(common.platform, "release", lambda: "Microsoft-WSL2")
@@ -35,10 +35,10 @@ def args(host=None, npu=None):
 
 def test_wsl_requires_explicit_target_and_local_platform(setup):
     with pytest.raises(ValueError, match="--host"):
-        common.dispatch(args(), "download-container.py", [])
+        common.dispatch(args(), "download.py", [])
     with pytest.raises(ValueError, match="--npu-platform"):
-        common.dispatch(args("localhost"), "download-container.py", [])
-    assert common.dispatch(args("localhost", "a3"), "download-container.py", []) is None
+        common.dispatch(args("localhost"), "download.py", [])
+    assert common.dispatch(args("localhost", "a3"), "download.py", []) is None
 
 
 def test_server_local_platform_uses_real_machine_probe(setup, monkeypatch, tmp_path):
@@ -47,13 +47,13 @@ def test_server_local_platform_uses_real_machine_probe(setup, monkeypatch, tmp_p
     import shutil
     import os
 
-    source = IMAGES.parent / "machine_probe.py"
+    source = CONTAINERS.parent / "machine_probe.py"
     shutil.copy2(source, probe_dir / "machine_probe.py")
     binary = tmp_path / "npu-smi"
     sudo = tmp_path / "sudo"
     sudo.write_text('#!/bin/sh\n[ "$1" = -n ] || exit 2\nshift\nexec "$@"\n')
     sudo.chmod(0o755)
-    fixture = IMAGES.parents[2] / "machine-info/smoketest/fixtures/npu-board-a3.txt"
+    fixture = CONTAINERS.parents[2] / "machine-info/smoketest/fixtures/npu-board-a3.txt"
     import shlex
 
     binary.write_text(
@@ -64,11 +64,11 @@ def test_server_local_platform_uses_real_machine_probe(setup, monkeypatch, tmp_p
     binary.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
     options = args()
-    assert common.dispatch(options, "download-container.py", []) is None
+    assert common.dispatch(options, "download.py", []) is None
     assert options.npu_platform == "a3"
     binary.write_text("#!/bin/sh\nprintf 'PCI Device ID : 0xD802\\n'\n")
     with pytest.raises(ValueError, match="无法识别本地"):
-        common.dispatch(args(), "download-container.py", [])
+        common.dispatch(args(), "download.py", [])
 
 
 def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
@@ -86,19 +86,16 @@ def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
 
     monkeypatch.setattr(common.subprocess, "run", run)
     assert (
-        common.dispatch(
-            args("suzhou-one"), "download-container.py", ["--date", "20261012"]
-        )
-        == 7
+        common.dispatch(args("suzhou-one"), "download.py", ["--date", "20261012"]) == 7
     )
     assert calls[0][0].endswith("ssh2")
     assert "--npu-platform a3" in calls[0][2]
     with pytest.raises(ValueError, match="没有主机"):
-        common.dispatch(args("missing"), "download-container.py", [])
+        common.dispatch(args("missing"), "download.py", [])
 
 
 def test_local_download_publishes_only_successful_archive(setup, monkeypatch):
-    module = load("download-container")
+    module = load("download")
     monkeypatch.setattr(module, "ROOT", setup)
     options = args("localhost", "a3")
     options.date = "20261013"
@@ -123,7 +120,7 @@ def test_local_download_publishes_only_successful_archive(setup, monkeypatch):
 
 
 def test_create_rejects_wsl_before_docker(setup):
-    module = load("create-container")
+    module = load("create")
     with pytest.raises(ValueError, match="禁止"):
         module.create(args("localhost", "a3"))
 
@@ -142,7 +139,7 @@ def test_create_rejects_wsl_before_docker(setup):
 def test_create_copies_repo_only_for_openeuler(
     setup, monkeypatch, image, tags, copy_repo
 ):
-    module = load("create-container")
+    module = load("create")
     monkeypatch.setattr(module.platform, "release", lambda: "Linux")
     import json
 
