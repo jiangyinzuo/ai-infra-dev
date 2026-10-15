@@ -142,6 +142,16 @@ def test_create_copies_repo_only_for_openeuler(
     module = load("create")
     monkeypatch.setattr(module.platform, "release", lambda: "Linux")
     monkeypatch.setattr(module, "initialize_user", lambda *args: None)
+    monkeypatch.setattr(module, "configure_sudo", lambda *args: None)
+    monkeypatch.setattr(
+        module,
+        "discover_devices",
+        lambda: [
+            {"path": "/dev/davinci0", "gid": 4321},
+            {"path": "/dev/davinci_manager", "gid": 7654},
+            {"path": "/dev/devmm_svm", "gid": 4321},
+        ],
+    )
     import json
 
     monkeypatch.setattr(
@@ -160,6 +170,7 @@ def test_create_copies_repo_only_for_openeuler(
     inherited = (
         "SUDOCODE_API_KEY",
         "OPENAI_API_KEY",
+        "SOC_VERSION",
         "USG_IP",
         "http_proxy",
         "https_proxy",
@@ -179,6 +190,11 @@ def test_create_copies_repo_only_for_openeuler(
     monkeypatch.setattr(module.subprocess, "run", run)
     assert module.create(options) == 0
     assert calls[0][:2] == ["docker", "create"]
+    assert [
+        calls[0][i + 1]
+        for i, value in enumerate(calls[0][:-1])
+        if value == "--group-add"
+    ] == ["0", "4321", "7654"]
     assert calls[0][-2] == "sha256:resolved"
     environment = [
         calls[0][i + 1] for i, value in enumerate(calls[0][:-1]) if value == "-e"
@@ -201,7 +217,7 @@ def test_create_copies_repo_only_for_openeuler(
         f"{module.os.getuid()}:{module.os.getgid()}",
         *paths,
     ]
-    assert len(calls) == (4 if copy_repo else 3)
+    assert len(calls) == (5 if copy_repo else 3)
     if copy_repo:
         assert calls[2][:6] == ["docker", "exec", "-i", "-u", "0", "smoke-container"]
 

@@ -16,6 +16,7 @@
 ## 更新开发 Git 仓库
 
 在服务器的 `~/ai-infra-dev`、`~/vimrc` 克隆 `jiangyinzuo` 的同名 GitHub 仓库；已有仓库执行 `git pull --ff-only`。
+先运行 createuser 配置用户的 GitHub SSH；仓库更新直接使用 `~/.ssh/config`，登录需提供 `USG_IP`。`--debug` 开启 Git/SSH 日志。
 
 `vimrc` 首次克隆成功后，在仓库目录执行 `./install/setup.sh`；已有仓库 pull 后不重复安装。安装失败时返回其退出码，仓库保留，需要手动重跑 setup。原 `init-vimrc.sh` 已删除，不再执行其中的 `openeuler-ascend.sh`。
 
@@ -68,19 +69,6 @@ WSL运行：
 ./devtools/openeuler24.03-lts-aarch64/extract.sh --host suzhou-a3-130
 ```
 
-## pip 安装
-
-```bash
-# 容器内执行
-pip install pylint pyrefly
-# 宿主机让容器执行
-docker exec jiangyinzuo-dev1 pip install pylint pyrefly
-# WSL让宿主机执行
-ssh2 suzhou-a3-130 pip install pylint pyrefly
-# WSL让容器执行
-ssh2 suzhou-a3-130 docker exec jiangyinzuo-dev1 pip install pylint pyrefly
-```
-
 ## 构建nvim插件
 
 经过上面两步后，服务器环境上同时有了nvim和插件。
@@ -126,9 +114,28 @@ docker volume prune
 `prune` 会清理未被任何容器引用的匿名 volume，不限于本工具创建的 volume；确认数据不再需要后再执行。
 
 创建并启动后配置与宿主机用户名、UID/GID 和 home 一致的账号，初始化独立目录权限并校验用户名；不修改共享 HOME 所有权。普通提示为绿色，进入和删除提示为黄色，镜像列表和 Docker 命令保持默认颜色。
+自动探测实际 NPU 字符设备和 GID，挂载设备并为容器用户添加对应附加组，同时添加 GID 0 以访问 CANN 的 root 组可读目录；主 UID/GID 不变，不修改宿主机设备权限。GID 0 也会授予共享挂载中 root 组允许的访问权限。仅对新建容器生效；设备权限之外的驱动限制仍可能需要单独处理。
+openEuler 容器自动安装 `sudo`、`nmap-ncat` 并配置当前用户免密 sudo，验证成功后才完成初始化。安装时禁用 debuginfo、source、update-source 仓库；需要网络，失败则停止。免密 sudo 授予容器内 root 权限，注意共享目录中的操作也会影响宿主机。
 执行前向标准输出打印实际 Docker 命令；透传密钥仅显示变量名，不显示值。
 
-创建时继承已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`、`USG_IP` 及大小写 HTTP/HTTPS/ALL 代理变量。Docker 环境可被有 Docker 权限的用户通过 inspect 查看，勿分享该输出。
+创建时继承已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`、`USG_IP` 及大小写 HTTP/HTTPS/ALL 代理变量；`SOC_VERSION` 仅由服务器宿主机传给容器，不从 WSL 经 SSH 透传。Docker 环境可被有 Docker 权限的用户通过 inspect 查看，勿分享该输出。
 共享配置统一维护在 `devtools/config.py`，随 devtools 同步；仅包含配置和变量名，不包含密钥值。
 
 服务器本地通过 `sudo -n npu-smi info -t board -i 0` 的 PCI Device ID 探测平台，需免密 sudo；与 machine-info 共用 `devtools/machine_probe.py`。`0xD803` 为 A3，`0xD802` 为 A2；当前容器工具仅支持 A3，可用 `--npu-platform a3` 手动指定。WSL 本地下载仍需指定平台，禁止本机创建容器。
+
+## 宿主机/容器内执行命令
+
+```bash
+# 容器内执行
+pip install pylint pyrefly
+cd  ~/ai-infra-dev/code/vllm-ascend-workspace/vllm-ascend
+git clone git@github.com:vllm-project/vllm-ascend.git --depth 1000
+VLLM_TARGET_DEVICE=empty COMPILE_CUSTOM_KERNELS=1 pip3 install -v -e . --no-deps --no-build-isolation
+# 宿主机让容器执行
+docker exec jiangyinzuo-dev1 pip install pylint pyrefly
+# WSL让宿主机执行
+ssh2 suzhou-a3-130 pip install pylint pyrefly
+# WSL让容器执行
+ssh2 suzhou-a3-130 docker exec jiangyinzuo-dev1 pip install pylint pyrefly
+```
+

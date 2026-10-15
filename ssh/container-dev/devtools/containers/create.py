@@ -18,7 +18,8 @@ import tempfile
 from common import add_target_args, dispatch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import ENV_KEYS
+from config import CONTAINER_ENV_KEYS
+from npu_devices import discover_devices
 
 
 def green(text):
@@ -121,6 +122,30 @@ def initialize_user(container, username: str, uid, gid, home):
             )
 
 
+def configure_sudo(container, username):
+    # 先确认规则目录已启用，再校验并安装免密规则。
+    script = r"""set -eu
+grep -Eq '^[[:space:]]*([#@]includedir)[[:space:]]+/etc/sudoers\.d/?([[:space:]]|$)' /etc/sudoers || {
+    echo 'error: /etc/sudoers 未加载 /etc/sudoers.d' >&2; exit 1;
+}
+mkdir -p /etc/sudoers.d
+temp=$(mktemp /etc/sudoers.d/devtools-XXXXXX)
+trap 'rm -f -- "$temp"' EXIT
+printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$1" > "$temp"
+/usr/sbin/visudo -cf "$temp"
+chmod 0440 "$temp"
+chown 0:0 "$temp"
+mv -f -- "$temp" /etc/sudoers.d/99-devtools
+/usr/sbin/visudo -c
+"""
+    run_docker(
+        ["docker", "exec", "-u", "0", container, "sh", "-c", script, "sh", username],
+        check=True,
+    )
+    if docker_output("exec", container, "sudo", "-n", "id", "-u").strip() != "0":
+        raise ValueError(f"容器 {container} 免密 sudo 校验失败")
+
+
 def create(args):
     if "microsoft" in platform.release().lower():
         raise ValueError("禁止在 WSL 本机创建容器，请指定远程 --host")
@@ -169,13 +194,14 @@ def create(args):
         "--shm-size=500g",
         "--privileged=true",
     ]
-    for device in [
-        *(f"/dev/davinci{i}" for i in range(16)),
-        "/dev/davinci_manager",
-        "/dev/devmm_svm",
-        "/dev/hisi_hdc",
-    ]:
-        command += ["--device", device]
+    devices = discover_devices()
+    if not devices:
+        raise ValueError("没有发现可挂载的昇腾 NPU 字符设备")
+    for device in devices:
+        command += ["--device", device["path"]]
+    # CANN 的 root:root / 0750 目录需要 GID 0，保留所有设备附加组。
+    for gid in sorted({0} | {device["gid"] for device in devices}):
+        command += ["--group-add", str(gid)]
     command += [
         "--hostname",
         socket.gethostname() + "-container",
@@ -193,7 +219,7 @@ def create(args):
     ]:
         command += ["-e", value]
     # 仅传变量名，避免密钥值出现在 Docker 命令行中。
-    for key in ENV_KEYS:
+    for key in CONTAINER_ENV_KEYS:
         if key in os.environ:
             command += ["-e", key]
     volumes = [
@@ -236,6 +262,23 @@ def create(args):
             text=True,
             check=True,
         )
+        run_docker(
+            [
+                "docker",
+                "exec",
+                "-u",
+                "0",
+                name,
+                "yum",
+                "--disablerepo=debuginfo,source,update-source",
+                "install",
+                "-y",
+                "sudo",
+                "nmap-ncat",
+            ],
+            check=True,
+        )
+        configure_sudo(name, username)
     # 新 volume 默认属于 root；只修改独立 volume 根目录，不递归 chown 共享 HOME。
     run_docker(
         [

@@ -40,7 +40,9 @@ PROXY_ENV_KEYS = (
     "HTTPS_PROXY",
     "ALL_PROXY",
 )
-ENV_KEYS = ("USG_IP", *PROXY_ENV_KEYS, "SUDOCODE_API_KEY", "OPENAI_API_KEY")
+HOST_ENV_KEYS = ("USG_IP", *PROXY_ENV_KEYS, "SUDOCODE_API_KEY", "OPENAI_API_KEY")
+# SoC 由服务器宿主机决定，不能从 WSL 经 SSH 覆盖。
+CONTAINER_ENV_KEYS = (*HOST_ENV_KEYS, "SOC_VERSION")
 TOOL_PLATFORMS = {
     ("openeuler", "aarch64"): "openeuler24.03-lts-aarch64",
     ("openeuler", "arm64"): "openeuler24.03-lts-aarch64",

@@ -18,7 +18,7 @@ loader.exec_module(MODULE)
 
 @pytest.fixture(autouse=True)
 def environment(monkeypatch):
-    for key in MODULE.ENV_KEYS:
+    for key in MODULE.HOST_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("USG0_IP", "192.0.2.10")
     monkeypatch.setenv("USG1_IP", "192.0.2.11")
@@ -43,7 +43,7 @@ def test_gateway_binding_and_all_proxy_values(host, ip):
         line.split("=", 1) for line in check.stdout.splitlines() if "=" in line
     )
     assert values["USG_IP"] == ip
-    for key in MODULE.ENV_KEYS[1:7]:
+    for key in MODULE.PROXY_ENV_KEYS:
         assert values[key] == f"http://{ip}:3128"
 
 
