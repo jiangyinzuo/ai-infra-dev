@@ -200,6 +200,7 @@ def create(args):
     for device in devices:
         command += ["--device", device["path"]]
     # CANN 的 root:root / 0750 目录需要 GID 0，保留所有设备附加组。
+    # 附加组不改变主 UID/GID，但 GID 0 同样作用于共享挂载的文件权限。
     for gid in sorted({0} | {device["gid"] for device in devices}):
         command += ["--group-add", str(gid)]
     command += [

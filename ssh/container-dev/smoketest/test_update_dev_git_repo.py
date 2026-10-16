@@ -57,7 +57,7 @@ def workspace(tmp_path):
     wrapper = binaries / "git"
     wrapper.write_text(
         "#!/usr/bin/env bash\nset -eu\n"
-        'printf "%s\\n" "$GIT_SSH_COMMAND" >> "$HOME/git-ssh-commands"\n'
+        'printf "%s\\n" "${GIT_SSH_COMMAND:-}" >> "$HOME/git-ssh-commands"\n'
         'printf "%s\\n" "${GIT_TRACE:-}" >> "$HOME/git-traces"\n'
         "if [[ $1 == clone ]]; then\n"
         "  repo=${2##*/}; repo=${repo%.git}\n"
@@ -162,45 +162,6 @@ def test_existing_non_repository_is_preserved(workspace):
     assert not (home / "vimrc").exists()
 
 
-@pytest.mark.parametrize(
-    "nc_help, expected",
-    [
-        ("Ncat 7.94", ["--proxy-type", "http", "--proxy", "192.0.2.1:3128"]),
-        ("OpenBSD netcat", ["-X", "connect", "-x", "192.0.2.1:3128"]),
-    ],
-)
-@pytest.mark.parametrize("debug", [False, True])
-def test_proxy_commands_and_debug(workspace, nc_help, expected, debug):
-    import shlex
-
-    home, _, env = workspace
-    env["NC_HELP"] = nc_help
-    env.pop("GIT_TRACE", None)
-    result = run_script(env, *(("--debug",) if debug else ()))
-    assert result.returncode == 0, result.stderr
-    commands = (home / "git-ssh-commands").read_text().splitlines()
-    assert len(commands) == 2
-    ssh = shlex.split(commands[0])
-    assert ssh[0] == "ssh"
-    for option in (
-        "StrictHostKeyChecking=accept-new",
-        "Hostname=ssh.github.com",
-        "HostKeyAlias=github.com",
-    ):
-        assert option in ssh
-    assert ssh[ssh.index("-p") + 1] == "443"
-    proxy = next(arg for arg in ssh if arg.startswith("ProxyCommand="))
-    nc = shlex.split(proxy.partition("=")[2])
-    assert nc == ["nc", *(["-v"] if debug else []), *expected, "%h", "%p"]
-    assert ("-vvv" in ssh) == debug
-    assert (home / "git-traces").read_text().splitlines() == (
-        ["1"] * 2 if debug else [""] * 2
-    )
-    assert "GIT_SSH_COMMAND=" in result.stdout
-    assert "./install/setup.sh" in result.stdout
-    assert "HTTP CONNECT proxy=192.0.2.1:3128" in result.stderr
-
-
 @pytest.mark.parametrize("target", ["user@host", "-host", "host;id", "host/path", ""])
 def test_rejects_non_alias_remote_target(workspace, target):
     home, _, env = workspace
@@ -224,13 +185,4 @@ def test_server_rejects_host(workspace):
     result = run_script(env, "--host", "test-host")
     assert result.returncode == 2
     assert "--host" in result.stderr
-    assert not (home / "ai-infra-dev").exists()
-
-
-def test_missing_proxy_is_reported(workspace):
-    home, _, env = workspace
-    env.pop("USG_IP", None)
-    result = run_script(env)
-    assert result.returncode == 1
-    assert "USG_IP" in result.stderr
     assert not (home / "ai-infra-dev").exists()

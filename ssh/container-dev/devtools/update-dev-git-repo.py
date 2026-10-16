@@ -23,50 +23,11 @@ def host_alias(value):
 
 
 def update_repositories(debug):
-    for command in ("git", "ssh", "nc"):
-        if shutil.which(command) is None:
-            requirement = "nc (Ncat or OpenBSD netcat)" if command == "nc" else command
-            raise RuntimeError(f"{requirement} is required")
-    proxy_ip = os.environ.get("USG_IP")
-    if not proxy_ip:
-        raise RuntimeError("未设置USG_IP环境变量，请检查 SSH wrapper")
-    proxy_address = f"{proxy_ip}:3128"
-    nc_help = subprocess.run(
-        ["nc", "--help"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-    ).stdout
-    nc_command = ["nc"]
+    if shutil.which("git") is None:
+        raise RuntimeError("git is required")
+    env = dict(os.environ)
     if debug:
-        nc_command.append("-v")
-    if "Ncat" in nc_help:
-        nc_command.extend(["--proxy-type", "http", "--proxy", proxy_address])
-    else:
-        nc_command.extend(["-X", "connect", "-x", proxy_address])
-    nc_command.extend(["%h", "%p"])
-    ssh_command = ["ssh"]
-    if debug:
-        ssh_command.append("-vvv")
-    ssh_command.extend(
-        [
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "Hostname=ssh.github.com",
-            "-p",
-            "443",
-            "-o",
-            "HostKeyAlias=github.com",
-            "-o",
-            "ProxyCommand=" + shlex.join(nc_command),
-        ]
-    )
-    git_ssh_command = shlex.join(ssh_command)
-    env = dict(os.environ, GIT_SSH_COMMAND=git_ssh_command)
-    if debug:
-        env["GIT_TRACE"] = "1"
-    print(
-        f"HTTP CONNECT proxy={proxy_address}; SSH endpoint=ssh.github.com:443",
-        file=sys.stderr,
-    )
+        env.update(GIT_TRACE="1", GIT_SSH_COMMAND="ssh -vvv")
     for repo in ("ai-infra-dev", "vimrc"):
         destination = Path.home() / repo
         cloning = not (destination.exists() or destination.is_symlink())
@@ -82,10 +43,7 @@ def update_repositories(debug):
             if not (git_dir.is_dir() or git_dir.is_file()):
                 raise RuntimeError(f"{destination} exists but is not a Git repository")
             command = ["git", "-C", str(destination), "pull", "--ff-only"]
-        print(
-            f"GIT_SSH_COMMAND={shlex.quote(git_ssh_command)} {shlex.join(command)}",
-            flush=True,
-        )
+        print(shlex.join(command), flush=True)
         subprocess.run(command, env=env, check=True)
         if repo == "vimrc" and cloning:
             print(
@@ -105,7 +63,7 @@ def main():
     )
     parser.add_argument("--host", type=host_alias, help="SSH Host alias")
     parser.add_argument(
-        "--debug", action="store_true", help="enable Git, SSH and nc tracing"
+        "--debug", action="store_true", help="enable Git and SSH tracing"
     )
     args = parser.parse_args()
     if is_wsl():

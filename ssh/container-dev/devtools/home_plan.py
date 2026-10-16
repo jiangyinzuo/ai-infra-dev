@@ -7,7 +7,7 @@ import pwd
 import subprocess
 import sys
 
-MIN_FREE = 10 * 1024**3
+HOME_MIN_FREE = 40 * 1024**3
 CANDIDATES = ("/home", "/data", "/data1", "/data2", "/data3")
 
 
@@ -22,8 +22,8 @@ def plan_home(name):
         raise ValueError("没有可用的 home 候选目录")
     destination = max(candidates, key=available)
     free = available(destination)
-    if free < MIN_FREE:
-        raise ValueError("所有 home 候选目录的可用空间均不足 10 GiB")
+    if free < HOME_MIN_FREE:
+        raise ValueError("所有 home 候选目录的可用空间均不足 40 GiB")
     try:
         account = pwd.getpwnam(name)
     except KeyError:
@@ -32,7 +32,7 @@ def plan_home(name):
         current = Path(account.pw_dir)
         if not current.is_dir() or current.is_symlink():
             raise ValueError(f"当前 home 不存在或是符号链接：{current}")
-        if available(current) >= MIN_FREE:
+        if available(current) >= HOME_MIN_FREE:
             return {"home": str(current), "move": False}
         if current.stat().st_uid != account.pw_uid:
             raise ValueError(f"home 所有者不匹配：{current}")
@@ -61,8 +61,8 @@ def plan_home(name):
                 ["du", "-s", "-B1", "--", str(current)], text=True
             ).split()[0]
         )
-        if free - size < MIN_FREE:
-            raise ValueError("目标空间不足以迁移 home 并保留 10 GiB 可用空间")
+        if free - size < HOME_MIN_FREE:
+            raise ValueError("目标空间不足以迁移 home 并保留 40 GiB 可用空间")
     target = destination / name
     if os.path.lexists(target):
         raise ValueError(f"目标 home 已存在，不自动覆盖：{target}")

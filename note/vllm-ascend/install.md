@@ -20,12 +20,16 @@ print((x + 1).cpu())
 PY
 ```
 
-## （编译与）安装
+## 容器环境（编译与）安装
+
+容器内部无需额外的python虚拟环境。
 
 COMPILE_CUSTOM_KERNELS: 不编译kernel。默认为1
 ```bash
-
+pip uninstall vllm_ascend -y
 VLLM_TARGET_DEVICE=empty COMPILE_CUSTOM_KERNELS=0 pip3 install -v -e . --no-deps --no-build-isolation
+# 首次编译
+VLLM_TARGET_DEVICE=empty COMPILE_CUSTOM_KERNELS=1 pip3 install -v -e . --no-deps --no-build-isolation
 ```
 
 查看安装结果

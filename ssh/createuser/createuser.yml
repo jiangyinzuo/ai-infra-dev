@@ -21,12 +21,31 @@
       changed_when: false
       check_mode: false
 
+    - name: 探测 NPU 设备组
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_python_interpreter }}"
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../container-dev/devtools/npu_devices.py') }}"
+      register: npu_device_groups
+      changed_when: false
+      check_mode: false
+
+    - name: 确保 NPU 设备 GID 有对应用户组
+      ansible.builtin.group:
+        name: "{{ item.name }}"
+        gid: "{{ item.gid }}"
+        state: present
+      loop: "{{ npu_device_groups.stdout | from_json }}"
+      loop_control:
+        label: "{{ item.name }}"
+
     - name: 选择 home 目录并检查迁移条件
       ansible.builtin.command:
         argv:
           - "{{ ansible_python_interpreter }}"
           - -c
-          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/home_plan.py') }}"
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../container-dev/devtools/home_plan.py') }}"
           - "{{ item.name }}"
       loop: "{{ managed_users }}"
       loop_control:
@@ -97,6 +116,16 @@
       loop_control:
         label: "{{ item.name }}"
 
+    - name: 将托管用户加入 NPU 设备组，保留其他组
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        groups: "{{ (npu_device_groups.stdout | from_json) | map(attribute='name') | list }}"
+        append: true
+      when: (npu_device_groups.stdout | from_json) | length > 0
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+
     - name: 添加配置的 SSH 登录公钥，保留已有公钥
       ansible.posix.authorized_key:
         user: "{{ item.name }}"
@@ -157,6 +186,43 @@
       loop: "{{ managed_users | subelements('ssh_key_files') }}"
       no_log: true
       diff: false
+
+    - name: 配置 GitHub HTTP CONNECT 代理脚本
+      ansible.builtin.copy:
+        src: github-proxy.sh
+        dest: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh/github-proxy.sh"
+        owner: "{{ item.name }}"
+        group: "{{ ansible_facts.getent_passwd[item.name][2] }}"
+        mode: '0700'
+      when: item.name in ansible_facts.getent_passwd
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: 配置 GitHub SSH Host，保留其他配置
+      ansible.builtin.blockinfile:
+        path: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh/config"
+        create: true
+        insertbefore: BOF
+        marker: "# {mark} createuser GitHub"
+        owner: "{{ item.name }}"
+        group: "{{ ansible_facts.getent_passwd[item.name][2] }}"
+        mode: '0600'
+        block: |
+          Host github.com
+              HostName ssh.github.com
+              Port 443
+              User git
+              HostKeyAlias github.com
+              StrictHostKeyChecking accept-new
+              IdentityFile ~/.ssh/id_ed25519
+              IdentitiesOnly yes
+              ProxyCommand bash "$HOME/.ssh/github-proxy.sh" %h %p
+          Host *
+      when: item.name in ansible_facts.getent_passwd
+      loop: "{{ managed_users }}"
+      loop_control:
+        label: "{{ item.name }}"
 
     - name: 提示 check mode 下新用户的密钥部署检查已延后
       ansible.builtin.debug:

@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "home_plan", Path(__file__).resolve().parents[1] / "home_plan.py"
+    "home_plan",
+    Path(__file__).resolve().parents[2] / "container-dev/devtools/home_plan.py",
 )
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
@@ -20,7 +21,9 @@ def disks(tmp_path, monkeypatch):
     monkeypatch.setattr(
         MODULE.pwd, "getpwnam", lambda name: (_ for _ in ()).throw(KeyError(name))
     )
-    free = {path: (index + 1) * MODULE.MIN_FREE for index, path in enumerate(paths)}
+    free = {
+        path: (index + 1) * MODULE.HOME_MIN_FREE for index, path in enumerate(paths)
+    }
     monkeypatch.setattr(MODULE, "available", lambda path: free[path])
     return paths, free
 
@@ -39,8 +42,8 @@ def test_low_space_and_existing_destination_rejected(disks):
     with pytest.raises(ValueError, match="已存在"):
         MODULE.plan_home("jiangyinzuo")
     for path in paths:
-        free[path] = MODULE.MIN_FREE - 1
-    with pytest.raises(ValueError, match="不足 10 GiB"):
+        free[path] = MODULE.HOME_MIN_FREE - 1
+    with pytest.raises(ValueError, match="不足 40 GiB"):
         MODULE.plan_home("jiangyinzuo")
 
 
@@ -48,7 +51,7 @@ def test_existing_home_with_space_stays_put(disks, monkeypatch):
     paths, free = disks
     current = paths[0] / "jiangyinzuo"
     current.mkdir()
-    free[current] = MODULE.MIN_FREE
+    free[current] = MODULE.HOME_MIN_FREE
     monkeypatch.setattr(
         MODULE.pwd, "getpwnam", lambda name: SimpleNamespace(pw_dir=str(current))
     )
@@ -59,7 +62,7 @@ def test_same_filesystem_cannot_resolve_low_space(disks, monkeypatch):
     paths, free = disks
     current = paths[0] / "jiangyinzuo"
     current.mkdir()
-    free[current] = MODULE.MIN_FREE - 1
+    free[current] = MODULE.HOME_MIN_FREE - 1
     monkeypatch.setattr(
         MODULE.pwd,
         "getpwnam",
@@ -89,14 +92,14 @@ def test_cross_disk_migration_requires_room_for_home(disks, monkeypatch):
     monkeypatch.setattr(Path, "is_dir", lambda path: True)
     monkeypatch.setattr(Path, "is_symlink", lambda path: False)
     monkeypatch.setattr(
-        MODULE.subprocess, "check_output", lambda *a, **k: str(MODULE.MIN_FREE)
+        MODULE.subprocess, "check_output", lambda *a, **k: str(MODULE.HOME_MIN_FREE)
     )
     assert MODULE.plan_home("jiangyinzuo") == {
         "home": str(paths[2] / "jiangyinzuo"),
         "move": True,
     }
-    free[paths[2]] = MODULE.MIN_FREE
-    free[paths[1]] = MODULE.MIN_FREE
-    free[paths[0]] = MODULE.MIN_FREE
-    with pytest.raises(ValueError, match="保留 10 GiB"):
+    free[paths[2]] = MODULE.HOME_MIN_FREE
+    free[paths[1]] = MODULE.HOME_MIN_FREE
+    free[paths[0]] = MODULE.HOME_MIN_FREE
+    with pytest.raises(ValueError, match="保留 40 GiB"):
         MODULE.plan_home("jiangyinzuo")

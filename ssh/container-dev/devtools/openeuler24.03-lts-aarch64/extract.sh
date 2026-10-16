@@ -79,6 +79,29 @@ for archive in "${gzip_archives[@]}"; do
     [[ $file != tree-sitter ]] || chmod +x -- "$file"
 done
 
+# 静态包不在系统目录下，需要显式配置 conmon 和辅助程序路径。
+podman_static="$script_dir/podman-linux-arm64"
+if [[ -x $podman_static/usr/local/bin/podman ]]; then
+    containers_config="${XDG_CONFIG_HOME:-$HOME/.config}/containers/containers.conf"
+    mkdir -p -- "${containers_config%/*}"
+    cat > "$containers_config" <<EOF
+[engine]
+conmon_path = ["$podman_static/usr/local/lib/podman/conmon"]
+helper_binaries_dir = ["$podman_static/usr/local/lib/podman"]
+runtime = "$podman_static/usr/local/bin/crun"
+EOF
+    printf 'configured %s (Podman static helpers)\n' "$containers_config"
+    policy="${containers_config%/*}/policy.json"
+    if [[ -e $policy || -L $policy ]]; then
+        printf 'skip %s (existing trust policy preserved)\n' "$policy"
+    else
+        # 开发环境沿用包内策略：不要求镜像签名，不改变 HTTPS 证书校验。
+        cp -n -- "$podman_static/etc/containers/policy.json" "$policy"
+        printf 'configured %s (bundled development trust policy)\n' "$policy"
+    fi
+    python3 "$script_dir/../podman_storage.py"
+fi
+
 # 只添加一次；path.env 尚未同步时不影响 shell 启动。
 bashrc="$HOME/.bashrc"
 source_line='[[ ! -f "$HOME/devtools/openeuler24.03-lts-aarch64/path.env" ]] || source "$HOME/devtools/openeuler24.03-lts-aarch64/path.env"'

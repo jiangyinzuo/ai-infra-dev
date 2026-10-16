@@ -50,7 +50,7 @@ def download(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     add_target_args(parser)
-    parser.add_argument("--date", default="20261012", help="日期 YYYYMMDD")
+    parser.add_argument("--date", default="20261014", help="日期 YYYYMMDD")
     parser.add_argument("--version", default="26.2.0", help="镜像版本")
     args = parser.parse_args()
     try:

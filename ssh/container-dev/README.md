@@ -59,10 +59,14 @@ WSL运行：
 
 fzf 下载最新稳定 release 的 Linux ARM64 程序及同版本 `fzf-preview.sh`、`fzf-tmux`，解压安装到 `$HOME/plugged/fzf/bin/`。
 
+`download.py` 要求 **Python 3.9+ 和 curl**；默认并发 8，完成即补位。终端安装 Rich 后显示每个工具的进度、大小、速度和剩余时间：`python3 -m pip install --user 'rich<15'`。未安装 Rich 或重定向 stderr 时使用普通日志，不自动安装依赖；未知总大小不显示百分比。
+
+连接超时 10 秒，元数据每次最多 60 秒，归档每次最多 30 分钟且连续 60 秒低于 1 KiB/s 时中止；临时传输错误最多重试 2 次。失败任务具名报告，其余任务继续，最终返回非零。SHA-256 校验成功后才原子替换；Ctrl-C 终止后台请求并清理临时文件，保留已有归档。
+
 WSL运行：
 ```bash
 # 默认并发 8，逐文件校验 SHA-256
-./devtools/openeuler24.03-lts-aarch64/download.sh --jobs 8
+python3 ./devtools/openeuler24.03-lts-aarch64/download.py --jobs 8
 ./sync-devtools.py --apply suzhou-a3-130
 # 如果判断运行环境是WSL，则要求输入host。在远程服务器则不需要
 # 解压并在 ~/.bashrc 配置平台目录下的 path.env，重复运行不重复添加。
@@ -82,12 +86,31 @@ nvim --headless "+Lazy! build telescope-fzf-native.nvim" +qa
 
 Python 脚本兼容 3.9 及以上版本，本地无需切换解释器。
 
+### 真实 root 与 bindfs 映射（实验性）
+
+`root_mapped_create.py` 在服务器以普通用户运行，需要免密 sudo、Docker、bindfs。使用 rootful 特权容器，默认 HOME 环境变量、root 账号 home 及工作目录均为宿主机 HOME。HOME 和显式 `--share` 目录通过 FUSE 映射 UID/GID 0 到当前宿主机 UID/GID；新文件强制归属当前用户，chown/chgrp 返回成功但不改变底层属主，不递归修改源目录。`.local/bin`、`.local/lib` 是独立 Docker volume，不共享给宿主机。驱动路径只读挂载，未声明的 /data 等目录不自动共享。
+
+运行时打印实际执行的 Docker、sudo/bindfs 和清理命令（按 shell 规则引用参数）；绿色显示创建/成功状态，黄色显示目录映射及操作提示。成功后输出进入容器、停止删除、卸载映射和清理空目录的可复制命令。
+
+脚本按参数检查、bindfs 挂载、Docker 命令组装、root HOME 初始化和操作提示拆分；`create_container()` 统一管理创建顺序及异常清理，`main()` 仅调用入口流程。
+
+```bash
+# 先同步工具；本脚本只在服务器直接执行
+python3 ~/devtools/containers/root_mapped_create.py --image IMAGE --name NAME
+# 隔离验证，不挂真实 HOME；额外数据目录需已存在且可写
+python3 ~/devtools/containers/root_mapped_create.py --image IMAGE --name NAME --test-home /path/to/test-home --share /path/to/test-data
+```
+
+映射进程和挂载必须持续存在，脚本输出挂载目录及清理命令；先删除容器及 volume，再卸载 FUSE，最后删除空挂载目录。重启后不会自动恢复挂载，不要在缺少映射挂载时启动旧容器。特权容器可绕开文件系统映射，不是安全边界。FUSE 有额外 I/O 开销；忽略 chown/chgrp 便于开发安装器运行，但依赖实际切换文件属主的服务不适用。未验证完整算子编译性能。node-97-31 隔离测试中原始 npu-smi、未关闭自动加载的 import torch、0600 文件宿主机编辑、mmap 已验证；不是原生 idmapped mount（该机器 mount_setattr 返回 ENOSYS）。
+
+2026-10-16 在 `jiangyinzuo-bindfs-build` 挂载真实 HOME 后，以真实 root 完成 `COMPILE_CUSTOM_KERNELS=1 pip3 install -v -e . --no-deps --no-build-isolation`，退出码 0。使用原生 Python、未修改 setup.py、未关闭 Torch 后端自动加载、无 npu-smi 包装器。进一步清除 CMAKE_PREFIX_PATH、Torch_DIR 后完整构建仍成功：项目 CMakeLists.txt 通过 cmake/utils.cmake 自动执行 Python 查询 Torch 路径，root 环境没有驱动诊断污染 stdout，因此无需显式指定路径。之前独立的 find_package 实验遗漏了项目的自动查询步骤，不能据此断言项目缺少依赖发现。`import torch; import vllm_ascend` 成功。容器内两主 `.so` 为 `0:0`，宿主机为 `9011:9011` 且可写，csrc/build 和 _cann_ops_custom 未发现其他 UID 所有的文件。日志 `~/vllm-ascend-bindfs-build.log` 及 `~/vllm-ascend-bindfs-no-torch-path.log`；保留原有源码构建缓存，主扩展使用新的临时 build-temp，未做清空全部缓存的性能对比或 NPU 运算测试。
+
 ```bash
 # 查看服务器已有镜像
 ssh2 suzhou-a3-130 docker images vllm-ascend
 
 # WSL 本地下载，必须指定平台；归档保存到 containers/
-./devtools/containers/download.py --host localhost --npu-platform a3 --date 20261012 --version 26.2.0
+./devtools/containers/download.py --host localhost --npu-platform a3 --date 20261014 --version 26.2.0
 # 下载到 SSH Host 对应服务器，平台由 CSV 选择
 ./devtools/containers/download.py --host suzhou-a3-130
 # 远程创建并启动，默认交互选择镜像与容器名
@@ -113,15 +136,10 @@ docker volume prune
 
 `prune` 会清理未被任何容器引用的匿名 volume，不限于本工具创建的 volume；确认数据不再需要后再执行。
 
-创建并启动后配置与宿主机用户名、UID/GID 和 home 一致的账号，初始化独立目录权限并校验用户名；不修改共享 HOME 所有权。普通提示为绿色，进入和删除提示为黄色，镜像列表和 Docker 命令保持默认颜色。
-自动探测实际 NPU 字符设备和 GID，挂载设备并为容器用户添加对应附加组，同时添加 GID 0 以访问 CANN 的 root 组可读目录；主 UID/GID 不变，不修改宿主机设备权限。GID 0 也会授予共享挂载中 root 组允许的访问权限。仅对新建容器生效；设备权限之外的驱动限制仍可能需要单独处理。
-openEuler 容器自动安装 `sudo`、`nmap-ncat` 并配置当前用户免密 sudo，验证成功后才完成初始化。安装时禁用 debuginfo、source、update-source 仓库；需要网络，失败则停止。免密 sudo 授予容器内 root 权限，注意共享目录中的操作也会影响宿主机。
-执行前向标准输出打印实际 Docker 命令；透传密钥仅显示变量名，不显示值。
-
-创建时继承已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`、`USG_IP` 及大小写 HTTP/HTTPS/ALL 代理变量；`SOC_VERSION` 仅由服务器宿主机传给容器，不从 WSL 经 SSH 透传。Docker 环境可被有 Docker 权限的用户通过 inspect 查看，勿分享该输出。
-共享配置统一维护在 `devtools/config.py`，随 devtools 同步；仅包含配置和变量名，不包含密钥值。
-
-服务器本地通过 `sudo -n npu-smi info -t board -i 0` 的 PCI Device ID 探测平台，需免密 sudo；与 machine-info 共用 `devtools/machine_probe.py`。`0xD803` 为 A3，`0xD802` 为 A2；当前容器工具仅支持 A3，可用 `--npu-platform a3` 手动指定。WSL 本地下载仍需指定平台，禁止本机创建容器。
+- 仅支持 A3，在服务器创建容器；WSL 使用 `--host`，本地下载需指定 `--npu-platform a3`。自动平台探测需免密 sudo，也可手动指定平台。
+- 容器沿用宿主机用户名、UID/GID 和 HOME，自动挂载 NPU 并添加设备组及 GID 0；这些配置仅对新建容器生效，不修改共享 HOME 所有权或宿主机设备权限。
+- openEuler 初始化需联网安装 `sudo`、`nmap-ncat`，并为当前用户配置免密 sudo。GID 0 和 sudo 会扩大共享目录访问权限，操作会影响宿主机；设备占用等驱动限制仍需单独处理。
+- 自动继承 API key、`USG_IP` 和代理变量；`SOC_VERSION` 仅由服务器传入，不从 WSL 覆盖。变量名单见 `devtools/config.py`。命令日志不打印密钥值，但 Docker inspect 可查看环境变量，勿分享敏感输出。
 
 ## 宿主机/容器内执行命令
 
