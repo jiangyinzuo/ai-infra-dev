@@ -1,6 +1,6 @@
 # Docker容器开发环境
 
-用于向远程服务器的宿主机同步
+用于向远程服务器的宿主机（Python3.9）同步
 - vimrc和ai-infra-dev仓库
 - Neovim插件
 - 命令行工具
@@ -83,8 +83,6 @@ nvim --headless "+Lazy! build telescope-fzf-native.nvim" +qa
 ## 容器镜像与创建
 
 目前支持 NPU 平台 `a3`。WSL 必须指定 `--host`；远程平台读取 `ssh/machine-info/machines-output.csv` 的 `NPUPlatform`，先用 machine-info 采集。远程脚本需先同步到服务器。
-
-Python 脚本兼容 3.9 及以上版本，本地无需切换解释器。
 
 ### 真实 root 与 bindfs 映射（实验性）
 

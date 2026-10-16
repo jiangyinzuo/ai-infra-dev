@@ -298,14 +298,6 @@ class Downloader:
                 "latest",
                 None,
             ),
-            # Podman 6 removed cgroups v1; use the full third-party 5.x bundle.
-            (
-                "podman",
-                "mgoltzsche/podman-static",
-                r"podman-linux-arm64\.tar\.gz",
-                "v5.8.8",
-                None,
-            ),
         ]
         tasks = {spec[0]: (lambda spec=spec: self.github(*spec)) for spec in specs}
         tasks["node"] = self.node

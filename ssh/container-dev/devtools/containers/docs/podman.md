@@ -2,6 +2,7 @@
 
 - 日期：2026-10-16
 - 环境：openEuler 22.03、ARM64、内核 5.10、cgroups v1、昇腾 A3。
+- git commit：e4183ad14a256993af6ad37dbdbe3a636e24ce1d
 
 Podman的宿主机用户映射到root用户，并不能解决容器内访问被其它进程占用的/dev/davinci0报错的问题。
 
