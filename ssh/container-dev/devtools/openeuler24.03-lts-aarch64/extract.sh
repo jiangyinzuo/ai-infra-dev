@@ -63,6 +63,13 @@ for archive in "${archives[@]}"; do
     env -u TAR_OPTIONS tar --extract --file="$archive" --directory="$destination" \
         --no-overwrite-dir --no-same-owner --no-same-permissions
     case $archive in
+        bindfs-*.tar.gz)
+            # Build the synchronized release source on the target architecture.
+            source_dir="$script_dir/${archive%.tar.gz}"
+            builder="$HOME/vimrc/install/build_bindfs.sh"
+            [[ -f $builder ]] || { echo "error: missing $builder; update vimrc first" >&2; exit 1; }
+            bash "$builder" "$source_dir"
+            ;;
         fzf-*-linux_arm64.tar.gz)
             cp -- "$support/fzf-preview.sh" "$support/fzf-tmux" "$destination/"
             chmod +x -- "$destination/fzf" "$destination/fzf-preview.sh" "$destination/fzf-tmux"

@@ -80,23 +80,13 @@ python3 ./devtools/openeuler24.03-lts-aarch64/download.py --jobs 8
 nvim --headless "+Lazy! build telescope-fzf-native.nvim" +qa
 ```
 
-## 容器镜像与创建
-
-目前支持 NPU 平台 `a3`。WSL 必须指定 `--host`；远程平台读取 `ssh/machine-info/machines-output.csv` 的 `NPUPlatform`，先用 machine-info 采集。远程脚本需先同步到服务器。
-
-### 真实 root 与 bindfs 映射（实验性）
-
-`root_mapped_create.py` 在服务器以普通用户运行，需要免密 sudo、Docker、bindfs。使用 rootful 特权容器，默认 HOME 环境变量、root 账号 home 及工作目录均为宿主机 HOME。HOME 和显式 `--share` 目录通过 FUSE 映射 UID/GID 0 到当前宿主机 UID/GID；新文件强制归属当前用户，chown/chgrp 返回成功但不改变底层属主，不递归修改源目录。`.local/bin`、`.local/lib` 是独立 Docker volume，不共享给宿主机。驱动路径只读挂载，未声明的 /data 等目录不自动共享。
-
-运行时打印实际执行的 Docker、sudo/bindfs 和清理命令（按 shell 规则引用参数）；绿色显示创建/成功状态，黄色显示目录映射及操作提示。成功后输出进入容器、停止删除、卸载映射和清理空目录的可复制命令。
-
-脚本按参数检查、bindfs 挂载、Docker 命令组装、root HOME 初始化和操作提示拆分；`create_container()` 统一管理创建顺序及异常清理，`main()` 仅调用入口流程。
+## 容器镜像下载与创建
 
 ```bash
 # 先同步工具；本脚本只在服务器直接执行
-python3 ~/devtools/containers/root_mapped_create.py --image IMAGE --name NAME
+python3 ~/devtools/containers/create.py --image IMAGE --name NAME
 # 隔离验证，不挂真实 HOME；额外数据目录需已存在且可写
-python3 ~/devtools/containers/root_mapped_create.py --image IMAGE --name NAME --test-home /path/to/test-home --share /path/to/test-data
+python3 ~/devtools/containers/create.py --image IMAGE --name NAME --test-home /path/to/test-home --share /path/to/test-data
 ```
 
 映射进程和挂载必须持续存在，脚本输出挂载目录及清理命令；先删除容器及 volume，再卸载 FUSE，最后删除空挂载目录。重启后不会自动恢复挂载，不要在缺少映射挂载时启动旧容器。特权容器可绕开文件系统映射，不是安全边界。FUSE 有额外 I/O 开销；忽略 chown/chgrp 便于开发安装器运行，但依赖实际切换文件属主的服务不适用。未验证完整算子编译性能。node-97-31 隔离测试中原始 npu-smi、未关闭自动加载的 import torch、0600 文件宿主机编辑、mmap 已验证；不是原生 idmapped mount（该机器 mount_setattr 返回 ENOSYS）。
@@ -111,8 +101,6 @@ ssh2 suzhou-a3-130 docker images vllm-ascend
 ./devtools/containers/download.py --host localhost --npu-platform a3 --date 20261014 --version 26.2.0
 # 下载到 SSH Host 对应服务器，平台由 CSV 选择
 ./devtools/containers/download.py --host suzhou-a3-130
-# 远程创建并启动，默认交互选择镜像与容器名
-./devtools/containers/create.py --host suzhou-a3-130
 # 服务器直接执行
 python3 ~/devtools/containers/download.py
 docker load -i ~/devtools/containers/vllm-ascend_dev-26.2.0.day20261012-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz
@@ -134,10 +122,9 @@ docker volume prune
 
 `prune` 会清理未被任何容器引用的匿名 volume，不限于本工具创建的 volume；确认数据不再需要后再执行。
 
-- 仅支持 A3，在服务器创建容器；WSL 使用 `--host`，本地下载需指定 `--npu-platform a3`。自动平台探测需免密 sudo，也可手动指定平台。
-- 容器沿用宿主机用户名、UID/GID 和 HOME，自动挂载 NPU 并添加设备组及 GID 0；这些配置仅对新建容器生效，不修改共享 HOME 所有权或宿主机设备权限。
-- openEuler 初始化需联网安装 `sudo`、`nmap-ncat`，并为当前用户配置免密 sudo。GID 0 和 sudo 会扩大共享目录访问权限，操作会影响宿主机；设备占用等驱动限制仍需单独处理。
-- 自动继承 API key、`USG_IP` 和代理变量；`SOC_VERSION` 仅由服务器传入，不从 WSL 覆盖。变量名单见 `devtools/config.py`。命令日志不打印密钥值，但 Docker inspect 可查看环境变量，勿分享敏感输出。
+- `create.py` 仅在服务器直接运行，不支持旧入口的 `--host`、`--npu-platform` 和交互选择。
+- 容器默认真实 root；通过 bindfs 保持共享目录中新文件的宿主机属主，不创建同名普通账号，也不安装 sudo 或 nmap-ncat。
+- 当前创建入口不自动继承宿主机 API key、代理或 SOC_VERSION；按需要在容器内配置。
 
 ## 宿主机/容器内执行命令
 

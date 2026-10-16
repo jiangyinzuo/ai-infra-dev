@@ -87,6 +87,7 @@ def synchronize(plans, args):
             command.append("--dry-run")
         # 镜像目录只同步目录和脚本，不传输归档。
         command += [
+            "--exclude=*.md",
             "--exclude=__pycache__/",
             "--exclude=*.pyc",
             "--include=/containers/**/",

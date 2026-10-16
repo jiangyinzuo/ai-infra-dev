@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+import tarfile
 
 
 class Cancelled(Exception):
@@ -252,6 +253,42 @@ class Downloader:
                 expected,
             )
 
+    def bindfs(self):
+        # Official releases are hosted here, not in GitHub release assets.
+        base = "https://bindfs.org/downloads/"
+        listing = self.metadata("bindfs", base, as_json=False)
+        versions = re.findall(r"bindfs-([0-9]+\.[0-9]+\.[0-9]+)\.tar\.gz", listing)
+        if not versions:
+            raise ValueError("bindfs: no source releases found")
+        version = max(versions, key=lambda value: tuple(map(int, value.split("."))))
+        directory = "bindfs-" + version
+        archive = self.directory / (directory + ".tar.gz")
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(
+            prefix=archive.name + ".tmp.", dir=archive.parent
+        )
+        os.close(fd)
+        temporary = Path(temporary)
+        try:
+            # No published SHA-256 endpoint: refresh over HTTPS, never claim hash verification.
+            self.transfer("bindfs", base + archive.name, temporary)
+            with tarfile.open(temporary, "r:gz") as source:
+                names = source.getnames()
+                if directory + "/configure" not in names:
+                    raise ValueError("bindfs: source archive lacks configure")
+                if any(
+                    not name.startswith(directory + "/") or ".." in Path(name).parts
+                    for name in names
+                ):
+                    raise ValueError("bindfs: unexpected archive paths")
+            self.check_cancel()
+            temporary.replace(archive)
+            self.display.update(
+                "bindfs", "saved (HTTPS; archive checked, no upstream SHA-256)"
+            )
+        finally:
+            temporary.unlink(missing_ok=True)
+
     def tasks(self):
         specs = [
             ("neovim", "neovim/neovim", r"nvim-linux-arm64\.tar\.gz", "nightly", None),
@@ -302,6 +339,7 @@ class Downloader:
         tasks = {spec[0]: (lambda spec=spec: self.github(*spec)) for spec in specs}
         tasks["node"] = self.node
         tasks["fzf"] = self.fzf
+        tasks["bindfs"] = self.bindfs
         return tasks
 
 

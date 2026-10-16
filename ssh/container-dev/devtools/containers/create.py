@@ -1,333 +1,217 @@
 #!/usr/bin/env python3
-"""在昇腾服务器创建并启动开发容器。"""
+"""Rootful Docker with bindfs-mapped writable directories (Python 3.9+)."""
 
 import argparse
-from dataclasses import dataclass
-import json
 import os
 from pathlib import Path
-import platform
-import pwd
 import re
 import shlex
-import socket
+import shutil
 import subprocess
-import sys
 import tempfile
-
-from common import add_target_args, dispatch
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import CONTAINER_ENV_KEYS
-from npu_devices import discover_devices
+from typing import Any
 
 
-def green(text):
+def green(text: str) -> str:
     return f"\033[32m{text}\033[0m"
 
 
-def yellow(text):
+def yellow(text: str) -> str:
     return f"\033[33m{text}\033[0m"
 
 
-def run_docker(command, **kwargs):
-    print(shlex.join(command), flush=True)
-    return subprocess.run(command, **kwargs)
+def run(*args: str, **kwargs: Any) -> subprocess.CompletedProcess:
+    print(shlex.join(args), flush=True)
+    return subprocess.run(list(args), check=True, **kwargs)
 
 
-def docker_output(*args):
-    return run_docker(
-        ["docker", *args], capture_output=True, text=True, check=True
-    ).stdout
-
-
-@dataclass(frozen=True)
-class Image:
-    id: str
-    tags: tuple[str, ...]
-
-    @classmethod
-    def inspect(cls, reference):
-        data = json.loads(docker_output("image", "inspect", reference))[0]
-        return cls(data["Id"], tuple(data.get("RepoTags") or ()))
-
-    def is_openeuler(self, reference):
-        names = (reference,) if reference in self.tags else self.tags
-        return any("openeuler" in name.lower() for name in names)
-
-
-def initialize_user(container, username: str, uid, gid, home):
-    """通过 root exec 更新容器账号文件，不修改共享 HOME。"""
-    with tempfile.TemporaryDirectory(prefix="container-user-") as directory:
-        directory = Path(directory)
-        for filename in ("passwd", "group"):
-            content = docker_output(
-                "exec", "-u", "0", container, "cat", f"/etc/{filename}"
-            )
-            (directory / filename).write_text(content)
-        passwd = directory / "passwd"
-        group = directory / "group"
-        users = [
-            line.split(":")
-            for line in passwd.read_text().splitlines()
-            if line and not line.startswith("#")
-        ]
-        groups = [
-            line.split(":")
-            for line in group.read_text().splitlines()
-            if line and not line.startswith("#")
-        ]
-        named = next((entry for entry in users if entry[0] == username), None)
-        owner = next((entry for entry in users if entry[2] == str(uid)), None)
-        if named and named[2] != str(uid):
-            raise ValueError(f"容器用户名 {username} 已被其他 UID 占用")
-        if owner and owner[0] != username:
-            raise ValueError(f"容器 UID {uid} 已属于 {owner[0]}，不能覆盖")
-        if named and (named[3] != str(gid) or named[5] != home):
-            raise ValueError(f"容器账号 {username} 的 GID/home 与宿主机不一致")
-        changed = []
-        if not any(entry[2] == str(gid) for entry in groups):
-            if any(entry[0] == username for entry in groups):
-                raise ValueError(f"容器组名 {username} 已被其他 GID 占用")
-            group.write_text(
-                group.read_text().rstrip("\n") + f"\n{username}:x:{gid}:\n"
-            )
-            changed.append(group)
-        if named is None:
-            # 禁止密码登录；不依赖镜像是否提供 useradd，也不复制宿主机账号库。
-            passwd.write_text(
-                passwd.read_text().rstrip("\n")
-                + f"\n{username}:!:{uid}:{gid}::{home}:/bin/bash\n"
-            )
-            changed.append(passwd)
-        for path in changed:
-            path.chmod(0o644)
-            run_docker(
-                [
-                    "docker",
-                    "exec",
-                    "-i",
-                    "-u",
-                    "0",
-                    container,
-                    "sh",
-                    "-c",
-                    'cat > "$1" && chmod 644 "$1"',
-                    "sh",
-                    f"/etc/{path.name}",
-                ],
-                input=path.read_text(),
-                text=True,
-                check=True,
-            )
-
-
-def configure_sudo(container, username):
-    # 先确认规则目录已启用，再校验并安装免密规则。
-    script = r"""set -eu
-grep -Eq '^[[:space:]]*([#@]includedir)[[:space:]]+/etc/sudoers\.d/?([[:space:]]|$)' /etc/sudoers || {
-    echo 'error: /etc/sudoers 未加载 /etc/sudoers.d' >&2; exit 1;
-}
-mkdir -p /etc/sudoers.d
-temp=$(mktemp /etc/sudoers.d/devtools-XXXXXX)
-trap 'rm -f -- "$temp"' EXIT
-printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$1" > "$temp"
-/usr/sbin/visudo -cf "$temp"
-chmod 0440 "$temp"
-chown 0:0 "$temp"
-mv -f -- "$temp" /etc/sudoers.d/99-devtools
-/usr/sbin/visudo -c
-"""
-    run_docker(
-        ["docker", "exec", "-u", "0", container, "sh", "-c", script, "sh", username],
-        check=True,
+def prepare() -> tuple[argparse.Namespace, str, list[Path], str]:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--image", required=True, help="Docker 镜像名或 ID")
+    parser.add_argument("--name", required=True, help="新容器名称")
+    parser.add_argument(
+        "--share",
+        action="append",
+        default=[],
+        help="额外可写共享目录，容器内保持相同路径，可重复指定",
     )
-    if docker_output("exec", container, "sudo", "-n", "id", "-u").strip() != "0":
-        raise ValueError(f"容器 {container} 免密 sudo 校验失败")
-
-
-def create(args):
-    if "microsoft" in platform.release().lower():
-        raise ValueError("禁止在 WSL 本机创建容器，请指定远程 --host")
-    image = args.image or os.environ.get("IMAGE_NAME")
-    if not image:
-        rows = sorted(
-            docker_output(
-                "images",
-                "vllm-ascend",
-                "--format",
-                "{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}",
-            ).splitlines(),
-            reverse=True,
-        )
-        images = [row.split("\t", 1)[1] for row in rows]
-        if not images:
-            raise ValueError("没有可用的 vllm-ascend 镜像")
-        for index, item in enumerate(images, 1):
-            print(f"{index}) {item}")
-        while True:
-            choice = input(green("选择镜像编号 [1，最新]: ")) or "1"
-            if choice.isdigit() and 1 <= int(choice) <= len(images):
-                image = images[int(choice) - 1]
-                break
-            print(green("请输入有效编号"))
-    reference = image
-    image = Image.inspect(reference)
-    name = args.name or os.environ.get("CONTAINER_NAME")
-    if not name:
-        names = docker_output("ps", "-a", "--format", "{{.Names}}")
-        numbers = [
-            int(match[1])
-            for line in names.splitlines()
-            if (match := re.fullmatch(r"jiangyinzuo-dev([0-9]{1,9})", line))
-        ]
-        default = f"jiangyinzuo-dev{max(numbers, default=0) + 1}"
-        name = input(green(f"容器名 [{default}]: ")) or default
+    parser.add_argument(
+        "--test-home",
+        help="使用隔离目录代替真实 HOME，供验证使用",
+    )
+    args = parser.parse_args()
+    if os.getuid() == 0:
+        parser.error("Run as the owning ordinary user, not sudo")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]+", args.name):
+        parser.error("Invalid container name")
+    bindfs = shutil.which("bindfs")
+    if not bindfs:
+        parser.error("bindfs is required on the host")
     home = str(Path.home())
-    username = pwd.getpwuid(os.getuid()).pw_name
-    command = [
+    sources = [Path(args.test_home or home).resolve()] + [
+        Path(p).resolve() for p in args.share
+    ]
+    for source in sources:
+        if not source.is_dir() or not os.access(source, os.W_OK):
+            parser.error(
+                "Source must be an existing writable directory: " + str(source)
+            )
+    if (
+        run(
+            "docker",
+            "container",
+            "ls",
+            "-a",
+            "--format",
+            "{{.Names}}",
+            capture_output=True,
+            text=True,
+        )
+        .stdout.splitlines()
+        .count(args.name)
+    ):
+        parser.error("Container name already exists")
+    run("sudo", "-n", "true")
+    return args, home, sources, bindfs
+
+
+def mount_directory(bindfs: str, source: Path, target: Path, destination: str) -> None:
+    target.mkdir()
+    print(yellow(f"映射目录：{source} → {target} → 容器 {destination}"), flush=True)
+    run(
+        "sudo",
+        "-n",
+        bindfs,
+        "--map={}/0:@{}/@0".format(os.getuid(), os.getgid()),
+        "--create-for-user=" + str(os.getuid()),
+        "--create-for-group=" + str(os.getgid()),
+        "--chown-ignore",
+        "--chgrp-ignore",
+        "-o",
+        "allow_other,nosuid,nodev",
+        str(source),
+        str(target),
+    )
+
+
+def docker_command(name: str, home: str) -> list[str]:
+    return [
         "docker",
         "create",
         "--name",
         name,
-        "--net=host",
-        "--shm-size=500g",
-        "--privileged=true",
-    ]
-    devices = discover_devices()
-    if not devices:
-        raise ValueError("没有发现可挂载的昇腾 NPU 字符设备")
-    for device in devices:
-        command += ["--device", device["path"]]
-    # CANN 的 root:root / 0750 目录需要 GID 0，保留所有设备附加组。
-    # 附加组不改变主 UID/GID，但 GID 0 同样作用于共享挂载的文件权限。
-    for gid in sorted({0} | {device["gid"] for device in devices}):
-        command += ["--group-add", str(gid)]
-    command += [
-        "--hostname",
-        socket.gethostname() + "-container",
-        "-u",
-        f"{os.getuid()}:{os.getgid()}",
-        "-w",
+        "--user",
+        "0:0",
+        "--userns=host",
+        "--network=host",
+        "--privileged",
+        "--security-opt",
+        "label=disable",
+        "--workdir",
         home,
+        "--env",
+        "HOME=" + home,
+        "--env",
+        "USER=root",
+        "--env",
+        "LOGNAME=root",
     ]
-    for value in [
-        "PIP_INDEX_URL=https://mirrors.tools.huawei.com/pypi/simple",
-        "PIP_EXTRA_INDEX_URL=",
-        "PIP_TRUSTED_HOST=mirrors.tools.huawei.com",
-        f"HOME={home}",
-        f"USER={username}",
-    ]:
-        command += ["-e", value]
-    # 仅传变量名，避免密钥值出现在 Docker 命令行中。
-    for key in CONTAINER_ENV_KEYS:
-        if key in os.environ:
-            command += ["-e", key]
-    volumes = [
-        home,
-        "/data",
-        "/mnt",
-        "/tmp",
-        "/usr/local/dcmi",
+
+
+def runtime_mounts(home: str) -> list[str]:
+    options: list[str] = []
+    for device in sorted(Path("/dev").iterdir()):
+        if (
+            re.fullmatch(r"davinci(?:[0-9]+|_manager)|devmm_svm|hisi_hdc", device.name)
+            and device.is_char_device()
+        ):
+            options += ["--device", str(device)]
+    for path in [
         "/usr/local/Ascend/driver",
+        "/usr/local/dcmi",
         "/usr/local/bin/npu-smi",
         "/etc/ascend_install.info",
         "/etc/hccn.conf",
-    ]
-    volumes += [path for path in ("/data1", "/data2", "/data3") if Path(path).is_dir()]
-    for path in volumes:
-        command += ["-v", f"{path}:{path}"]
-    # HOME 共享，但 Python 工具入口和依赖必须隔离，避免宿主机/容器解释器不同导致冲突。
-    local_paths = [f"{home}/.local/{part}" for part in ("bin", "lib")]
-    for path in local_paths:
-        command += ["--mount", f"type=volume,dst={path},volume-nocopy"]
-    print(green(f"创建容器 {name}，镜像 {reference} ({image.id})"), flush=True)
-    run_docker([*command, "-it", image.id, "bash"], check=True)
-    run_docker(["docker", "start", name], check=True)
-    initialize_user(name, username, os.getuid(), os.getgid(), home)
-    if image.is_openeuler(reference):
-        repo = Path(home) / "devtools/openeuler24.03-lts-aarch64/openEuler.repo"
-        run_docker(
-            [
-                "docker",
-                "exec",
-                "-i",
-                "-u",
-                "0",
-                name,
-                "sh",
-                "-c",
-                "mkdir -p /etc/yum.repos.d && cat > /etc/yum.repos.d/openEuler.repo",
-            ],
-            input=repo.read_text(),
-            text=True,
-            check=True,
-        )
-        run_docker(
-            [
-                "docker",
-                "exec",
-                "-u",
-                "0",
-                name,
-                "yum",
-                "--disablerepo=debuginfo,source,update-source",
-                "install",
-                "-y",
-                "sudo",
-                "nmap-ncat",
-            ],
-            check=True,
-        )
-        configure_sudo(name, username)
-    # 新 volume 默认属于 root；只修改独立 volume 根目录，不递归 chown 共享 HOME。
-    run_docker(
-        [
-            "docker",
-            "exec",
-            "-u",
-            "0",
-            name,
-            "chown",
-            f"{os.getuid()}:{os.getgid()}",
-            *local_paths,
-        ],
-        check=True,
-    )
-    actual_user = docker_output("exec", name, "id", "-un").strip()
-    if actual_user != username:
-        raise ValueError(
-            f"容器 {name} 用户校验失败：期望 {username}，实际 {actual_user!r}"
-        )
-    print(green(f"容器 {name} 已启动，用户 {username}"), flush=True)
+    ]:
+        if Path(path).exists():
+            options += ["--volume", path + ":" + path + ":ro"]
+    # Python tools remain container-private, not shared with host Python.
+    for part in ["bin", "lib"]:
+        options += [
+            "--mount",
+            "type=volume,dst=" + home + "/.local/" + part + ",volume-nocopy",
+        ]
+    return options
+
+
+def initialize_home(name: str, home: str) -> None:
+    script = """import pathlib
+import sys
+
+path = pathlib.Path('/etc/passwd')
+rows = [line.split(':') for line in path.read_text().splitlines()]
+for row in rows:
+    if row[0] == 'root':
+        row[5] = sys.argv[1]
+path.write_text(''.join(':'.join(row) + '\\n' for row in rows))
+"""
+    run("docker", "exec", name, "python3", "-c", script, home)
+    run("docker", "exec", name, "mkdir", "-p", home + "/ascend/log")
+
+
+def print_instructions(name: str, home: str, root: Path, mounted: list[Path]) -> None:
+    print(green(f"容器 {name} 已启动，用户 root，HOME={home}"), flush=True)
+    print(f"bindfs 挂载目录：{root}")
     print(yellow("进入容器："))
     print(shlex.join(["docker", "exec", "-it", name, "bash"]))
-    print(yellow("删除容器及独立 volume（先停止容器）："))
+    print(yellow("删除容器及独立 volume："))
     print(shlex.join(["docker", "stop", name]))
     print(shlex.join(["docker", "rm", "-v", name]))
-    return 0
+    print(yellow("删除容器后，卸载映射并清理空挂载目录："))
+    for target in reversed(mounted):
+        print(shlex.join(["sudo", "umount", str(target)]))
+    print(shlex.join(["rmdir", *map(str, mounted), str(root)]))
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_target_args(parser)
-    parser.add_argument("--image", help="镜像名，默认交互选择")
-    parser.add_argument("--name", help="容器名，默认交互输入")
-    args = parser.parse_args()
+def create_container(
+    args: argparse.Namespace, home: str, sources: list[Path], bindfs: str
+) -> None:
+    # Outside HOME: prevent recursively mounting the mirror inside its source.
+    root = Path(tempfile.mkdtemp(prefix="root-mapped-", dir="/var/tmp"))
+    mounted: list[Path] = []
+    created = False
     try:
-        options = []
-        for key in ("image", "name"):
-            value = getattr(args, key) or os.environ.get(
-                {"image": "IMAGE_NAME", "name": "CONTAINER_NAME"}[key]
-            )
-            if value:
-                options += ["--" + key, value]
-        remote = dispatch(args, "create.py", options)
-        return create(args) if remote is None else remote
-    except (OSError, ValueError, EOFError, subprocess.SubprocessError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return exc.returncode if isinstance(exc, subprocess.CalledProcessError) else 1
+        print(green(f"创建容器 {args.name}，镜像 {args.image}"), flush=True)
+        print(
+            f"容器 root → 宿主机 UID/GID {os.getuid()}:{os.getgid()}；HOME={home}",
+            flush=True,
+        )
+        command = docker_command(args.name, home)
+        for index, source in enumerate(sources):
+            target = root / str(index)
+            destination = home if index == 0 else str(source)
+            mount_directory(bindfs, source, target, destination)
+            mounted.append(target)
+            command += ["--volume", "{}:{}".format(target, destination)]
+        command += runtime_mounts(home)
+        run(*command, "--entrypoint", "/bin/bash", "-it", args.image)
+        created = True
+        run("docker", "start", args.name)
+        initialize_home(args.name, home)
+        print_instructions(args.name, home, root, mounted)
+    except BaseException:
+        print(yellow("创建失败或中断，正在清理本次容器和 bindfs 挂载。"), flush=True)
+        if created:
+            run("docker", "rm", "-f", "-v", args.name)
+        for target in reversed(mounted):
+            run("sudo", "-n", "umount", str(target))
+        shutil.rmtree(root)
+        raise
+
+
+def main() -> None:
+    create_container(*prepare())
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
