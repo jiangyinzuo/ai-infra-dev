@@ -18,6 +18,76 @@ def load(name):
     return module
 
 
+def test_create_interactive_defaults_and_image_selection(monkeypatch, capsys):
+    module = load("create")
+    rows = (
+        "2026-10-16 10:00:00 +0000 UTC\tvllm-ascend:newest",
+        "2026-10-15 10:00:00 +0000 UTC\tvllm-ascend:older",
+    )
+
+    def run(*command, **kwargs):
+        assert command[:3] == ("docker", "images", "vllm-ascend")
+        return subprocess.CompletedProcess(command, 0, "\n".join(rows))
+
+    monkeypatch.setattr(module, "run", run)
+    answers = iter(("invalid", "2"))
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    assert module.select_image() == "vllm-ascend:older"
+    assert "1) vllm-ascend:newest" in capsys.readouterr().out
+
+    assert (
+        module.next_container_name(["jiangyinzuo-dev2", "other", "jiangyinzuo-dev10"])
+        == "jiangyinzuo-dev11"
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt: "")
+    assert module.select_container_name(["jiangyinzuo-dev2"]) == "jiangyinzuo-dev3"
+
+
+def test_create_image_selection_rejects_empty_image_list(monkeypatch):
+    module = load("create")
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, ""),
+    )
+    with pytest.raises(ValueError, match="没有可用的 vllm-ascend 镜像"):
+        module.select_image()
+
+
+def test_create_prepare_uses_interactive_defaults(monkeypatch, tmp_path):
+    module = load("create")
+    calls = []
+
+    def run(*command, **kwargs):
+        calls.append(command)
+        if command[:2] == ("docker", "images"):
+            return subprocess.CompletedProcess(
+                command, 0, "2026-10-16 10:00:00 +0000 UTC\tvllm-ascend:newest"
+            )
+        if command[:3] == ("docker", "container", "ls"):
+            return subprocess.CompletedProcess(
+                command, 0, "jiangyinzuo-dev2\njiangyinzuo-dev5\n"
+            )
+        return subprocess.CompletedProcess(command, 0, "")
+
+    monkeypatch.setattr(module, "run", run)
+    monkeypatch.setattr(module.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/bindfs")
+    monkeypatch.setattr(module.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(sys, "argv", ["create.py"])
+    answers = iter(("", ""))
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+
+    args, home, sources, bindfs = module.prepare()
+
+    assert args.image == "vllm-ascend:newest"
+    assert args.name == "jiangyinzuo-dev6"
+    assert home == str(tmp_path)
+    assert sources == [tmp_path]
+    assert bindfs == "/usr/bin/bindfs"
+    assert calls[-1] == ("sudo", "-n", "true")
+
+
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     root = tmp_path / "ssh/container-dev/devtools/containers"

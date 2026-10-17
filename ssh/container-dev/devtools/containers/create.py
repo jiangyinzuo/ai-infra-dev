@@ -25,10 +25,49 @@ def run(*args: str, **kwargs: Any) -> subprocess.CompletedProcess:
     return subprocess.run(list(args), check=True, **kwargs)
 
 
+def select_image() -> str:
+    rows = sorted(
+        run(
+            "docker",
+            "images",
+            "vllm-ascend",
+            "--format",
+            "{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}",
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines(),
+        reverse=True,
+    )
+    images = [row.split("\t", 1)[1] for row in rows if "\t" in row]
+    if not images:
+        raise ValueError("没有可用的 vllm-ascend 镜像")
+    for index, item in enumerate(images, 1):
+        print(f"{index}) {item}")
+    while True:
+        choice = input(green("选择镜像编号 [1，最新]: ")) or "1"
+        if choice.isdigit() and 1 <= int(choice) <= len(images):
+            return images[int(choice) - 1]
+        print(green("请输入有效编号"))
+
+
+def next_container_name(names: list[str]) -> str:
+    numbers = [
+        int(match.group(1))
+        for name in names
+        if (match := re.fullmatch(r"jiangyinzuo-dev([0-9]{1,9})", name))
+    ]
+    return f"jiangyinzuo-dev{max(numbers, default=0) + 1}"
+
+
+def select_container_name(names: list[str]) -> str:
+    default = next_container_name(names)
+    return input(green(f"容器名 [{default}]: ")) or default
+
+
 def prepare() -> tuple[argparse.Namespace, str, list[Path], str]:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", required=True, help="Docker 镜像名或 ID")
-    parser.add_argument("--name", required=True, help="新容器名称")
+    parser.add_argument("--image", help="镜像名或 ID；默认交互选择")
+    parser.add_argument("--name", help="容器名；默认递增并交互确认")
     parser.add_argument(
         "--share",
         action="append",
@@ -42,6 +81,20 @@ def prepare() -> tuple[argparse.Namespace, str, list[Path], str]:
     args = parser.parse_args()
     if os.getuid() == 0:
         parser.error("Run as the owning ordinary user, not sudo")
+    if not args.image:
+        args.image = select_image()
+    existing_names = run(
+        "docker",
+        "container",
+        "ls",
+        "-a",
+        "--format",
+        "{{.Names}}",
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    if not args.name:
+        args.name = select_container_name(existing_names)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]+", args.name):
         parser.error("Invalid container name")
     bindfs = shutil.which("bindfs")
@@ -56,20 +109,7 @@ def prepare() -> tuple[argparse.Namespace, str, list[Path], str]:
             parser.error(
                 "Source must be an existing writable directory: " + str(source)
             )
-    if (
-        run(
-            "docker",
-            "container",
-            "ls",
-            "-a",
-            "--format",
-            "{{.Names}}",
-            capture_output=True,
-            text=True,
-        )
-        .stdout.splitlines()
-        .count(args.name)
-    ):
+    if args.name in existing_names:
         parser.error("Container name already exists")
     run("sudo", "-n", "true")
     return args, home, sources, bindfs

@@ -57,11 +57,10 @@ WSL运行：
 
 ## 更新并同步命令行工具
 
-fzf 下载最新稳定 release 的 Linux ARM64 程序及同版本 `fzf-preview.sh`、`fzf-tmux`，解压安装到 `$HOME/plugged/fzf/bin/`。
-
-`download.py` 要求 **Python 3.9+ 和 curl**；默认并发 8，完成即补位。终端安装 Rich 后显示每个工具的进度、大小、速度和剩余时间：`python3 -m pip install --user 'rich<15'`。未安装 Rich 或重定向 stderr 时使用普通日志，不自动安装依赖；未知总大小不显示百分比。
-
-连接超时 10 秒，元数据每次最多 60 秒，归档每次最多 30 分钟且连续 60 秒低于 1 KiB/s 时中止；临时传输错误最多重试 2 次。失败任务具名报告，其余任务继续，最终返回非零。SHA-256 校验成功后才原子替换；Ctrl-C 终止后台请求并清理临时文件，保留已有归档。
+`download.py` 依赖：
+- Python 3.9+
+- curl
+- Rich python TUI库（可选项，`python3 -m pip install --user 'rich<15'`）
 
 WSL运行：
 ```bash
@@ -82,49 +81,45 @@ nvim --headless "+Lazy! build telescope-fzf-native.nvim" +qa
 
 ## 容器镜像下载与创建
 
-```bash
-# 先同步工具；本脚本只在服务器直接执行
-python3 ~/devtools/containers/create.py --image IMAGE --name NAME
-# 隔离验证，不挂真实 HOME；额外数据目录需已存在且可写
-python3 ~/devtools/containers/create.py --image IMAGE --name NAME --test-home /path/to/test-home --share /path/to/test-data
-```
-
-映射进程和挂载必须持续存在，脚本输出挂载目录及清理命令；先删除容器及 volume，再卸载 FUSE，最后删除空挂载目录。重启后不会自动恢复挂载，不要在缺少映射挂载时启动旧容器。特权容器可绕开文件系统映射，不是安全边界。FUSE 有额外 I/O 开销；忽略 chown/chgrp 便于开发安装器运行，但依赖实际切换文件属主的服务不适用。未验证完整算子编译性能。node-97-31 隔离测试中原始 npu-smi、未关闭自动加载的 import torch、0600 文件宿主机编辑、mmap 已验证；不是原生 idmapped mount（该机器 mount_setattr 返回 ENOSYS）。
-
-2026-10-16 在 `jiangyinzuo-bindfs-build` 挂载真实 HOME 后，以真实 root 完成 `COMPILE_CUSTOM_KERNELS=1 pip3 install -v -e . --no-deps --no-build-isolation`，退出码 0。使用原生 Python、未修改 setup.py、未关闭 Torch 后端自动加载、无 npu-smi 包装器。进一步清除 CMAKE_PREFIX_PATH、Torch_DIR 后完整构建仍成功：项目 CMakeLists.txt 通过 cmake/utils.cmake 自动执行 Python 查询 Torch 路径，root 环境没有驱动诊断污染 stdout，因此无需显式指定路径。之前独立的 find_package 实验遗漏了项目的自动查询步骤，不能据此断言项目缺少依赖发现。`import torch; import vllm_ascend` 成功。容器内两主 `.so` 为 `0:0`，宿主机为 `9011:9011` 且可写，csrc/build 和 _cann_ops_custom 未发现其他 UID 所有的文件。日志 `~/vllm-ascend-bindfs-build.log` 及 `~/vllm-ascend-bindfs-no-torch-path.log`；保留原有源码构建缓存，主扩展使用新的临时 build-temp，未做清空全部缓存的性能对比或 NPU 运算测试。
+### 下载镜像
 
 ```bash
-# 查看服务器已有镜像
-ssh2 suzhou-a3-130 docker images vllm-ascend
-
-# WSL 本地下载，必须指定平台；归档保存到 containers/
+# WSL 本地下载，必须指定平台
 ./devtools/containers/download.py --host localhost --npu-platform a3 --date 20261014 --version 26.2.0
 # 下载到 SSH Host 对应服务器，平台由 CSV 选择
 ./devtools/containers/download.py --host suzhou-a3-130
-# 服务器直接执行
+# 服务器直接下载
 python3 ~/devtools/containers/download.py
-docker load -i ~/devtools/containers/vllm-ascend_dev-26.2.0.day20261012-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz
-python3 ~/devtools/containers/create.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
 ```
 
-HOME 仍共享；每个新容器的 `~/.local/bin`、`~/.local/lib` 使用独立空 volume，避免 Python 工具和依赖互相覆盖。容器内需重新安装工具；删除容器时用 `docker rm -v` 一并清理这些 volume，已有容器不受影响。
+下载归档后，在服务器用 `docker load -i <归档路径>` 导入镜像。
+
+### 创建容器
 
 ```bash
-# 进入容器
-docker exec -it jiangyinzuo-dev1 bash
-# 停止并删除容器，同时清理独立 volume
-docker stop jiangyinzuo-dev1
-docker rm -v jiangyinzuo-dev1
-# 忘记 -v 时，查看遗留 volume 并按需清理（会询问确认）
-docker volume ls --filter dangling=true
-docker volume prune
+# 服务器运行；不传参数时交互选择镜像，并确认容器名
+python3 ~/devtools/containers/create.py
+# 也可以明确指定镜像和容器名
+python3 ~/devtools/containers/create.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
+# 隔离验证，不挂真实 HOME；测试目录需已存在且可写
+python3 ~/devtools/containers/create.py --test-home /path/to/test-home --share /path/to/test-data
 ```
 
-`prune` 会清理未被任何容器引用的匿名 volume，不限于本工具创建的 volume；确认数据不再需要后再执行。
+镜像从本机 `vllm-ascend` 镜像中按创建时间由新到旧列出；容器名默认建议下一个 `jiangyinzuo-dev数字`，回车即可接受。
 
-- `create.py` 仅在服务器直接运行，不支持旧入口的 `--host`、`--npu-platform` 和交互选择。
-- 容器默认真实 root；通过 bindfs 保持共享目录中新文件的宿主机属主，不创建同名普通账号，也不安装 sudo 或 nmap-ncat。
-- 当前创建入口不自动继承宿主机 API key、代理或 SOC_VERSION；按需要在容器内配置。
+### bindfs 目录映射
+
+脚本通过 bindfs 将宿主机 HOME 映射到容器，`--share` 可添加其他共享目录。容器内 root 创建的文件归属宿主机当前用户，适合共享源码和开发文件；依赖实际切换文件属主的工作负载不适用，FUSE 也会增加 I/O 开销。容器以特权模式运行，文件映射不是安全边界。
+
+容器运行期间保持映射有效。重启后挂载不会自动恢复，挂载缺失时不要启动旧容器。清理时先停止并删除容器，再按脚本提示卸载映射并删除空挂载目录：
+
+```bash
+docker stop jiangyinzuo-dev1
+docker rm -v jiangyinzuo-dev1
+```
+
+每个容器的 `~/.local/bin` 和 `~/.local/lib` 使用独立 volume，避免容器和宿主机的 Python 工具互相覆盖；删除容器时加 `-v` 清理这些 volume。`docker volume prune` 会清理所有未被容器引用的匿名 volume，不限于本工具创建的 volume，执行前请确认其中数据不再需要。
+
 
 ## 宿主机/容器内执行命令
 
