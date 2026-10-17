@@ -21,10 +21,26 @@ def workspace(tmp_path):
     )
     binaries = tmp_path / "bin"
     binaries.mkdir()
+    for utility in (
+        "dirname",
+        "tar",
+        "gzip",
+        "mkdir",
+        "rm",
+        "rmdir",
+        "chmod",
+        "cp",
+        "cat",
+        "env",
+        "printf",
+        "bash",
+        "grep",
+    ):
+        (binaries / utility).symlink_to(shutil.which(utility))
     uname = binaries / "uname"
     uname.write_text("#!/bin/sh\necho Linux\n")
     uname.chmod(0o755)
-    env = {**os.environ, "HOME": str(home), "PATH": f"{binaries}:{os.environ['PATH']}"}
+    env = {**os.environ, "HOME": str(home), "PATH": str(binaries)}
     return home, tools, env
 
 
@@ -38,6 +54,61 @@ def extract(workspace):
         text=True,
         timeout=30,
     )
+
+
+def bindfs_archive(tools):
+    with tarfile.open(tools / "bindfs-1.17.7.tar.gz", "w:gz") as archive:
+        entry = tarfile.TarInfo("bindfs-1.17.7/configure")
+        entry.size = 0
+        archive.addfile(entry, io.BytesIO())
+
+
+@pytest.mark.parametrize("location", ["path", "local"])
+def test_bindfs_build_runs_only_when_bindfs_is_missing(workspace, location):
+    home, tools, env = workspace
+    bindfs_archive(tools)
+    builder = home / "vimrc/install/build_bindfs.sh"
+    builder.parent.mkdir(parents=True)
+    builder.write_text(
+        'set -eu\ntest -f "$1/configure"\nprintf built > "$HOME/bindfs-build"\n'
+    )
+    sudo = Path(env["PATH"]) / "sudo"
+    sudo.write_text('#!/bin/sh\nprintf installed > "$HOME/packages-installed"\n')
+    sudo.chmod(0o755)
+
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    assert (home / "bindfs-build").read_text() == "built"
+    assert (home / "packages-installed").read_text() == "installed"
+
+    (home / "bindfs-build").unlink()
+    (home / "packages-installed").unlink()
+    builder.unlink()
+    directory = Path(env["PATH"]) if location == "path" else home / ".local/bin"
+    directory.mkdir(parents=True, exist_ok=True)
+    installed = directory / "bindfs"
+    installed.write_text("#!/bin/sh\nexit 0\n")
+    installed.chmod(0o755)
+
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    assert not (home / "bindfs-build").exists()
+    assert not (home / "packages-installed").exists()
+
+
+def test_bindfs_package_failure_prevents_build(workspace):
+    home, tools, env = workspace
+    bindfs_archive(tools)
+    builder = home / "vimrc/install/build_bindfs.sh"
+    builder.parent.mkdir(parents=True)
+    builder.write_text('touch "$HOME/unexpected-build"\n')
+    sudo = Path(env["PATH"]) / "sudo"
+    sudo.write_text("#!/bin/sh\nexit 42\n")
+    sudo.chmod(0o755)
+    result = extract(workspace)
+    assert result.returncode == 42
+    assert not (home / "unexpected-build").exists()
+    assert not (home / ".bashrc").exists()
 
 
 def test_fzf_installs_all_three_tools_in_plugin_bin(workspace):

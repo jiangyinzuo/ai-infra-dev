@@ -4,6 +4,8 @@
 
 ## Install Dependencies
 
+本目录脚本使用 Python 3.9+；请确保 `python3 --version` 满足要求。
+
 ```bash
 python3 -m pip install sshconf==0.2.7
 uv tool install --force --with ansible ansible-core

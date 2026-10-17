@@ -55,29 +55,28 @@ WSL运行：
 ./devtools/extract-nvim-plugin.sh --host suzhou-a3-130 --jobs 8
 ```
 
-## 更新并同步命令行工具
+## 更新并同步命令行工具及 bindfs
 
-`download.py` 依赖：
-- Python 3.9+
-- curl
-- Rich python TUI库（可选项，`python3 -m pip install --user 'rich<15'`）
+WSL 下载并同步工具：
 
-WSL运行：
 ```bash
-# 默认并发 8，逐文件校验 SHA-256
 python3 ./devtools/openeuler24.03-lts-aarch64/download.py --jobs 8
 ./sync-devtools.py --apply suzhou-a3-130
-# 如果判断运行环境是WSL，则要求输入host。在远程服务器则不需要
-# 解压并在 ~/.bashrc 配置平台目录下的 path.env，重复运行不重复添加。
+```
+
+先在服务器更新 `vimrc`，确保编译脚本可用：
+
+```bash
+python3 ~/devtools/update-dev-git-repo.py
+```
+
+然后回到 WSL 执行解压：
+
+```bash
 ./devtools/openeuler24.03-lts-aarch64/extract.sh --host suzhou-a3-130
 ```
 
-## 构建nvim插件
-
-经过上面两步后，服务器环境上同时有了nvim和插件。
-```bash
-nvim --headless "+Lazy! build telescope-fzf-native.nvim" +qa
-```
+`extract.sh` 会检查 bindfs：已安装则跳过；未安装时自动用 `yum` 安装编译依赖，并调用 `~/vimrc/install/build_bindfs.sh` 编译安装。首次安装后在服务器运行 `source ~/.bashrc`，用 `bindfs --version` 验证。下载的是 bindfs 官方源码压缩包，不是 Git 仓库。
 
 ## 容器镜像下载与创建
 
@@ -109,17 +108,33 @@ python3 ~/devtools/containers/create.py --test-home /path/to/test-home --share /
 
 ### bindfs 目录映射
 
-脚本通过 bindfs 将宿主机 HOME 映射到容器，`--share` 可添加其他共享目录。容器内 root 创建的文件归属宿主机当前用户，适合共享源码和开发文件；依赖实际切换文件属主的工作负载不适用，FUSE 也会增加 I/O 开销。容器以特权模式运行，文件映射不是安全边界。
+脚本通过 bindfs 将宿主机 HOME 映射到容器，`--share` 可添加其他共享目录。
 
-容器运行期间保持映射有效。重启后挂载不会自动恢复，挂载缺失时不要启动旧容器。清理时先停止并删除容器，再按脚本提示卸载映射并删除空挂载目录：
+容器内 root 创建的文件归属宿主机当前用户，可以共享源码和开发文件。
+
+> FUSE 也会增加 I/O 开销。
+
+容器仍在同一台运行中的宿主机时，可直接重启：
+
+```bash
+docker restart jiangyinzuo-dev1
+```
+
+如果宿主机重启，bindfs 挂载会丢失，但容器本身和容器内数据仍保留。先在宿主机重新执行创建时输出的每条 `sudo bindfs ...` 命令（目标目录不存在时先 `mkdir -p <目标目录>`），再启动原容器：
+
+```bash
+docker start jiangyinzuo-dev1
+docker exec -it jiangyinzuo-dev1 bash
+```
+
+不要在挂载恢复前启动容器，否则容器看到的共享目录可能是空目录。无需删除或重建容器。
+
+确实要删除容器时，再停止并删除容器及其独立 volume，随后按创建时输出的命令卸载 bindfs 并删除空目录：
 
 ```bash
 docker stop jiangyinzuo-dev1
 docker rm -v jiangyinzuo-dev1
 ```
-
-每个容器的 `~/.local/bin` 和 `~/.local/lib` 使用独立 volume，避免容器和宿主机的 Python 工具互相覆盖；删除容器时加 `-v` 清理这些 volume。`docker volume prune` 会清理所有未被容器引用的匿名 volume，不限于本工具创建的 volume，执行前请确认其中数据不再需要。
-
 
 ## 宿主机/容器内执行命令
 

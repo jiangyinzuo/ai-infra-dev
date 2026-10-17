@@ -64,11 +64,21 @@ for archive in "${archives[@]}"; do
         --no-overwrite-dir --no-same-owner --no-same-permissions
     case $archive in
         bindfs-*.tar.gz)
-            # Build the synchronized release source on the target architecture.
-            source_dir="$script_dir/${archive%.tar.gz}"
-            builder="$HOME/vimrc/install/build_bindfs.sh"
-            [[ -f $builder ]] || { echo "error: missing $builder; update vimrc first" >&2; exit 1; }
-            bash "$builder" "$source_dir"
+            bindfs_path=$(command -v bindfs || true)
+            if [[ -z $bindfs_path && -x $HOME/.local/bin/bindfs ]]; then
+                bindfs_path="$HOME/.local/bin/bindfs"
+            fi
+            if [[ -z $bindfs_path ]]; then
+                builder="$HOME/vimrc/install/build_bindfs.sh"
+                [[ -f $builder ]] || {
+                    echo "error: missing $builder; update vimrc first" >&2
+                    exit 1
+                }
+                sudo yum install -y gcc make pkgconf-pkg-config fuse-devel
+                bash "$builder" "$script_dir/${archive%.tar.gz}"
+            else
+                printf 'skip bindfs build (already installed: %s)\n' "$bindfs_path"
+            fi
             ;;
         fzf-*-linux_arm64.tar.gz)
             cp -- "$support/fzf-preview.sh" "$support/fzf-tmux" "$destination/"
