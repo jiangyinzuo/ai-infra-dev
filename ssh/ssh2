@@ -8,7 +8,7 @@ import sys
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "container-dev/devtools"))
-from config import HOST_ENV_KEYS, PROXY_ENV_KEYS, SSH_ROUTES
+from config import HOST_ENV_DEFAULTS, HOST_ENV_KEYS, PROXY_ENV_KEYS, SSH_ROUTES
 
 VALUE_OPTIONS = set("BbcDEeFIiJLlmOopQRSWw")
 
@@ -54,7 +54,7 @@ def build_command(argv):
         raise ValueError(f"unsupported SSH Host: {host}")
     executable, bind_variable = route
     client = [executable]
-    environment = {key: os.environ[key] for key in HOST_ENV_KEYS if key in os.environ}
+    environment = {**HOST_ENV_DEFAULTS, **{key: os.environ[key] for key in HOST_ENV_KEYS if key in os.environ}}
     if bind_variable:
         ip = os.environ.get(bind_variable)
         if not ip:

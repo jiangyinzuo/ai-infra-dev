@@ -36,11 +36,16 @@ def test_create_interactive_defaults_and_image_selection(monkeypatch, capsys):
     assert "1) vllm-ascend:newest" in capsys.readouterr().out
 
     assert (
-        module.next_container_name(["jiangyinzuo-dev2", "other", "jiangyinzuo-dev10"])
+        module.next_container_name(
+            ["jiangyinzuo-dev2", "other", "jiangyinzuo-dev10"], mapped=False
+        )
         == "jiangyinzuo-dev11"
     )
     monkeypatch.setattr("builtins.input", lambda prompt: "")
-    assert module.select_container_name(["jiangyinzuo-dev2"]) == "jiangyinzuo-dev3"
+    assert (
+        module.select_container_name(["jiangyinzuo-bindfs-dev2"])
+        == "jiangyinzuo-bindfs-dev3"
+    )
 
 
 def test_create_image_selection_rejects_empty_image_list(monkeypatch):
@@ -81,11 +86,42 @@ def test_create_prepare_uses_interactive_defaults(monkeypatch, tmp_path):
     args, home, sources, bindfs = module.prepare()
 
     assert args.image == "vllm-ascend:newest"
-    assert args.name == "jiangyinzuo-dev6"
+    assert args.name == "jiangyinzuo-bindfs-dev1"
     assert home == str(tmp_path)
     assert sources == [tmp_path]
     assert bindfs == "/usr/bin/bindfs"
     assert calls[-1] == ("sudo", "-n", "true")
+
+
+def test_direct_create_needs_neither_bindfs_nor_sudo(monkeypatch, tmp_path):
+    module = load("create")
+    monkeypatch.setattr(module.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(module.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(module.shutil, "which", lambda name: None)
+
+    def run(*command, **kwargs):
+        if command[0] != "docker":
+            pytest.fail("direct mode requires a non-Docker command")
+        return subprocess.CompletedProcess(command, 0, "")
+
+    monkeypatch.setattr(module, "run", run)
+    monkeypatch.setattr(
+        sys, "argv", ["create.py", "--image", "image", "--name", "test", "--no-bindfs"]
+    )
+    options, home, sources, bindfs = module.prepare()
+    assert bindfs is None
+    original = tmp_path / "keep"
+    original.write_text("user data")
+
+    def fail_start(*command, **kwargs):
+        if command[:2] == ("docker", "start"):
+            raise subprocess.CalledProcessError(1, command)
+        return run(*command, **kwargs)
+
+    monkeypatch.setattr(module, "run", fail_start)
+    with pytest.raises(subprocess.CalledProcessError):
+        module.create_container(options, home, sources, bindfs)
+    assert original.read_text() == "user data"
 
 
 @pytest.fixture

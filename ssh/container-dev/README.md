@@ -100,15 +100,17 @@ python3 ~/devtools/containers/download.py
 python3 ~/devtools/containers/create.py
 # 也可以明确指定镜像和容器名
 python3 ~/devtools/containers/create.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
+# 性能测试：不用 bindfs，直接挂载；新文件可能归宿主机 root 所有
+python3 ~/devtools/containers/create.py --no-bindfs
 # 隔离验证，不挂真实 HOME；测试目录需已存在且可写
 python3 ~/devtools/containers/create.py --test-home /path/to/test-home --share /path/to/test-data
 ```
 
-镜像从本机 `vllm-ascend` 镜像中按创建时间由新到旧列出；容器名默认建议下一个 `jiangyinzuo-dev数字`，回车即可接受。
+镜像按创建时间由新到旧列出；bindfs 容器默认名为 `jiangyinzuo-bindfs-dev数字`，直接挂载为 `jiangyinzuo-dev数字`，回车即可接受。
 
 ### bindfs 目录映射
 
-脚本通过 bindfs 将宿主机 HOME 映射到容器，`--share` 可添加其他共享目录。
+脚本通过 bindfs 将宿主机 HOME 映射到容器，`--share` 可添加其他共享目录。相同源目录、UID/GID 和映射策略自动复用；旧版无记录的随机挂载不自动接管。
 
 容器内 root 创建的文件归属宿主机当前用户，可以共享源码和开发文件。
 
@@ -129,11 +131,12 @@ docker exec -it jiangyinzuo-dev1 bash
 
 不要在挂载恢复前启动容器，否则容器看到的共享目录可能是空目录。无需删除或重建容器。
 
-确实要删除容器时，再停止并删除容器及其独立 volume，随后按创建时输出的命令卸载 bindfs 并删除空目录：
+删除时可交互选择是否保留映射，或明确指定；两种方式均删除容器及匿名 volume，不删除共享源目录。仍被其他容器（含已停止容器）使用的映射不会卸载。
 
 ```bash
-docker stop jiangyinzuo-dev1
-docker rm -v jiangyinzuo-dev1
+python3 ~/devtools/containers/delete.py
+python3 ~/devtools/containers/delete.py --name jiangyinzuo-bindfs-dev1 --keep-bindfs
+python3 ~/devtools/containers/delete.py --name jiangyinzuo-bindfs-dev1 --remove-bindfs
 ```
 
 ## 宿主机/容器内执行命令

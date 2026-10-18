@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Rootful Docker with bindfs-mapped writable directories (Python 3.9+)."""
+"""Rootful Docker with optional bindfs ownership mapping (Python 3.9+)."""
 
 import argparse
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
-import tempfile
-from typing import Any
+import sys
+from typing import Any, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import HOST_ENV_DEFAULTS
+from mappings import MappingStore
 
 
 def green(text: str) -> str:
@@ -50,24 +55,31 @@ def select_image() -> str:
         print(green("请输入有效编号"))
 
 
-def next_container_name(names: list[str]) -> str:
+def next_container_name(names: list[str], mapped: bool = True) -> str:
+    """生成下一个容器名；mapped=True 使用 bindfs 前缀，否则使用直接挂载前缀。"""
+    prefix = "jiangyinzuo-bindfs-dev" if mapped else "jiangyinzuo-dev"
     numbers = [
         int(match.group(1))
         for name in names
-        if (match := re.fullmatch(r"jiangyinzuo-dev([0-9]{1,9})", name))
+        if (match := re.fullmatch(re.escape(prefix) + r"([0-9]{1,9})", name))
     ]
-    return f"jiangyinzuo-dev{max(numbers, default=0) + 1}"
+    return f"{prefix}{max(numbers, default=0) + 1}"
 
 
-def select_container_name(names: list[str]) -> str:
-    default = next_container_name(names)
+def select_container_name(names: list[str], mapped: bool = True) -> str:
+    default = next_container_name(names, mapped)
     return input(green(f"容器名 [{default}]: ")) or default
 
 
-def prepare() -> tuple[argparse.Namespace, str, list[Path], str]:
+def prepare() -> tuple[argparse.Namespace, str, list[Path], Optional[str]]:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", help="镜像名或 ID；默认交互选择")
     parser.add_argument("--name", help="容器名；默认递增并交互确认")
+    parser.add_argument(
+        "--no-bindfs",
+        action="store_true",
+        help="直接挂载 HOME 和共享目录，避免 FUSE 开销；新文件可能归宿主机 root 所有",
+    )
     parser.add_argument(
         "--share",
         action="append",
@@ -94,11 +106,11 @@ def prepare() -> tuple[argparse.Namespace, str, list[Path], str]:
         text=True,
     ).stdout.splitlines()
     if not args.name:
-        args.name = select_container_name(existing_names)
+        args.name = select_container_name(existing_names, not args.no_bindfs)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]+", args.name):
         parser.error("Invalid container name")
-    bindfs = shutil.which("bindfs")
-    if not bindfs:
+    bindfs = None if args.no_bindfs else shutil.which("bindfs")
+    if not args.no_bindfs and not bindfs:
         parser.error("bindfs is required on the host")
     home = str(Path.home())
     sources = [Path(args.test_home or home).resolve()] + [
@@ -111,27 +123,9 @@ def prepare() -> tuple[argparse.Namespace, str, list[Path], str]:
             )
     if args.name in existing_names:
         parser.error("Container name already exists")
-    run("sudo", "-n", "true")
+    if bindfs is not None:
+        run("sudo", "-n", "true")
     return args, home, sources, bindfs
-
-
-def mount_directory(bindfs: str, source: Path, target: Path, destination: str) -> None:
-    target.mkdir()
-    print(yellow(f"映射目录：{source} → {target} → 容器 {destination}"), flush=True)
-    run(
-        "sudo",
-        "-n",
-        bindfs,
-        "--map={}/0:@{}/@0".format(os.getuid(), os.getgid()),
-        "--create-for-user=" + str(os.getuid()),
-        "--create-for-group=" + str(os.getgid()),
-        "--chown-ignore",
-        "--chgrp-ignore",
-        "-o",
-        "allow_other,nosuid,nodev",
-        str(source),
-        str(target),
-    )
 
 
 def docker_command(name: str, home: str) -> list[str]:
@@ -155,6 +149,12 @@ def docker_command(name: str, home: str) -> list[str]:
         "USER=root",
         "--env",
         "LOGNAME=root",
+        "--env",
+        "NODE_TLS_REJECT_UNAUTHORIZED="
+        + os.environ.get(
+            "NODE_TLS_REJECT_UNAUTHORIZED",
+            HOST_ENV_DEFAULTS["NODE_TLS_REJECT_UNAUTHORIZED"],
+        ),
     ]
 
 
@@ -199,53 +199,88 @@ path.write_text(''.join(':'.join(row) + '\\n' for row in rows))
     run("docker", "exec", name, "mkdir", "-p", home + "/ascend/log")
 
 
-def print_instructions(name: str, home: str, root: Path, mounted: list[Path]) -> None:
+def print_instructions(name: str, home: str) -> None:
     print(green(f"容器 {name} 已启动，用户 root，HOME={home}"), flush=True)
-    print(f"bindfs 挂载目录：{root}")
-    print(yellow("进入容器："))
     print(shlex.join(["docker", "exec", "-it", name, "bash"]))
-    print(yellow("删除容器及独立 volume："))
-    print(shlex.join(["docker", "stop", name]))
-    print(shlex.join(["docker", "rm", "-v", name]))
-    print(yellow("删除容器后，卸载映射并清理空挂载目录："))
-    for target in reversed(mounted):
-        print(shlex.join(["sudo", "umount", str(target)]))
-    print(shlex.join(["rmdir", *map(str, mounted), str(root)]))
+    print(yellow("删除容器（保留映射以便复用）："))
+    print(
+        shlex.join(
+            [
+                "python3",
+                str(Path(__file__).with_name("delete.py")),
+                "--name",
+                name,
+                "--keep-bindfs",
+            ]
+        )
+    )
+    print(yellow("删除容器及未被其他容器引用的映射："))
+    print(
+        shlex.join(
+            [
+                "python3",
+                str(Path(__file__).with_name("delete.py")),
+                "--name",
+                name,
+                "--remove-bindfs",
+            ]
+        )
+    )
 
 
 def create_container(
-    args: argparse.Namespace, home: str, sources: list[Path], bindfs: str
+    args: argparse.Namespace, home: str, sources: list[Path], bindfs: Optional[str]
 ) -> None:
-    # Outside HOME: prevent recursively mounting the mirror inside its source.
-    root = Path(tempfile.mkdtemp(prefix="root-mapped-", dir="/var/tmp"))
-    mounted: list[Path] = []
+    store = MappingStore()
+    # Serialize registry operations through container creation so deletion cannot
+    # unmount an acquired mapping before Docker records its reference.
+    with store.locked() if bindfs is not None else nullcontext():
+        _create_container(args, home, sources, bindfs, store)
+
+
+def _create_container(
+    args: argparse.Namespace,
+    home: str,
+    sources: list[Path],
+    bindfs: Optional[str],
+    store: MappingStore,
+) -> None:
     created = False
     try:
         print(green(f"创建容器 {args.name}，镜像 {args.image}"), flush=True)
-        print(
-            f"容器 root → 宿主机 UID/GID {os.getuid()}:{os.getgid()}；HOME={home}",
-            flush=True,
-        )
+        if bindfs is not None:
+            print(
+                f"容器 root → 宿主机 UID/GID {os.getuid()}:{os.getgid()}；HOME={home}",
+                flush=True,
+            )
+        else:
+            print(
+                yellow(
+                    "直接挂载（无 bindfs）：容器新文件可能归宿主机 root 所有，普通用户可能无法修改。"
+                ),
+                flush=True,
+            )
         command = docker_command(args.name, home)
         for index, source in enumerate(sources):
-            target = root / str(index)
             destination = home if index == 0 else str(source)
-            mount_directory(bindfs, source, target, destination)
-            mounted.append(target)
+            if bindfs is not None:
+                target = store.acquire(source, bindfs)
+            else:
+                target = source
+                print(yellow(f"直接挂载：{source} → 容器 {destination}"), flush=True)
             command += ["--volume", "{}:{}".format(target, destination)]
         command += runtime_mounts(home)
         run(*command, "--entrypoint", "/bin/bash", "-it", args.image)
         created = True
         run("docker", "start", args.name)
         initialize_home(args.name, home)
-        print_instructions(args.name, home, root, mounted)
+        print_instructions(args.name, home)
     except BaseException:
-        print(yellow("创建失败或中断，正在清理本次容器和 bindfs 挂载。"), flush=True)
+        print(yellow("创建失败或中断，正在清理本次创建的资源。"), flush=True)
         if created:
             run("docker", "rm", "-f", "-v", args.name)
-        for target in reversed(mounted):
-            run("sudo", "-n", "umount", str(target))
-        shutil.rmtree(root)
+        if bindfs is not None:
+            print(yellow("bindfs 映射已保留，可在下次创建时复用。"))
         raise
 
 
