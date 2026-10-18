@@ -4,8 +4,8 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools/containers"))
-from core import residuals
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
+from containers.core import residuals
 
 
 def test_deleted_source_and_stopped_reference(tmp_path, monkeypatch):

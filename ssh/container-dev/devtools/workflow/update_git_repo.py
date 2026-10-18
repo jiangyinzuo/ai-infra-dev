@@ -1,25 +1,15 @@
 #!/usr/bin/env python3
 """Update development repositories through the SSH HTTP CONNECT proxy."""
 
-import argparse
 import os
 from pathlib import Path
-import re
 import shlex
 import shutil
 import subprocess
 import sys
 
 from config import REMOTE_USER
-from remote_exec import is_wsl, run_remote
-
-
-def host_alias(value):
-    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", value):
-        raise argparse.ArgumentTypeError(
-            f"--host requires a Host alias only; user is fixed to {REMOTE_USER}"
-        )
-    return value
+from remote_exec import add_host_argument, is_wsl, run_remote
 
 
 def update_repositories(debug):
@@ -54,34 +44,30 @@ def update_repositories(debug):
     return 0
 
 
-def main():
-    parser = argparse.ArgumentParser(
+def register(subparsers):
+    group = subparsers.add_parser("git-repo", help="开发 Git 仓库")
+    actions = group.add_subparsers(dest="repo_action", required=True)
+    parser = actions.add_parser(
+        "update",
         description=(
             f"WSL 必须指定 --host，仅传 SSH Host 别名；远端用户固定为 {REMOTE_USER}。"
             "服务器本地执行不传 --host。"
-        )
+        ),
     )
-    parser.add_argument("--host", type=host_alias, help="SSH Host alias")
+    add_host_argument(parser)
     parser.add_argument(
         "--debug", action="store_true", help="enable Git and SSH tracing"
     )
-    args = parser.parse_args()
-    if is_wsl():
-        if not args.host:
-            parser.error(f"WSL requires --host HOST (user: {REMOTE_USER})")
-        return run_remote(
-            args.host, "update-dev-git-repo.py", ("--debug",) if args.debug else ()
-        )
-    if args.host:
-        parser.error("--host is only supported on WSL; omit it on the server")
+    parser.set_defaults(handler=execute, command_parser=parser)
+
+
+def execute(args):
+    parser = args.command_parser
+    if is_wsl() and (not args.host or args.host == "localhost"):
+        parser.error(f"WSL requires --host HOST (user: {REMOTE_USER})")
+    if args.host and args.host != "localhost":
+        remote_args = ["--no-hints", "git-repo", "update"]
+        if args.debug:
+            remote_args.append("--debug")
+        return run_remote(args.host, "cli.py", remote_args)
     return update_repositories(args.debug)
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except subprocess.CalledProcessError as exc:
-        sys.exit(exc.returncode if exc.returncode >= 0 else 128 - exc.returncode)
-    except (OSError, RuntimeError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)

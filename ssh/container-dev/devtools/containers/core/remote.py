@@ -3,18 +3,17 @@
 import csv
 from pathlib import Path
 import platform
-import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(ROOT.parent))
 from config import NPU_PLATFORMS
-from remote_exec import run_remote
+from remote_exec import add_host_argument, host_alias, run_remote
 
 
 def add_target_args(parser):
-    parser.add_argument("--host", help="SSH Host 别名或 localhost；WSL 必填")
+    add_host_argument(parser)
     parser.add_argument(
         "--npu-platform",
         choices=NPU_PLATFORMS,
@@ -43,8 +42,7 @@ def dispatch(args, script, options):
                 raise ValueError("WSL 本地下载必须指定 --npu-platform a3")
             args.npu_platform = detect_local_platform()
         return None
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args.host):
-        raise ValueError("--host 必须是 SSH config 中的 Host 别名")
+    host_alias(args.host)
     ssh_dir = ROOT.parents[2]
 
     path = ssh_dir / "machine-info/machines-output.csv"
@@ -59,5 +57,7 @@ def dispatch(args, script, options):
     if args.npu_platform and args.npu_platform != npu:
         raise ValueError("指定平台与机器 CSV 不一致")
     return run_remote(
-        args.host, "containers/cli.py", [script, "--npu-platform", npu, *options]
+        args.host,
+        "cli.py",
+        ["--no-hints", "containers", script, "--npu-platform", npu, *options],
     )

@@ -5,9 +5,9 @@ import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1] / "devtools/containers"
+ROOT = Path(__file__).resolve().parents[1] / "devtools"
 sys.path.insert(0, str(ROOT))
-from commands import delete as module
+from containers.commands import delete as module
 
 
 def test_interactive_delete_keeps_mapping_and_targets_selected_id(

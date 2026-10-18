@@ -16,8 +16,16 @@ def workspace(tmp_path):
     container = ssh / "container-dev"
     tools = container / "devtools"
     tools.mkdir(parents=True)
-    shutil.copy2(ROOT / "sync-devtools.py", container / "sync-devtools.py")
-    shutil.copy2(ROOT / "devtools/config.py", tools / "config.py")
+    for source in (ROOT / "devtools").glob("*.py"):
+        shutil.copy2(source, tools / source.name)
+    for package in ("workflow", "containers"):
+        shutil.copytree(
+            ROOT / "devtools" / package,
+            tools / package,
+            ignore=shutil.ignore_patterns(
+                "__pycache__", "*.tar", "*.tar.gz", "*.tar.zst"
+            ),
+        )
     (tools / "openeuler24.03-lts-aarch64").mkdir()
     (tools / "proxy.env").touch()
     binaries = tmp_path / "bin"
@@ -49,7 +57,14 @@ def write_machines(ssh, rows):
 def run(workspace, *args):
     _, container, env = workspace
     return subprocess.run(
-        ["python3", str(container / "sync-devtools.py"), *args],
+        [
+            "python3",
+            str(container / "devtools/cli.py"),
+            "--no-hints",
+            "binaries",
+            "sync",
+            *args,
+        ],
         cwd="/tmp",
         env=env,
         capture_output=True,
@@ -68,7 +83,7 @@ def test_host_selects_platform_from_csv(workspace, mode):
             ("lianqiuhu-one", "openEuler 24.03, LTS", "arm64"),
         ],
     )
-    result = run(workspace, mode, "suzhou-a3-130", "lianqiuhu-one")
+    result = run(workspace, mode, "--host", "suzhou-a3-130", "--host", "lianqiuhu-one")
     assert result.returncode == 0, result.stderr
     calls = [
         json.loads(line) for line in Path(env["SYNC_LOG"]).read_text().splitlines()
@@ -78,6 +93,13 @@ def test_host_selects_platform_from_csv(workspace, mode):
         assert str(container / "devtools/openeuler24.03-lts-aarch64") in args
         assert args[-1] == f"jiangyinzuo@{host}:~/devtools/"
         assert ("--dry-run" in args) == (mode == "--dry-run")
+        assert str(container / "devtools/workflow") in args
+        assert str(container / "devtools/containers") in args
+        assert str(container / "devtools/cli.py") in args
+        assert str(container / "devtools/nvim-plugins") in args
+        assert "--exclude=*.md" in args
+        assert "--exclude=__pycache__/" in args
+        assert "--exclude=/containers/**" in args
 
 
 @pytest.mark.parametrize(
@@ -92,7 +114,7 @@ def test_host_selects_platform_from_csv(workspace, mode):
 def test_invalid_host_or_platform_stops_before_any_transfer(workspace, rows):
     ssh, _, env = workspace
     write_machines(ssh, [("good", "openEuler", "aarch64"), *rows])
-    result = run(workspace, "--apply", "good", "bad")
+    result = run(workspace, "--apply", "--host", "good", "--host", "bad")
     assert result.returncode != 0
     assert "bad" in result.stderr
     assert not Path(env["SYNC_LOG"]).exists()
@@ -104,6 +126,6 @@ def test_rsync_failure_stops_remaining_hosts(workspace):
         ssh, [("one", "openEuler", "aarch64"), ("two", "openEuler", "arm64")]
     )
     env["SYNC_EXIT"] = "23"
-    result = run(workspace, "--apply", "one", "two")
+    result = run(workspace, "--apply", "--host", "one", "--host", "two")
     assert result.returncode == 23
     assert len(Path(env["SYNC_LOG"]).read_text().splitlines()) == 1

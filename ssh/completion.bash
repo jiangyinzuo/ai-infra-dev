@@ -47,52 +47,6 @@ _ssh2_complete() {
 }
 complete -F _ssh2_complete ssh2
 
-_sync_devtools_complete() {
-    local current=${COMP_WORDS[COMP_CWORD]}
-    COMPREPLY=()
-    case $current in
-        -*)
-            _complete_values -h --help --apply --dry-run
-            ;;
-        *)
-            _ssh_usg_complete "$HOME/.ssh/config"
-            if [[ -z $current ]]; then
-                COMPREPLY+=(-h --help --apply --dry-run)
-            fi
-            ;;
-    esac
-}
-complete -F _sync_devtools_complete sync-devtools.py
-
-_container_complete() {
-    local current=${COMP_WORDS[COMP_CWORD]} previous=${COMP_WORDS[COMP_CWORD-1]}
-    COMPREPLY=()
-    case $previous in
-        --host)
-            _ssh_usg_complete "$HOME/.ssh/config"
-            [[ localhost != "$current"* ]] || COMPREPLY+=(localhost)
-            return ;;
-        --npu-platform) _complete_values a3; return ;;
-        --date|--version|--image|--name) return ;;
-    esac
-    local options='-h --help --host --npu-platform'
-    case ${COMP_WORDS[0]} in
-        *download.py) options+=' --date --version' ;;
-        *create.py) options+=' --image --name' ;;
-    esac
-    _complete_values $options
-}
-complete -F _container_complete download.py create.py
-
-_update_dev_git_repo_complete() {
-    local current=${COMP_WORDS[COMP_CWORD]} previous=${COMP_WORDS[COMP_CWORD-1]}
-    COMPREPLY=()
-    case $previous in
-        --host) _ssh_usg_complete "$HOME/.ssh/config" ;;
-        *) _complete_values -h --help --host --debug ;;
-    esac
-}
-complete -F _update_dev_git_repo_complete update-dev-git-repo.py
 
 _ssh_completion_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -107,7 +61,7 @@ _complete_values() {
 
 _profile_cli_complete() {
     local current=${COMP_WORDS[COMP_CWORD]} previous=${COMP_WORDS[COMP_CWORD-1]}
-    local group command=${COMP_WORDS[0]}
+    local group command=${_cli_completion_command:-${COMP_WORDS[0]}}
     local -a options=(-h --help --group --host-glob)
     # ./cli.py 按当前目录区分；带路径调用按入口目录区分。
     case $command in
@@ -136,8 +90,117 @@ _profile_cli_complete() {
         *) _complete_values "${options[@]}" ;;
     esac
 }
-complete -F _profile_cli_complete cli.py
-for _completion_cli in npu-top createuser; do
-    complete -F _profile_cli_complete "./$_completion_cli/cli.py" "$_completion_cli/cli.py" "$_ssh_completion_dir/$_completion_cli/cli.py"
+_devtools_cli_complete() {
+    local current=${COMP_WORDS[COMP_CWORD]} previous=${COMP_WORDS[COMP_CWORD-1]}
+    local start=${_cli_completion_start:-1} group= action= word i
+    local -a options=(-h --help)
+    COMPREPLY=()
+    for ((i=start; i<COMP_CWORD; i++)); do
+        word=${COMP_WORDS[i]}
+        case $word in
+            --no-hints|-h|--help) continue ;;
+            -*) break ;;
+        esac
+        if [[ -z $group ]]; then group=$word; else action=$word; break; fi
+    done
+    if [[ -z $group ]]; then
+        _complete_values -h --help --no-hints nvim-plugins git-repo binaries containers
+        return
+    fi
+    case $group in
+        nvim-plugins|binaries|containers|git-repo)
+            if [[ -z $action ]]; then
+                case $group in
+                    nvim-plugins) _complete_values -h --help download extract ;;
+                    binaries) _complete_values -h --help download extract sync ;;
+                    containers) _complete_values -h --help create delete download ls ;;
+                    git-repo) _complete_values -h --help update ;;
+                esac
+                return
+            fi ;;
+        *) return ;;
+    esac
+    options+=(--host)
+    case $group:$action in
+        git-repo:update) options+=(--debug) ;;
+        nvim-plugins:download) options+=(--lock --output --repos --jobs) ;;
+        nvim-plugins:extract|binaries:download) options+=(--jobs) ;;
+        binaries:sync) options+=(--apply --dry-run) ;;
+        containers:create) options+=(--image --name --no-bindfs --share --test-home) ;;
+        containers:delete) options+=(--name --keep-bindfs --remove-bindfs --cleanup-bindfs --yes) ;;
+        containers:download) options+=(--npu-platform --date --version) ;;
+        containers:ls) options+=(--json) ;;
+    esac
+    case $previous in
+        --host)
+            _ssh_usg_complete "$HOME/.ssh/config"
+            [[ localhost != "$current"* || " ${COMPREPLY[*]} " == *' localhost '* ]] || COMPREPLY+=(localhost)
+            ;;
+        --npu-platform) _complete_values a3 ;;
+        --lock|--output|--repos|--share|--test-home)
+            mapfile -t COMPREPLY < <(compgen -f -- "$current")
+            compopt -o filenames 2>/dev/null || true
+            ;;
+        --jobs|--image|--name|--date|--version) return ;;
+        *) _complete_values "${options[@]}" ;;
+    esac
+}
+
+_cli_complete() {
+    local command=${_cli_completion_command:-${COMP_WORDS[0]}} directory
+    case $command in
+        */*) directory=${command%/*} ;;
+        *) directory=$PWD ;;
+    esac
+    [[ $directory != . ]] || directory=$PWD
+    case ${directory##*/} in
+        devtools) _devtools_cli_complete ;;
+        createuser|npu-top) _profile_cli_complete ;;
+        *) COMPREPLY=() ;;
+    esac
+}
+
+_cli_python_complete() {
+    local _cli_completion_command=${COMP_WORDS[1]:-} _cli_completion_start=2
+    local directory=${_cli_completion_command%/*}
+    [[ $_cli_completion_command == */* && $directory != . ]] || directory=$PWD
+    if ((COMP_CWORD > 1)) && [[ ${_cli_completion_command##*/} == cli.py ]]; then
+        case ${directory##*/} in
+            devtools|createuser|npu-top) _cli_complete; return ;;
+        esac
+    fi
+    if [[ -n ${_cli_python_original_function:-} ]]; then
+        "$_cli_python_original_function" "$@"
+    elif ((${#_cli_python_original_args[@]})); then
+        mapfile -t COMPREPLY < <(compgen "${_cli_python_original_args[@]}" -- "${COMP_WORDS[COMP_CWORD]}")
+    else
+        mapfile -t COMPREPLY < <(compgen -f -- "${COMP_WORDS[COMP_CWORD]}")
+        compopt -o filenames 2>/dev/null || true
+    fi
+}
+
+complete -F _cli_complete cli.py
+for _completion_cli in npu-top createuser container-dev/devtools; do
+    complete -F _cli_complete "./$_completion_cli/cli.py" "$_completion_cli/cli.py" "$_ssh_completion_dir/$_completion_cli/cli.py"
 done
-unset _completion_cli
+complete -F _cli_complete ./devtools/cli.py devtools/cli.py "$HOME/devtools/cli.py"
+# 保留已加载的 Python 补全函数及其选项；其他脚本仍交给原补全处理。
+_cli_python_spec=$(complete -p python3 2>/dev/null) || _cli_python_spec=
+if [[ $_cli_python_spec != *' -F _cli_python_complete '* ]]; then
+    _cli_python_original_function=
+    _cli_python_original_args=()
+    if [[ $_cli_python_spec =~ ' -F '([^[:space:]]+) ]]; then
+        _cli_python_original_function=${BASH_REMATCH[1]}
+        eval "${_cli_python_spec/ -F $_cli_python_original_function / -F _cli_python_complete }"
+    elif [[ -z $_cli_python_spec ]]; then
+        complete -o default -F _cli_python_complete python3
+    else
+        _cli_capture_python_spec() {
+            _cli_python_original_args=("${@:1:$#-1}")
+        }
+        eval "${_cli_python_spec/#complete /_cli_capture_python_spec }"
+        unset -f _cli_capture_python_spec
+        complete -o default -F _cli_python_complete python3
+    fi
+fi
+unset _completion_cli _cli_python_spec

@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[1] / "devtools/update-dev-git-repo.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "devtools/cli.py"
 
 
 def git(*args, cwd=None, env=None):
@@ -91,7 +91,7 @@ def workspace(tmp_path):
 
 def run_script(env, *args):
     return subprocess.run(
-        [sys.executable, str(SCRIPT), *args],
+        [sys.executable, str(SCRIPT), "--no-hints", "git-repo", "update", *args],
         env=env,
         capture_output=True,
         text=True,
@@ -171,18 +171,19 @@ def test_rejects_non_alias_remote_target(workspace, target):
     assert not (home / "ai-infra-dev").exists()
 
 
-def test_wsl_requires_host(workspace):
+@pytest.mark.parametrize("args", [(), ("--host", "localhost")])
+def test_wsl_requires_host(workspace, args):
     home, _, env = workspace
     env["TEST_KERNEL_RELEASE"] = "6.1-microsoft-standard-WSL2"
-    result = run_script(env)
+    result = run_script(env, *args)
     assert result.returncode == 2
     assert "WSL requires --host" in result.stderr
     assert not (home / "ai-infra-dev").exists()
 
 
-def test_server_rejects_host(workspace):
+def test_server_localhost_updates_locally(workspace):
     home, _, env = workspace
-    result = run_script(env, "--host", "test-host")
-    assert result.returncode == 2
-    assert "--host" in result.stderr
-    assert not (home / "ai-infra-dev").exists()
+    result = run_script(env, "--host", "localhost")
+    assert result.returncode == 0, result.stderr
+    assert (home / "ai-infra-dev/.git").is_dir()
+    assert (home / "vimrc/.git").is_dir()

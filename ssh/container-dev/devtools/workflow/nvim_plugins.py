@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
-"""Download Neovim plugin sources without Git (Python 3 standard library only).
+"""下载 Neovim 插件源码归档，无需 Git，默认并发 8，保存到 devtools/nvim-plugins/。
 
-Usage: python3 download-nvim-plugins.py [--lock PATH] [--output DIR] [--jobs N]
-Default output: nvim-plugins/ beside this script (shared across target platforms).
-Repositories are resolved from quoted owner/repo declarations in the config's
-Lua files. Use --repos JSON for explicit {"plugin-name": "owner/repo"} overrides,
-e.g. aliases or ambiguous declarations. Missing/ambiguous repositories fail
-before downloading; we never guess a GitHub owner from a lock-file key.
-
-Archives stay compressed; no plugin build hooks or Git submodules are run.
-Archives use stable plugin-name.tar.gz filenames, including across repository forks.
-archive-hashes.json records each URL and SHA-256; cache hits require both to match.
-GitHub provides no official source-archive digest: hashes detect local changes,
-not authenticity. Existing archives without metadata are downloaded again.
-Downloads run concurrently (default: 8 workers). Completed archive metadata is
-saved even on partial failure so successful downloads can be reused.
+用法：cli.py nvim-plugins download [--lock PATH] [--output DIR] [--jobs N]
+仓库从 Lua 配置解析；有歧义时用 --repos JSON 指定，不自动猜测。
+按 URL 和 SHA-256 复用缓存，失败时保留已完成下载；哈希不用于来源认证。
+仅下载源码，不执行插件构建或拉取 Git 子模块。
 """
 
 import argparse
@@ -23,12 +13,13 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import sys
+import subprocess
 import tarfile
 import tempfile
 import urllib.request
 
 from config import NVIM_PLUGIN_EXCLUDES
+from remote_exec import add_host_argument, is_wsl, run_remote
 
 
 REPO = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
@@ -119,25 +110,80 @@ def download(url, destination, cached):
             temp.unlink(missing_ok=True)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+def positive_jobs(value):
+    jobs = int(value)
+    if jobs < 1:
+        raise argparse.ArgumentTypeError("--jobs must be at least 1")
+    return jobs
+
+
+def register(subparsers):
+    parser = subparsers.add_parser(
+        "nvim-plugins", help="download or extract Neovim plugins"
     )
-    parser.add_argument(
-        "--lock", type=Path, default=Path.home() / ".config/nvim/lazy-lock.json"
+    actions = parser.add_subparsers(dest="plugin_action", required=True)
+    download_parser = actions.add_parser(
+        "download",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--output", type=Path, default=Path(__file__).resolve().parent / "nvim-plugins"
-    )
-    parser.add_argument(
+    download_parser.add_argument("--lock", type=Path)
+    download_parser.add_argument("--output", type=Path)
+    download_parser.add_argument(
         "--repos", type=Path, help="JSON repository overrides keyed by lock plugin name"
     )
-    parser.add_argument(
-        "--jobs", type=int, default=8, help="concurrent downloads (default: 8)"
+    extract_parser = actions.add_parser(
+        "extract", help="extract synced plugin archives"
     )
-    args = parser.parse_args()
-    if args.jobs < 1:
-        parser.error("--jobs must be at least 1")
+    for action in (download_parser, extract_parser):
+        add_host_argument(action)
+        action.add_argument(
+            "--jobs",
+            type=positive_jobs,
+            default=8,
+            help="concurrent workers (default: 8)",
+        )
+        action.set_defaults(handler=execute)
+
+
+def execute(args):
+    if (
+        args.plugin_action == "extract"
+        and is_wsl()
+        and args.host in (None, "localhost")
+    ):
+        raise ValueError("nvim-plugins extract on WSL requires a remote --host")
+    if args.host and args.host != "localhost":
+        remote_args = [
+            "--no-hints",
+            "nvim-plugins",
+            args.plugin_action,
+            "--jobs",
+            str(args.jobs),
+        ]
+        if args.plugin_action == "download":
+            for option in ("lock", "output", "repos"):
+                value = getattr(args, option)
+                if value is not None:
+                    remote_args.extend(["--" + option, str(value)])
+        return run_remote(args.host, "cli.py", remote_args)
+    if args.plugin_action == "extract":
+        return subprocess.run(
+            [
+                "bash",
+                str(Path(__file__).with_name("extract_nvim_plugins.sh")),
+                "--jobs",
+                str(args.jobs),
+            ],
+            check=False,
+        ).returncode
+    args.lock = args.lock or Path.home() / ".config/nvim/lazy-lock.json"
+    args.output = args.output or Path(__file__).resolve().parents[1] / "nvim-plugins"
+    download_plugins(args)
+    return 0
+
+
+def download_plugins(args):
     lock = {
         name: entry
         for name, entry in json.loads(args.lock.read_bytes()).items()
@@ -184,10 +230,3 @@ def main():
     )
     if failures:
         raise OSError("download failed:\n" + "\n".join(failures))
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, ValueError, tarfile.TarError) as error:
-        sys.exit(f"error: {error}")

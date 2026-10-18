@@ -7,13 +7,13 @@ import sys
 import pytest
 
 CONTAINERS = Path(__file__).resolve().parents[1] / "devtools/containers"
-sys.path.insert(0, str(CONTAINERS))
-from core import remote as common
+sys.path.insert(0, str(CONTAINERS.parent))
+from containers.core import remote as common
 from cli import build_parser
 
 
 def load(name):
-    return importlib.import_module(f"commands.{name}")
+    return importlib.import_module(f"containers.commands.{name}")
 
 
 def test_create_interactive_defaults_and_image_selection(monkeypatch, capsys):
@@ -80,7 +80,9 @@ def test_create_prepare_uses_interactive_defaults(monkeypatch, tmp_path):
     answers = iter(("", ""))
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
 
-    args, home, sources, bindfs = module.prepare(build_parser().parse_args(["create"]))
+    args, home, sources, bindfs = module.prepare(
+        build_parser().parse_args(["containers", "create"])
+    )
 
     assert args.image == "vllm-ascend:newest"
     assert args.name == "jiangyinzuo-bindfs-dev1"
@@ -103,7 +105,7 @@ def test_direct_create_needs_neither_bindfs_nor_sudo(monkeypatch, tmp_path):
 
     monkeypatch.setattr(module, "run", run)
     options = build_parser().parse_args(
-        ["create", "--image", "image", "--name", "test", "--no-bindfs"]
+        ["containers", "create", "--image", "image", "--name", "test", "--no-bindfs"]
     )
     options, home, sources, bindfs = module.prepare(options)
     assert bindfs is None
@@ -195,11 +197,11 @@ def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
 
     remote_command = shlex.split(calls[0][2])
     entrypoint = next(
-        index
-        for index, token in enumerate(remote_command)
-        if token.endswith("containers/cli.py")
+        index for index, token in enumerate(remote_command) if token.endswith("/cli.py")
     )
     assert remote_command[entrypoint + 1 :] == [
+        "--no-hints",
+        "containers",
         "download",
         "--npu-platform",
         "a3",
@@ -239,8 +241,8 @@ def test_remote_dispatch_places_subcommand_before_options(
     assert calls == [
         (
             "suzhou-one",
-            "containers/cli.py",
-            [subcommand, "--npu-platform", "a3", *options],
+            "cli.py",
+            ["--no-hints", "containers", subcommand, "--npu-platform", "a3", *options],
         )
     ]
 

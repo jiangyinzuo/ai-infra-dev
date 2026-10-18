@@ -4,9 +4,9 @@ import argparse
 import os
 from typing import Optional
 
-from core.mappings import MappingStore
-from core.process import containers, managed, run
-from core.residuals import scan, cleanup
+from ..core.mappings import MappingStore
+from ..core.process import containers, managed, run
+from ..core.residuals import scan, cleanup
 from .ls import print_mappings
 
 

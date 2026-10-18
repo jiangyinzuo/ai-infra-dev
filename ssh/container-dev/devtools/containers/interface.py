@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""容器管理：create / delete / download / ls（Python 3.9+）。"""
+"""Container command registration for devtools/cli.py."""
 
 import argparse
-import subprocess
 import sys
-from commands import create, delete, download, ls
-from core.remote import add_target_args
+from contextlib import redirect_stdout
+from .commands import create, delete, download, ls
+from .core.remote import add_target_args
+from remote_exec import add_host_argument, is_wsl, run_remote
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    commands = parser.add_subparsers(dest="command", required=True)
+def register(subparsers) -> None:
+    parser = subparsers.add_parser("containers", help="容器管理")
+    commands = parser.add_subparsers(dest="container_action", required=True)
     creator = commands.add_parser("create", help="创建 root 容器，默认 bindfs 映射")
     creator.add_argument("--image", help="镜像名或 ID；默认交互选择")
     creator.add_argument("--name", help="容器名；默认递增并交互确认")
@@ -23,7 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--share", action="append", default=[], help="额外共享目录，可重复指定"
     )
     creator.add_argument("--test-home", help="以隔离目录代替真实 HOME")
-    creator.set_defaults(handler=create.execute)
+    add_host_argument(creator)
+    creator.set_defaults(handler=execute, container_handler=create.execute)
     remover = commands.add_parser("delete", help="删除容器或清理未引用映射")
     remover.add_argument("--name", help="容器名称；默认交互选择")
     mode = remover.add_mutually_exclusive_group()
@@ -39,7 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
     remover.add_argument(
         "--yes", action="store_true", help="确认残留清理，适用于自动化"
     )
-    remover.set_defaults(handler=delete.execute)
+    add_host_argument(remover)
+    remover.set_defaults(handler=execute, container_handler=delete.execute)
     fetcher = commands.add_parser("download", help="下载 NPU 容器镜像")
     add_target_args(fetcher)
     fetcher.add_argument("--date", default="20261014", help="日期 YYYYMMDD")
@@ -51,21 +54,35 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument(
         "--json", action="store_true", help="JSON 输出；命令日志写 stderr"
     )
-    listing.set_defaults(handler=ls.execute)
-    return parser
+    add_host_argument(listing)
+    listing.set_defaults(handler=execute, container_handler=ls.execute)
 
 
-def main() -> int:
-    args = build_parser().parse_args()
-    try:
-        return args.handler(args) or 0
-    except (OSError, ValueError, EOFError, subprocess.SubprocessError) as exc:
-        print("error: " + str(exc), file=sys.stderr)
-        return 1
-    except KeyboardInterrupt:
-        print("已取消", file=sys.stderr)
-        return 130
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+def execute(args: argparse.Namespace):
+    if args.host and args.host != "localhost":
+        options = ["--no-hints", "containers", args.container_action]
+        for key in ("image", "name", "test_home"):
+            value = getattr(args, key, None)
+            if value is not None:
+                options += ["--" + key.replace("_", "-"), value]
+        for value in getattr(args, "share", []):
+            options += ["--share", value]
+        for key in (
+            "no_bindfs",
+            "keep_bindfs",
+            "remove_bindfs",
+            "cleanup_bindfs",
+            "yes",
+            "json",
+        ):
+            if getattr(args, key, False):
+                options.append("--" + key.replace("_", "-"))
+        with (
+            redirect_stdout(sys.stderr)
+            if getattr(args, "json", False)
+            else redirect_stdout(sys.stdout)
+        ):
+            return run_remote(args.host, "cli.py", options)
+    if is_wsl():
+        raise ValueError("请通过 --host 指定服务器执行容器管理")
+    return args.container_handler(args)

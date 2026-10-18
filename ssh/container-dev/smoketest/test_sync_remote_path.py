@@ -1,15 +1,12 @@
-import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location(
-    "sync_devtools", Path(__file__).resolve().parents[1] / "sync-devtools.py"
-)
-MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
+from workflow import sync as MODULE
 
 
 @pytest.mark.parametrize("relative", [True, False])

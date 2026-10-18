@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """按机器 OS/Arch 同步 devtools，默认 dry-run，不传输 Docker 镜像归档。"""
 
-import argparse
 import csv
 from pathlib import Path
 import shlex
@@ -9,26 +8,22 @@ import shutil
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parent
-SSH_DIR = ROOT.parent
-DEVTOOLS = ROOT / "devtools"
-sys.path.insert(0, str(DEVTOOLS))
+DEVTOOLS = Path(__file__).resolve().parents[1]
+SSH_DIR = DEVTOOLS.parent.parent
 from config import REMOTE_USER, REMOTE_DIR, TOOL_PLATFORMS, NVIM_PLUGIN_EXCLUDES
+from remote_exec import add_host_argument
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description=f"{__doc__} 固定同步到 {REMOTE_USER}@HOST:{REMOTE_DIR}/。"
-    )
-    parser.add_argument("hosts", nargs="+", metavar="HOST")
+def register(subparsers):
+    parser = subparsers.add_parser("sync", help=__doc__)
+    add_host_argument(parser, required=True, multiple=True)
     parser.add_argument(
         "--apply", dest="apply", action="store_true", help="执行同步并创建远端目录"
     )
     parser.add_argument(
         "--dry-run", dest="apply", action="store_false", help="仅预览（默认）"
     )
-    parser.set_defaults(apply=False)
-    return parser.parse_args()
+    parser.set_defaults(apply=False, handler=execute)
 
 
 def build_plan(hosts):
@@ -75,6 +70,7 @@ def synchronize(plans, args):
         *sorted(DEVTOOLS.glob("*.sh")),
         DEVTOOLS / "proxy.env",
         DEVTOOLS / "containers",
+        DEVTOOLS / "workflow",
     ]
     for host, source, ssh in plans:
         command = ["rsync", "-av", "--info=progress2", "-e", shlex.quote(ssh)]
@@ -115,17 +111,12 @@ def synchronize(plans, args):
     return 0
 
 
-def main():
-    args = parse_args()
+def execute(args):
     try:
-        plans = build_plan(args.hosts)
+        plans = build_plan(args.host)
         if not shutil.which("rsync"):
             raise ValueError("rsync is required")
         return synchronize(plans, args)
     except (OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -10,10 +10,10 @@ import shlex
 import shutil
 from typing import Optional
 
-from core.remote import ROOT
+from ..core.remote import ROOT
 from config import HOST_ENV_DEFAULTS, CONTAINER_ENV_KEYS
-from core.mappings import MappingStore
-from core.process import run
+from ..core.mappings import MappingStore
+from ..core.process import run
 
 
 def green(text: str) -> str:
@@ -189,7 +189,8 @@ def print_instructions(name: str, home: str) -> None:
         shlex.join(
             [
                 "python3",
-                str(ROOT / "cli.py"),
+                str(ROOT.parent / "cli.py"),
+                "containers",
                 "delete",
                 "--name",
                 name,
@@ -202,7 +203,8 @@ def print_instructions(name: str, home: str) -> None:
         shlex.join(
             [
                 "python3",
-                str(ROOT / "cli.py"),
+                str(ROOT.parent / "cli.py"),
+                "containers",
                 "delete",
                 "--name",
                 name,

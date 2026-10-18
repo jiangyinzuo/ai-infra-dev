@@ -7,9 +7,35 @@ import platform
 import re
 import shlex
 import subprocess
-import sys
 
 from config import REMOTE_USER
+
+
+def host_alias(value: str) -> str:
+    """校验 SSH Host 别名；登录用户由共享配置决定，不接受 user@host。"""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value):
+        raise ValueError("--host 仅接受 SSH Host 别名，用户固定为 " + REMOTE_USER)
+    return value
+
+
+def add_host_argument(
+    parser: argparse.ArgumentParser, *, required: bool = False, multiple: bool = False
+) -> None:
+    """统一主机参数；multiple=True 时重复 --host 收集多个目标。"""
+    help_text = f"SSH Host 别名，用户固定为 {REMOTE_USER}"
+    help_text += (
+        "；必填" if required else "；省略或 localhost 表示本地，受命令运行环境限制"
+    )
+    if multiple:
+        help_text += "；可重复指定"
+    parser.add_argument(
+        "--host",
+        type=host_alias,
+        metavar="HOST",
+        required=required,
+        action="append" if multiple else "store",
+        help=help_text,
+    )
 
 
 def is_wsl():
@@ -17,8 +43,7 @@ def is_wsl():
 
 
 def run_remote(host, script, args=()):
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", host):
-        raise ValueError("--host 仅接受 SSH Host 别名，用户固定为 " + REMOTE_USER)
+    host_alias(host)
     path = PurePosixPath(script)
     if path.is_absolute() or ".." in path.parts:
         raise ValueError("远程脚本必须位于 ~/devtools/")
@@ -31,21 +56,3 @@ def run_remote(host, script, args=()):
     return subprocess.run(
         [str(ssh), f"{REMOTE_USER}@{host}", command], check=False
     ).returncode
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", help=f"SSH Host 别名；用户固定 {REMOTE_USER}")
-    parser.add_argument("script", help="相对于 ~/devtools 的脚本")
-    parser.add_argument("args", nargs=argparse.REMAINDER)
-    args = parser.parse_args()
-    try:
-        host = args.host or input("WSL: SSH Host（用户 jiangyinzuo）: ").strip()
-        return run_remote(host, args.script, args.args)
-    except (OSError, ValueError, EOFError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-
-
-if __name__ == "__main__":
-    sys.exit(main())

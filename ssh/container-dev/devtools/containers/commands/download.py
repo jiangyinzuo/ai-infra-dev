@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from core.remote import ROOT, NPU_PLATFORMS, dispatch
+from ..core.remote import ROOT, NPU_PLATFORMS, dispatch
 
 
 def download(args):

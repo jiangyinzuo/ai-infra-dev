@@ -5,9 +5,9 @@ from contextlib import redirect_stdout
 import json
 import sys
 
-from core.mappings import MappingStore
-from core.process import containers, managed
-from core.residuals import scan
+from ..core.mappings import MappingStore
+from ..core.process import containers, managed
+from ..core.residuals import scan
 
 
 def print_mappings(rows: list) -> None:

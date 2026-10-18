@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools/containers"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
 from cli import build_parser
-from commands import ls
-from core import mappings, process, residuals
+from containers.commands import ls
+from containers.core import mappings, process, residuals
 
 
 def test_ls_json_filters_display_but_checks_all_references(
@@ -60,7 +60,7 @@ def test_ls_json_filters_display_but_checks_all_references(
         monkeypatch.setattr(module, "run", forbidden)
     monkeypatch.setattr(residuals, "cleanup", forbidden)
     monkeypatch.setattr("builtins.input", forbidden)
-    ls.execute(build_parser().parse_args(["ls", "--json"]))
+    ls.execute(build_parser().parse_args(["containers", "ls", "--json"]))
 
     result = json.loads(capsys.readouterr().out)
     assert set(result) == {"containers", "mappings"}
@@ -101,7 +101,7 @@ def test_ls_json_empty_registry_is_read_only(tmp_path, monkeypatch, capsys):
         monkeypatch.setattr(module, "run", forbidden)
     monkeypatch.setattr(residuals, "cleanup", forbidden)
     monkeypatch.setattr("builtins.input", forbidden)
-    ls.execute(build_parser().parse_args(["ls", "--json"]))
+    ls.execute(build_parser().parse_args(["containers", "ls", "--json"]))
 
     assert json.loads(capsys.readouterr().out) == {"containers": [], "mappings": []}
     assert not root.exists()

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """ARM64 tool downloads: Python 3.9+, curl transport, optional Rich progress."""
 
-import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
@@ -343,15 +342,12 @@ class Downloader:
         return tasks
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--jobs", type=int, default=8)
-    args = parser.parse_args()
-    if args.jobs < 1:
-        parser.error("--jobs requires a positive integer")
+def download(directory, jobs=8):
+    if jobs < 1:
+        raise ValueError("--jobs requires a positive integer")
     if not shutil.which("curl"):
-        parser.error("curl is required")
-    downloader = Downloader(Path(__file__).resolve().parent, None)
+        raise RuntimeError("curl is required")
+    downloader = Downloader(directory, None)
     tasks = downloader.tasks()
     display = Display(tasks)
     downloader.display = display
@@ -363,7 +359,7 @@ def main():
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         old_handlers[sig] = signal.signal(sig, interrupt)
-    executor = ThreadPoolExecutor(max_workers=args.jobs)
+    executor = ThreadPoolExecutor(max_workers=jobs)
     failed = False
     errors = []
     interrupted = False
@@ -397,7 +393,3 @@ def main():
         for sig, handler in old_handlers.items():
             signal.signal(sig, handler)
     return 130 if interrupted else int(failed)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

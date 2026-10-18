@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 
 import pytest
@@ -16,9 +17,16 @@ def workspace(tmp_path):
     home = tmp_path / "home with spaces"
     tools = home / "devtools/openeuler24.03-lts-aarch64"
     tools.mkdir(parents=True)
-    shutil.copy2(
-        DEVTOOLS / "openeuler24.03-lts-aarch64/extract.sh", tools / "extract.sh"
-    )
+    for source in DEVTOOLS.glob("*.py"):
+        shutil.copy2(source, tools.parent / source.name)
+    for package in ("workflow", "containers"):
+        shutil.copytree(
+            DEVTOOLS / package,
+            tools.parent / package,
+            ignore=shutil.ignore_patterns(
+                "__pycache__", "*.tar", "*.tar.gz", "*.tar.zst"
+            ),
+        )
     binaries = tmp_path / "bin"
     binaries.mkdir()
     for utility in (
@@ -41,13 +49,25 @@ def workspace(tmp_path):
     uname.write_text("#!/bin/sh\necho Linux\n")
     uname.chmod(0o755)
     env = {**os.environ, "HOME": str(home), "PATH": str(binaries)}
+    hooks = tmp_path / "python-hooks"
+    hooks.mkdir()
+    (hooks / "sitecustomize.py").write_text(
+        'import platform\nplatform.release = lambda: "Linux"\n'
+    )
+    env["PYTHONPATH"] = str(hooks)
     return home, tools, env
 
 
 def extract(workspace):
     home, tools, env = workspace
     return subprocess.run(
-        ["bash", str(tools / "extract.sh")],
+        [
+            sys.executable,
+            str(tools.parent / "cli.py"),
+            "--no-hints",
+            "binaries",
+            "extract",
+        ],
         cwd=home,
         env=env,
         capture_output=True,
