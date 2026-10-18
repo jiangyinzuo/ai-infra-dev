@@ -4,13 +4,13 @@
 from pathlib import Path
 import shlex
 import shutil
-import subprocess
 
 DEVTOOLS = Path(__file__).resolve().parents[1]
 SSH_DIR = DEVTOOLS.parent.parent
 from config import REMOTE_USER, REMOTE_DIR, TOOL_PLATFORMS, NVIM_PLUGIN_EXCLUDES
 from remote_exec import add_host_argument
 from inventory import read_machines, machine_record
+from terminal import green, run
 
 
 def register(subparsers):
@@ -95,10 +95,10 @@ def synchronize(plans, args):
         ]
         mode = "sync" if args.apply else "dry-run"
         print(
-            f"\033[32m{mode} {source} + common -> {REMOTE_USER}@{host}:{REMOTE_DIR}\033[0m",
+            green(f"{mode} {source} + common -> {REMOTE_USER}@{host}:{REMOTE_DIR}"),
             flush=True,
         )
-        result = subprocess.run(command, check=False)
+        result = run(*command, check=False)
         if result.returncode:
             return result.returncode
     return 0

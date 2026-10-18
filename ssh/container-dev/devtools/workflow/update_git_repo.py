@@ -3,13 +3,11 @@
 
 import os
 from pathlib import Path
-import shlex
 import shutil
-import subprocess
-import sys
 
 from config import REMOTE_USER
 from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
+from terminal import run
 
 
 def update_repositories(debug):
@@ -33,14 +31,9 @@ def update_repositories(debug):
             if not (git_dir.is_dir() or git_dir.is_file()):
                 raise RuntimeError(f"{destination} exists but is not a Git repository")
             command = ["git", "-C", str(destination), "pull", "--ff-only"]
-        print(shlex.join(command), flush=True)
-        subprocess.run(command, env=env, check=True)
+        run(*command, env=env)
         if repo == "vimrc" and cloning:
-            print(
-                f"(cd {shlex.quote(str(destination))} && ./install/setup.sh)",
-                flush=True,
-            )
-            subprocess.run(["./install/setup.sh"], cwd=destination, check=True)
+            run("./install/setup.sh", cwd=destination)
     return 0
 
 

@@ -7,7 +7,7 @@ from typing import Optional
 from ..core.mappings import MappingStore
 from ..core.process import containers, managed, run
 from ..core.residuals import scan, cleanup
-from .ls import print_mappings
+from ..core.presentation import print_mappings
 
 
 def select_container(choices: list, name: Optional[str]) -> Optional[dict]:
@@ -17,7 +17,7 @@ def select_container(choices: list, name: Optional[str]) -> Optional[dict]:
                 return container
         raise ValueError("未找到指定的 jiangyinzuo 容器")
     if not choices:
-        print("没有可管理的容器；可用 cli.py ls 检查映射")
+        print("没有可管理的容器；可用 cli.py containers ls 检查映射")
         return None
     for index, container in enumerate(choices, 1):
         print(
@@ -94,7 +94,7 @@ def execute(args: argparse.Namespace) -> None:
             for source in sources:
                 if "root-mapped-" in source:
                     print(
-                        "旧版映射请使用 cli.py delete --cleanup-bindfs 检查清理："
+                        "旧版映射请使用 cli.py containers delete --cleanup-bindfs 检查清理："
                         + source
                     )
         print("完成：" + name)

@@ -14,14 +14,7 @@ from ..core.remote import ROOT
 from config import HOST_ENV_DEFAULTS, CONTAINER_ENV_KEYS
 from ..core.mappings import MappingStore
 from ..core.process import run
-
-
-def green(text: str) -> str:
-    return f"\033[32m{text}\033[0m"
-
-
-def yellow(text: str) -> str:
-    return f"\033[33m{text}\033[0m"
+from terminal import green, yellow
 
 
 def select_image() -> str:

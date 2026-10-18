@@ -1,10 +1,10 @@
 """Human-facing next steps; never mix hints into JSON output."""
 
 from pathlib import Path
-import os
 import shlex
 import sys
 from remote_exec import is_wsl
+from terminal import color
 
 
 def suggestions(args) -> list:
@@ -73,13 +73,9 @@ def show(args) -> None:
     if getattr(args, "no_hints", False) or getattr(args, "json", False):
         return
     stream = sys.stderr
-    colored = stream.isatty() and "NO_COLOR" not in os.environ
-
-    def color(text, code):
-        return "\033[" + code + "m" + text + "\033[0m" if colored else text
 
     cli = Path(__file__).resolve().parents[1] / "cli.py"
-    print("\n" + color("接下来可以…", "1;35"), file=stream)
+    print("\n" + color("接下来可以…", "1;35", stream), file=stream)
     host = getattr(args, "host", None)
     if isinstance(host, list) and len(host) > 1:
         print(
@@ -88,4 +84,4 @@ def show(args) -> None:
         )
     for label, command in suggestions(args):
         line = shlex.join(["python3", str(cli), *command])
-        print("  {}  {}".format(color(label, "36"), line), file=stream)
+        print("  {}  {}".format(color(label, "36", stream), line), file=stream)

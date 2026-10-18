@@ -1,14 +1,7 @@
 """Printed process execution and Docker inventory."""
 
 import json
-import shlex
-import subprocess
-from typing import Any
-
-
-def run(*args: str, **kwargs: Any) -> subprocess.CompletedProcess:
-    print(shlex.join(args), flush=True)
-    return subprocess.run(list(args), check=True, **kwargs)
+from terminal import run
 
 
 def containers() -> list:
