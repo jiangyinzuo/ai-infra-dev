@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """按机器 OS/Arch 同步 devtools，默认 dry-run，不传输 Docker 镜像归档。"""
 
-import csv
 from pathlib import Path
 import shlex
 import shutil
 import subprocess
-import sys
 
 DEVTOOLS = Path(__file__).resolve().parents[1]
 SSH_DIR = DEVTOOLS.parent.parent
 from config import REMOTE_USER, REMOTE_DIR, TOOL_PLATFORMS, NVIM_PLUGIN_EXCLUDES
 from remote_exec import add_host_argument
+from inventory import read_machines, machine_record
 
 
 def register(subparsers):
@@ -28,16 +27,10 @@ def register(subparsers):
 
 def build_plan(hosts):
     path = SSH_DIR / "machine-info/machines-output.csv"
-    with path.open(newline="", encoding="utf-8") as stream:
-        reader = csv.DictReader(stream)
-        if not {"Host", "OS", "Arch"}.issubset(reader.fieldnames or []):
-            raise ValueError(f"{path}: expected Host,OS,Arch columns")
-        machines = {row["Host"]: row for row in reader}
+    machines = read_machines(path, ("OS", "Arch"))
     plans = []
     for host in hosts:
-        if host not in machines:
-            raise ValueError(f"{host}: missing machine record in {path}")
-        row = machines[host]
+        row = machine_record(machines, host, path)
         os_name = row["OS"].strip().lower().split(maxsplit=1)
         key = (os_name[0] if os_name else "", row["Arch"].strip().lower())
         try:
@@ -112,11 +105,7 @@ def synchronize(plans, args):
 
 
 def execute(args):
-    try:
-        plans = build_plan(args.host)
-        if not shutil.which("rsync"):
-            raise ValueError("rsync is required")
-        return synchronize(plans, args)
-    except (OSError, ValueError, KeyError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    plans = build_plan(args.host)
+    if not shutil.which("rsync"):
+        raise ValueError("rsync is required")
+    return synchronize(plans, args)

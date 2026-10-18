@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 
 from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
+from arguments import add_jobs_argument
 from . import sync, binaries_download
 
 DEVTOOLS = Path(__file__).resolve().parents[1]
@@ -17,15 +18,13 @@ def register(subparsers):
         command = actions.add_parser(action)
         add_host_argument(command)
         if action == "download":
-            command.add_argument("--jobs", type=int, default=8)
+            add_jobs_argument(command)
         command.set_defaults(handler=execute, command_parser=command)
     sync.register(actions)
 
 
 def execute(args):
     parser = args.command_parser
-    if args.binaries_action == "download" and args.jobs < 1:
-        parser.error("--jobs requires a positive integer")
     if args.binaries_action == "extract" and is_wsl() and not is_remote_host(args.host):
         parser.error("WSL requires --host HOST")
     if is_remote_host(args.host):

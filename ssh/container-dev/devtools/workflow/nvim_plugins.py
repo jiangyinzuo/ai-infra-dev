@@ -18,6 +18,7 @@ import tarfile
 import tempfile
 import urllib.request
 
+from arguments import add_jobs_argument
 from config import NVIM_PLUGIN_EXCLUDES
 from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 
@@ -110,13 +111,6 @@ def download(url, destination, cached):
             temp.unlink(missing_ok=True)
 
 
-def positive_jobs(value):
-    jobs = int(value)
-    if jobs < 1:
-        raise argparse.ArgumentTypeError("--jobs must be at least 1")
-    return jobs
-
-
 def register(subparsers):
     parser = subparsers.add_parser(
         "nvim-plugins", help="download or extract Neovim plugins"
@@ -137,12 +131,7 @@ def register(subparsers):
     )
     for action in (download_parser, extract_parser):
         add_host_argument(action)
-        action.add_argument(
-            "--jobs",
-            type=positive_jobs,
-            default=8,
-            help="concurrent workers (default: 8)",
-        )
+        add_jobs_argument(action)
         action.set_defaults(handler=execute)
 
 

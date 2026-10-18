@@ -1,6 +1,5 @@
 """容器平台选择与远程调度。"""
 
-import csv
 from pathlib import Path
 import sys
 
@@ -8,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(ROOT.parent))
 from config import NPU_PLATFORMS
+from inventory import read_machines, machine_record
 from remote_exec import (
     add_host_argument,
     host_alias,
@@ -51,11 +51,7 @@ def dispatch(args, script, options):
     ssh_dir = ROOT.parents[2]
 
     path = ssh_dir / "machine-info/machines-output.csv"
-    with path.open(newline="", encoding="utf-8") as stream:
-        rows = {row["Host"]: row for row in csv.DictReader(stream)}
-    row = rows.get(args.host)
-    if row is None:
-        raise ValueError(f"{path}: 没有主机 {args.host}")
+    row = machine_record(read_machines(path, ("NPUPlatform",)), args.host, path)
     npu = row.get("NPUPlatform", "").lower()
     if npu not in NPU_PLATFORMS:
         raise ValueError(f"{args.host}: 不支持或未探测到 NPU 平台 {npu!r}")
