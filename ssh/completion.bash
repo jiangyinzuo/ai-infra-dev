@@ -126,7 +126,7 @@ _devtools_cli_complete() {
         binaries:download) options+=(--lock --output --repos --jobs) ;;
         binaries:extract) options+=(--output --jobs) ;;
         binaries:sync) options+=(--apply --dry-run) ;;
-        containers:create) options+=(--image --name --no-bindfs --share --test-home) ;;
+        containers:create) options+=(--image --name --no-bindfs --share --test-home --npu-platform) ;;
         containers:delete) options+=(--name --keep-bindfs --remove-bindfs --cleanup-bindfs --yes) ;;
         containers:download) options+=(--npu-platform --date --version) ;;
         containers:ls) options+=(--json) ;;

@@ -59,7 +59,15 @@ printf '%s\\n' "${{COMPREPLY[@]}}"
         (["containers", ""], {"create", "delete", "download", "ls"}),
         (
             ["containers", "create", "--"],
-            {"--host", "--image", "--name", "--share", "--test-home", "--no-bindfs"},
+            {
+                "--host",
+                "--image",
+                "--name",
+                "--share",
+                "--test-home",
+                "--no-bindfs",
+                "--npu-platform",
+            },
         ),
         (
             ["containers", "delete", "--"],

@@ -20,7 +20,7 @@ def add_target_args(parser):
     parser.add_argument(
         "--npu-platform",
         choices=NPU_PLATFORMS,
-        help="覆盖本地 NPU 探测；WSL 本地下载必填",
+        help="覆盖本地 NPU 探测；远程与机器记录核对；WSL 本地下载必填",
     )
 
 

@@ -26,7 +26,7 @@ def register(subparsers) -> None:
         "--share", action="append", default=[], help="额外共享目录，可重复指定"
     )
     creator.add_argument("--test-home", help="以隔离目录代替真实 HOME")
-    add_host_argument(creator)
+    add_target_args(creator)
     creator.set_defaults(handler=execute, container_handler=create.execute)
     remover = commands.add_parser("delete", help="删除容器或清理未引用映射")
     remover.add_argument("--name", help="容器名称；默认交互选择")
@@ -61,6 +61,8 @@ def register(subparsers) -> None:
 
 
 def execute(args: argparse.Namespace):
+    if args.container_action == "create" and is_wsl() and not is_remote_host(args.host):
+        raise ValueError("请通过 --host 指定服务器执行容器管理")
     if is_remote_host(args.host):
         options = ["containers", args.container_action]
         for key in ("image", "name", "test_home"):
@@ -79,6 +81,10 @@ def execute(args: argparse.Namespace):
         ):
             if getattr(args, key, False):
                 options.append("--" + key.replace("_", "-"))
+        if args.container_action == "create":
+            from .core.remote import dispatch
+
+            return dispatch(args, "create", options[2:])
         with (
             redirect_stdout(sys.stderr)
             if getattr(args, "json", False)
@@ -87,4 +93,8 @@ def execute(args: argparse.Namespace):
             return run_remote_cli(args.host, options)
     if is_wsl():
         raise ValueError("请通过 --host 指定服务器执行容器管理")
+    if args.container_action == "create":
+        from .core.remote import dispatch
+
+        dispatch(args, "create", [])
     return args.container_handler(args)

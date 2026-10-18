@@ -61,6 +61,7 @@ def test_create_image_selection_rejects_empty_image_list(monkeypatch):
 
 def test_create_prepare_uses_interactive_defaults(monkeypatch, tmp_path):
     module = load("create")
+    monkeypatch.setattr(module, "require_host", lambda: None)
     calls = []
 
     def run(*command, **kwargs):
@@ -89,13 +90,16 @@ def test_create_prepare_uses_interactive_defaults(monkeypatch, tmp_path):
     assert args.image == "vllm-ascend:newest"
     assert args.name == "jiangyinzuo-bindfs-dev1"
     assert home == str(tmp_path)
-    assert sources == [tmp_path]
+    assert sources[0] == tmp_path
+    assert Path("/tmp") in sources and Path("/mnt") in sources
     assert bindfs == "/usr/bin/bindfs"
     assert calls[-1] == ("sudo", "-n", "true")
 
 
 def test_direct_create_needs_neither_bindfs_nor_sudo(monkeypatch, tmp_path):
     module = load("create")
+    monkeypatch.setattr(module, "require_host", lambda: None)
+    monkeypatch.setattr(module, "shm_capacity", lambda: 1024**3)
     monkeypatch.setattr(module.os, "getuid", lambda: 1000)
     monkeypatch.setattr(module.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(module.shutil, "which", lambda name: None)
@@ -103,9 +107,16 @@ def test_direct_create_needs_neither_bindfs_nor_sudo(monkeypatch, tmp_path):
     def run(*command, **kwargs):
         if command[0] != "docker":
             pytest.fail("direct mode requires a non-Docker command")
+        if command[:3] == ("docker", "image", "inspect"):
+            return subprocess.CompletedProcess(
+                command, 0, '[{"Id":"sha256:test","RepoTags":[]}]'
+            )
         return subprocess.CompletedProcess(command, 0, "")
 
     monkeypatch.setattr(module, "run", run)
+    monkeypatch.setattr(
+        module, "discover_devices", lambda: [{"path": "/dev/davinci0", "gid": 1000}]
+    )
     options = build_parser().parse_args(
         ["containers", "create", "--image", "image", "--name", "test", "--no-bindfs"]
     )
@@ -195,7 +206,7 @@ def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
     assert "--npu-platform a3" in calls[0][2]
     import shlex
 
-    remote_command = shlex.split(calls[0][2].split("; fi; ", 1)[1])
+    remote_command = shlex.split(calls[0][2].rsplit("; fi; ", 1)[1])
     entrypoint = next(
         index for index, token in enumerate(remote_command) if token.endswith("/cli.py")
     )
