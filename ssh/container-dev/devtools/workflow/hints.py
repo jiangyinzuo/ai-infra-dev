@@ -22,8 +22,7 @@ def suggestions(args) -> list:
 
     local = not is_wsl()
     add("更新开发仓库", ["git-repo", "update", *remote])
-    add("下载 Neovim 插件", ["nvim-plugins", "download", *remote])
-    add("下载命令行工具", ["binaries", "download", *remote])
+    add("下载工具和 Neovim 插件", ["binaries", "download", *remote])
     if hosts:
         add(
             "同步工具到服务器",
@@ -40,8 +39,7 @@ def suggestions(args) -> list:
     # Remote-only commands need an explicit target on WSL.
     if not local and not remote:
         rows[0] = ("更新开发仓库", ["git-repo", "update", *target])
-    add("解压 Neovim 插件", ["nvim-plugins", "extract", *target])
-    add("解压工具并安装 bindfs", ["binaries", "extract", *target])
+    add("解压工具和 Neovim 插件", ["binaries", "extract", *target])
     add("创建开发容器", ["containers", "create", *target])
     add("查看容器和映射", ["containers", "ls", *target])
     add("删除容器或清理映射", ["containers", "delete", *target])
@@ -51,7 +49,6 @@ def suggestions(args) -> list:
         (
             getattr(args, key)
             for key in (
-                "plugin_action",
                 "binaries_action",
                 "container_action",
                 "repo_action",

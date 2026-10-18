@@ -47,13 +47,14 @@ printf '%s\\n' "${{COMPREPLY[@]}}"
 @pytest.mark.parametrize(
     "args,expected",
     [
-        ([""], {"nvim-plugins", "git-repo", "binaries", "containers"}),
-        (
-            ["--no-hints", ""],
-            {"nvim-plugins", "git-repo", "binaries", "containers"},
-        ),
-        (["nvim-plugins", ""], {"download", "extract"}),
+        ([""], {"git-repo", "binaries", "containers"}),
+        (["--no-hints", ""], {"git-repo", "binaries", "containers"}),
         (["binaries", ""], {"download", "extract", "sync"}),
+        (
+            ["binaries", "download", "--"],
+            {"--host", "--lock", "--output", "--repos", "--jobs"},
+        ),
+        (["binaries", "extract", "--"], {"--host", "--output", "--jobs"}),
         (["containers", ""], {"create", "delete", "download", "ls"}),
         (
             ["containers", "create", "--"],
@@ -84,13 +85,12 @@ def test_commands_and_options(tmp_path, prefix, args, expected):
     assert expected <= replies
     if args in ([""], ["--no-hints", ""]):
         assert "sync" not in replies
+        assert "nvim-plugins" not in replies
 
 
 @pytest.mark.parametrize(
     "args",
     [
-        ["nvim-plugins", "download"],
-        ["nvim-plugins", "extract"],
         ["binaries", "download"],
         ["binaries", "extract"],
         ["binaries", "sync", "--host", "server-one"],
@@ -159,10 +159,19 @@ def test_python_file_completion_preserved(tmp_path):
     assert complete(tmp_path, ["python3", "other"]) == ["other script.py"]
 
 
-def test_path_values_preserve_spaces(tmp_path):
+@pytest.mark.parametrize(
+    "action,option",
+    [
+        ("download", "--lock"),
+        ("download", "--output"),
+        ("download", "--repos"),
+        ("extract", "--output"),
+    ],
+)
+def test_path_values_preserve_spaces(tmp_path, action, option):
     (tmp_path / "plugin lock.json").touch()
     assert complete(
-        tmp_path, ["devtools/cli.py", "nvim-plugins", "download", "--lock", "plugin"]
+        tmp_path, ["devtools/cli.py", "binaries", action, option, "plugin"]
     ) == ["plugin lock.json"]
 
 

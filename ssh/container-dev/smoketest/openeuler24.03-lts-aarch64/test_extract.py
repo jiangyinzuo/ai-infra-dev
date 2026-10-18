@@ -132,7 +132,8 @@ def test_bindfs_package_failure_prevents_build(workspace):
     sudo.write_text("#!/bin/sh\nexit 42\n")
     sudo.chmod(0o755)
     result = extract(workspace)
-    assert result.returncode == 42
+    assert result.returncode != 0
+    assert "platform tools failed (exit 42)" in result.stderr
     assert not (home / "unexpected-build").exists()
     assert not (home / ".bashrc").exists()
 
@@ -284,7 +285,7 @@ def test_plugins_extract_from_data_not_code(workspace):
             sys.executable,
             str(Path(env["TEST_CODE_DIR"]) / "cli.py"),
             "--no-hints",
-            "nvim-plugins",
+            "binaries",
             "extract",
             "--jobs",
             "2",
@@ -298,3 +299,116 @@ def test_plugins_extract_from_data_not_code(workspace):
     assert (home / "plugged/sample/plugin.lua").read_bytes() == b"return true"
     assert (plugins / "sample.tar.gz").is_file()
     assert not (home / "plugged/bad").exists()
+
+
+def plugin_archive(workspace, name="sample", payload=b"return true"):
+    _, tools, _ = workspace
+    plugins = tools.parent / "nvim-plugins"
+    plugins.mkdir(exist_ok=True)
+    archive = plugins / f"{name}.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        entry = tarfile.TarInfo(f"{name}-commit/plugin.lua")
+        entry.size = len(payload)
+        tar.addfile(entry, io.BytesIO(payload))
+    return archive
+
+
+def record_tar_calls(workspace, fail=False):
+    home, _, env = workspace
+    wrapper = Path(env["PATH"]) / "tar"
+    wrapper.unlink()
+    env["REAL_TAR"] = shutil.which("tar")
+    wrapper.write_text(
+        '#!/bin/sh\nprintf "called\\n" >> "$HOME/tar-calls"\n'
+        + ("exit 42\n" if fail else 'exec "$REAL_TAR" "$@"\n')
+    )
+    wrapper.chmod(0o755)
+    return home / "tar-calls"
+
+
+def test_plugin_cache_skips_unchanged_archive_and_preserves_build_files(workspace):
+    home, _, _ = workspace
+    plugin_archive(workspace)
+    calls = record_tar_calls(workspace)
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    first_calls = calls.read_text()
+    assert first_calls
+    destination = home / "plugged/sample"
+    installed = destination / "plugin.lua"
+    initial_mtime = installed.stat().st_mtime_ns
+    (destination / "build-output").write_text("keep")
+
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text() == first_calls
+    assert installed.stat().st_mtime_ns == initial_mtime
+    assert (destination / "build-output").read_text() == "keep"
+
+
+def test_plugin_cache_reextracts_changed_archive(workspace):
+    home, _, _ = workspace
+    plugin_archive(workspace)
+    calls = record_tar_calls(workspace)
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    first_calls = calls.read_text()
+    plugin_archive(workspace, payload=b"return false")
+
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    assert len(calls.read_text()) > len(first_calls)
+    assert (home / "plugged/sample/plugin.lua").read_bytes() == b"return false"
+
+
+@pytest.mark.parametrize("missing", ["directory", "file"])
+def test_plugin_cache_reextracts_missing_target(workspace, missing):
+    home, _, _ = workspace
+    plugin_archive(workspace)
+    calls = record_tar_calls(workspace)
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    first_calls = calls.read_text()
+    destination = home / "plugged/sample"
+    if missing == "directory":
+        shutil.rmtree(destination)
+    else:
+        (destination / "plugin.lua").unlink()
+
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    assert len(calls.read_text()) > len(first_calls)
+    assert (destination / "plugin.lua").read_bytes() == b"return true"
+
+
+def test_failed_plugin_tar_does_not_write_success_stamp(workspace):
+    home, _, env = workspace
+    plugin_archive(workspace)
+    calls = record_tar_calls(workspace, fail=True)
+    result = extract(workspace)
+    assert result.returncode != 0
+    assert calls.read_text()
+    assert not (home / "plugged/.sample.extract-stamp.json").exists()
+
+    wrapper = Path(env["PATH"]) / "tar"
+    wrapper.write_text('#!/bin/sh\nexec "$REAL_TAR" "$@"\n')
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    assert (home / "plugged/sample/plugin.lua").read_bytes() == b"return true"
+    assert (home / "plugged/.sample.extract-stamp.json").is_file()
+
+
+def test_lazy_nvim_extracts_to_lazy_data_directory_and_uses_cache(workspace):
+    home, _, _ = workspace
+    plugin_archive(workspace, name="lazy.nvim")
+    calls = record_tar_calls(workspace)
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    first_calls = calls.read_text()
+    destination = home / ".local/share/nvim/lazy/lazy.nvim"
+    assert (destination / "plugin.lua").read_bytes() == b"return true"
+    assert not (home / "plugged/lazy.nvim").exists()
+
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text() == first_calls

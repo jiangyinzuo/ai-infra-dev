@@ -3,7 +3,6 @@
 统一入口为 `./devtools/cli.py`；服务器使用 `python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py`。支持 Python 3.9。两端资源默认都保存在仓库的 `ssh/container-dev/devtools/`，不依赖运行目录；可用绝对路径 `DEVTOOLS_DATA_DIR` 覆盖本机数据目录。
 
 ```text
-nvim-plugins download / extract
 git-repo update
 binaries download / extract / sync
 containers create / delete / download / ls
@@ -38,25 +37,18 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py git-repo update
 
 除 `git-repo update` 引导更新外，远程 CLI 在执行操作前会检查远端 `~/ai-infra-dev` 的 HEAD 是否与本地一致；不一致时拒绝执行。先推送本地提交，再重新运行 `./devtools/cli.py git-repo update --host HOST`，然后重试原命令。
 
-## 更新 Neovim 插件
+## 更新命令行工具和 Neovim 插件
 
-默认读取 `~/.config/nvim/lazy-lock.json`，下载插件源码归档。WSL 执行：
-
-```bash
-./devtools/cli.py nvim-plugins download
-./devtools/cli.py git-repo update --host suzhou-a3-130
-./devtools/cli.py binaries sync --host suzhou-a3-130 --apply
-./devtools/cli.py nvim-plugins extract --host suzhou-a3-130 --jobs 8
-```
-
-## 更新命令行工具
+`binaries download` 一并下载工具和插件归档，插件默认读取 `~/.config/nvim/lazy-lock.json`；`binaries extract` 一并解压。WSL 执行：
 
 ```bash
 ./devtools/cli.py binaries download --jobs 8
 ./devtools/cli.py git-repo update --host suzhou-a3-130
 ./devtools/cli.py binaries sync --host suzhou-a3-130 --apply
-./devtools/cli.py binaries extract --host suzhou-a3-130
+./devtools/cli.py binaries extract --host suzhou-a3-130 --jobs 8
 ```
+
+插件下载在来源 URL 和归档哈希均匹配时跳过；解压在归档和目标状态均未变化时跳过，目标缺失或被修改时重新解压。
 
 解压时会安装缺失的 bindfs。首次安装后在服务器运行 `source ~/.bashrc`。
 

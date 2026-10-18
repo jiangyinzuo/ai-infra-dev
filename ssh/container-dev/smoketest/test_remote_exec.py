@@ -76,14 +76,8 @@ def test_wsl_detection(monkeypatch, release, expected):
     assert remote_exec.is_wsl() is expected
 
 
-@pytest.mark.parametrize(
-    "command,args",
-    [
-        ("nvim-plugins", ["--jobs", "2"]),
-        ("binaries", []),
-    ],
-)
-def test_extract_dispatches_once_as_fixed_user(tmp_path, command, args):
+@pytest.mark.parametrize("args", [[], ["--jobs", "2"]])
+def test_extract_dispatches_once_as_fixed_user(tmp_path, args):
     tools = tmp_path / "ssh/container-dev/devtools"
     shutil.copytree(
         DEVTOOLS,
@@ -117,7 +111,7 @@ def test_extract_dispatches_once_as_fixed_user(tmp_path, command, args):
             sys.executable,
             str(tools / "cli.py"),
             "--no-hints",
-            command,
+            "binaries",
             "extract",
             "--host",
             "suzhou-one",
@@ -129,11 +123,13 @@ def test_extract_dispatches_once_as_fixed_user(tmp_path, command, args):
     )
     assert result.returncode == 0, result.stderr
     assert "jiangyinzuo@suzhou-one" in result.stdout
-    assert (
+    remote_command = (
         'python3 "$HOME"/ai-infra-dev/ssh/container-dev/devtools/cli.py --no-hints '
-        + command
-        + " extract"
-        in result.stdout
+        "binaries extract"
     )
+    assert remote_command in result.stdout
+    assert result.stdout.count(remote_command) == 1
+    if args:
+        assert "--jobs 2" in result.stdout
     assert "No supported archives" not in result.stdout
     assert "No plugin archives" not in result.stdout

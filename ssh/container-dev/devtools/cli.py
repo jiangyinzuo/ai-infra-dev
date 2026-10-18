@@ -13,12 +13,11 @@ from workflow import hints
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from workflow import nvim_plugins, binaries, update_git_repo
+    from workflow import binaries, update_git_repo
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-hints", action="store_true", help="不显示后续操作提示")
     commands = parser.add_subparsers(dest="command", required=True)
-    nvim_plugins.register(commands)
     binaries.register(commands)
     update_git_repo.register(commands)
     containers.register(commands)

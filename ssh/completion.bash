@@ -104,14 +104,13 @@ _devtools_cli_complete() {
         if [[ -z $group ]]; then group=$word; else action=$word; break; fi
     done
     if [[ -z $group ]]; then
-        _complete_values -h --help --no-hints nvim-plugins git-repo binaries containers
+        _complete_values -h --help --no-hints git-repo binaries containers
         return
     fi
     case $group in
-        nvim-plugins|binaries|containers|git-repo)
+        binaries|containers|git-repo)
             if [[ -z $action ]]; then
                 case $group in
-                    nvim-plugins) _complete_values -h --help download extract ;;
                     binaries) _complete_values -h --help download extract sync ;;
                     containers) _complete_values -h --help create delete download ls ;;
                     git-repo) _complete_values -h --help update ;;
@@ -123,8 +122,8 @@ _devtools_cli_complete() {
     options+=(--host)
     case $group:$action in
         git-repo:update) options+=(--debug) ;;
-        nvim-plugins:download) options+=(--lock --output --repos --jobs) ;;
-        nvim-plugins:extract|binaries:download) options+=(--jobs) ;;
+        binaries:download) options+=(--lock --output --repos --jobs) ;;
+        binaries:extract) options+=(--output --jobs) ;;
         binaries:sync) options+=(--apply --dry-run) ;;
         containers:create) options+=(--image --name --no-bindfs --share --test-home) ;;
         containers:delete) options+=(--name --keep-bindfs --remove-bindfs --cleanup-bindfs --yes) ;;

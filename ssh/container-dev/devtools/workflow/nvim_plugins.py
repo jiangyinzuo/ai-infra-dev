@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 """下载 Neovim 插件源码归档，无需 Git，默认并发 8，保存到 devtools/nvim-plugins/。
 
-用法：cli.py nvim-plugins download [--lock PATH] [--output DIR] [--jobs N]
+用法：cli.py binaries download [--lock PATH] [--output DIR] [--jobs N]
 仓库从 Lua 配置解析；有歧义时用 --repos JSON 指定，不自动猜测。
 按 URL 和 SHA-256 复用缓存，失败时保留已完成下载；哈希不用于来源认证。
-仅下载源码，不执行插件构建或拉取 Git 子模块。
+下载仅获取源码；提取使用系统 tar，并按归档哈希和已安装文件状态增量跳过。
 """
 
-import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 from pathlib import Path
 import re
+import stat
 import subprocess
 import tarfile
 import tempfile
 import urllib.request
 
-from ssh_common.arguments import add_jobs_argument
 from ssh_common.config import NVIM_PLUGIN_EXCLUDES
-from ssh_common.remote import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 from .paths import DATA_ROOT
 
 
@@ -112,63 +110,6 @@ def download(url, destination, cached):
             temp.unlink(missing_ok=True)
 
 
-def register(subparsers):
-    parser = subparsers.add_parser(
-        "nvim-plugins", help="download or extract Neovim plugins"
-    )
-    actions = parser.add_subparsers(dest="plugin_action", required=True)
-    download_parser = actions.add_parser(
-        "download",
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    download_parser.add_argument("--lock", type=Path)
-    download_parser.add_argument("--output", type=Path)
-    download_parser.add_argument(
-        "--repos", type=Path, help="JSON repository overrides keyed by lock plugin name"
-    )
-    extract_parser = actions.add_parser(
-        "extract", help="extract synced plugin archives"
-    )
-    for action in (download_parser, extract_parser):
-        add_host_argument(action)
-        add_jobs_argument(action)
-        action.set_defaults(handler=execute)
-
-
-def execute(args):
-    if args.plugin_action == "extract" and is_wsl() and not is_remote_host(args.host):
-        raise ValueError("nvim-plugins extract on WSL requires a remote --host")
-    if is_remote_host(args.host):
-        remote_args = [
-            "nvim-plugins",
-            args.plugin_action,
-            "--jobs",
-            str(args.jobs),
-        ]
-        if args.plugin_action == "download":
-            for option in ("lock", "output", "repos"):
-                value = getattr(args, option)
-                if value is not None:
-                    remote_args.extend(["--" + option, str(value)])
-        return run_remote_cli(args.host, remote_args)
-    if args.plugin_action == "extract":
-        return subprocess.run(
-            [
-                "bash",
-                str(Path(__file__).with_name("extract_nvim_plugins.sh")),
-                str(DATA_ROOT / "nvim-plugins"),
-                "--jobs",
-                str(args.jobs),
-            ],
-            check=False,
-        ).returncode
-    args.lock = args.lock or Path.home() / ".config/nvim/lazy-lock.json"
-    args.output = args.output or DATA_ROOT / "nvim-plugins"
-    download_plugins(args)
-    return 0
-
-
 def download_plugins(args):
     lock = {
         name: entry
@@ -216,3 +157,104 @@ def download_plugins(args):
     )
     if failures:
         raise OSError("download failed:\n" + "\n".join(failures))
+
+
+def installed_state(destination, names):
+    """Stat only archive-owned entries; extra build outputs never invalidate a hit."""
+    result = {}
+    for name in names:
+        path = destination / name
+        info = path.lstat()
+        metadata = [info.st_mode]
+        if stat.S_ISLNK(info.st_mode):
+            metadata.append(str(path.readlink()))
+        elif not stat.S_ISDIR(info.st_mode):
+            metadata.extend(
+                [
+                    info.st_size,
+                    info.st_mtime_ns,
+                    info.st_ctime_ns,
+                    info.st_ino,
+                    info.st_dev,
+                ]
+            )
+        result[name] = metadata
+    return result
+
+
+def archive_members(archive):
+    """Record stripped member paths, including parent directories, only on a miss."""
+    names = set()
+    with tarfile.open(archive, "r:gz") as stream:
+        for member in stream:
+            parts = member.name.split("/")
+            if member.name.startswith("/") or ".." in parts:
+                raise ValueError(f"{archive}: unsafe archive member {member.name!r}")
+            parts = [part for part in parts[1:] if part and part != "."]
+            for count in range(1, len(parts) + 1):
+                names.add("/".join(parts[:count]))
+    return sorted(names)
+
+
+def extract_plugin(archive, destination):
+    # Keep stamps beside the host's installation, never among synced archives.
+    stamp = destination.with_name("." + destination.name + ".extract-stamp.json")
+    digest = sha256(archive)
+    try:
+        cached = json.loads(stamp.read_bytes())
+        if (
+            cached.get("sha256") == digest
+            and isinstance(cached.get("files"), dict)
+            and cached["files"] == installed_state(destination, cached["files"])
+            and destination.is_dir()
+        ):
+            print(
+                f"skip {archive.name} (archive and installed state match)", flush=True
+            )
+            return
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    # A failed or interrupted extraction must not leave a usable success stamp.
+    stamp.unlink(missing_ok=True)
+    names = archive_members(archive)
+    destination.mkdir(parents=True, exist_ok=True)
+    print(f"extract {archive} -> {destination}", flush=True)
+    subprocess.run(
+        ["tar", "-xf", str(archive), "--strip-components=1", "-C", str(destination)],
+        check=True,
+    )
+    state = installed_state(destination, names)
+    atomic_write(
+        stamp,
+        (
+            json.dumps({"sha256": digest, "files": state}, sort_keys=True) + "\n"
+        ).encode(),
+    )
+
+
+def extract_plugins(args):
+    archives = sorted((args.output or DATA_ROOT / "nvim-plugins").glob("*.tar.gz"))
+    if not archives:
+        print("No plugin archives found.")
+        return
+    home = Path.home()
+    failures = []
+    with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+        futures = {}
+        for archive in archives:
+            name = archive.name[: -len(".tar.gz")]
+            destination = (
+                home / ".local/share/nvim/lazy/lazy.nvim"
+                if name == "lazy.nvim"
+                else home / "plugged" / name
+            )
+            futures[executor.submit(extract_plugin, archive, destination)] = (
+                archive.name
+            )
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as error:
+                failures.append(f"{futures[future]}: {error}")
+    if failures:
+        raise OSError("plugin extraction failed:\n" + "\n".join(failures))
