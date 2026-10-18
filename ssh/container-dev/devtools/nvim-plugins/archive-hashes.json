@@ -80,8 +80,8 @@
     "url": "https://github.com/hat0uma/csvview.nvim/archive/f190de76d2eca0380ddcb2425cd582d740699b55.tar.gz"
   },
   "diffview-plus.nvim.tar.gz": {
-    "sha256": "fa6012f32f4ec51fcf9b2db13a3e87162fd4ae298f8c42e9610e7261be90f26d",
-    "url": "https://github.com/dlyongemallo/diffview-plus.nvim/archive/875d16dd8c8aa86f1a5c3b5cef49e1133980ae94.tar.gz"
+    "sha256": "f2cab60b65f4d9dd4e5b303c7fbb8d7829b9647b0fac552c85ff5aa2bebb1923",
+    "url": "https://github.com/dlyongemallo/diffview-plus.nvim/archive/2a2d89a07f5d5d3cef7f542b99c3e28050ca205c.tar.gz"
   },
   "fidget.nvim.tar.gz": {
     "sha256": "4bbbb66dad0d39138b49bef860a287d5d41e91bb364ae3cd45d8f53ae3460dbb",
@@ -96,8 +96,8 @@
     "url": "https://github.com/Febri-i/fscreen.nvim/archive/9f4805a54ecdf16fffaf8491160f1effd128849b.tar.gz"
   },
   "fzf.tar.gz": {
-    "sha256": "efa12216c49af772f267153e161f927033b4f4bb5c9b4eb0d0dd78c61451b208",
-    "url": "https://github.com/junegunn/fzf/archive/c0a193e031f01fb50bf6f7be4381990a3753f7cf.tar.gz"
+    "sha256": "5ae214719ba894b39ca02e4b8b5ec66b3b6952767d4e3421656978ba3233410a",
+    "url": "https://github.com/junegunn/fzf/archive/55c122f1a0e1340546c8709682bea5561fe0e8fd.tar.gz"
   },
   "fzf.vim.tar.gz": {
     "sha256": "45d7a6fd294a717d399e711d6f61cf344b225b9a8270b6d000b5842b8cdb6ea5",
@@ -175,13 +175,17 @@
     "sha256": "739fdb233287b8aee80cc000e927b2c0cd78e26969daeecb780c21c9f243a771",
     "url": "https://github.com/jiangyinzuo/neo-tree-hierarchy.nvim/archive/1ef0548f77f54be64334ce05c0688c5acf665eef.tar.gz"
   },
+  "neo-tree-regex.nvim.tar.gz": {
+    "sha256": "86db02aa4a13564bc306f9243dc497946664767e6aa942eb6f1e8a35eb07539c",
+    "url": "https://github.com/jiangyinzuo/neo-tree-regex.nvim/archive/e629a430b8cbbcf7f91017de48d1a0cdf718a509.tar.gz"
+  },
   "neo-tree-treesitter-symbols.nvim.tar.gz": {
     "sha256": "685437f735e37fb7b73214c68c2d61d5f4676b276ef0474eb61e6fe2fe9fcf1a",
     "url": "https://github.com/jiangyinzuo/neo-tree-treesitter-symbols.nvim/archive/a12f9d92c8ee7b5e1afbce35f876566f22df568d.tar.gz"
   },
   "neo-tree.nvim.tar.gz": {
-    "sha256": "16d572a355db17c625bdcc46edf8dc13a2eb0453e8979bcc87bc8bc1c1a561e7",
-    "url": "https://github.com/nvim-neo-tree/neo-tree.nvim/archive/d5b8a12b74683ddaefa519ce66a097610672859f.tar.gz"
+    "sha256": "ada590f1363cea5e816689d6770096f6bc51840fa08bfb85ca1d6c4c4499208e",
+    "url": "https://github.com/nvim-neo-tree/neo-tree.nvim/archive/4d55ed3482da32d1a68a9ed36dca5f4d69ec0ffb.tar.gz"
   },
   "neogen.tar.gz": {
     "sha256": "555d88bd30f2d6bc17e884c15c81b3e971c3d26cdd32b948777132308cdb5718",
@@ -224,8 +228,8 @@
     "url": "https://github.com/antosha417/nvim-lsp-file-operations/archive/ba0c27cd0dbee7b421ba7b31a4cb68770032b9fd.tar.gz"
   },
   "nvim-lspconfig.tar.gz": {
-    "sha256": "08948a5fd05c29d6ee967ee614c9ca7825d286bbe64746f363fe5e88d9e1fcb8",
-    "url": "https://github.com/neovim/nvim-lspconfig/archive/ac062d0d01c019c0dbdb798968f3e5d8b35c3853.tar.gz"
+    "sha256": "3a48156bc16ad1cc195682e3639930f60fa54155eaaa632580d13842dcb82434",
+    "url": "https://github.com/neovim/nvim-lspconfig/archive/45a3a444b710511c39abca3b60bb6e23a21e3de5.tar.gz"
   },
   "nvim-navic-note.tar.gz": {
     "sha256": "e387f07abab2b04c825f3aaefff9cd48b7a2f649e04cdb3f40bddaaef7f2946c",
@@ -256,8 +260,8 @@
     "url": "https://github.com/nvim-treesitter/nvim-treesitter-textobjects/archive/5c7b0263797dfd1bd6202f2b219f3b53a80b2187.tar.gz"
   },
   "nvim-treesitter.tar.gz": {
-    "sha256": "b038397ab7238053b1481ff3cfb000ea79690ef58ed12e3dbc519f93a09f14fc",
-    "url": "https://github.com/nvim-treesitter/nvim-treesitter/archive/1a4f47b03dfe92d28de7d5654c67327ef008c9e6.tar.gz"
+    "sha256": "a08e92299578864bfa12128b444d601295a33abc1012d52a9fb70b3672c09726",
+    "url": "https://github.com/nvim-treesitter/nvim-treesitter/archive/d4a9b23a383266bdb0bfb42d565f31e83f27be5e.tar.gz"
   },
   "nvim-ts-autotag.tar.gz": {
     "sha256": "6252aecf011a21e3556e2a9ce99cdc31a4185274df18f7d377f3017bc3cbe336",
@@ -288,8 +292,8 @@
     "url": "https://github.com/MeanderingProgrammer/render-markdown.nvim/archive/8e8795368391036643b622875a6da6a51bcd33f4.tar.gz"
   },
   "review.nvim.tar.gz": {
-    "sha256": "a35c2b090cdf4abdfd5feb85e9c48241ece8d45e6c1c7495a68852b665f44802",
-    "url": "https://github.com/georgeguimaraes/review.nvim/archive/4fd12962a8d9eea960917e2511851ab7f6fccd9f.tar.gz"
+    "sha256": "db424571215a923c314ea51519cab412cc28f4c7019ae649de837b774ffb04e5",
+    "url": "https://github.com/georgeguimaraes/review.nvim/archive/46fa59f63d71c883baf1f0f89cf52f91b42eaeb0.tar.gz"
   },
   "sidekick.nvim.tar.gz": {
     "sha256": "0f31c0d55f1539e81439f0be018de1a608fca4d5c88408b1f5f97f834305c044",
@@ -372,8 +376,8 @@
     "url": "https://github.com/tpope/vim-abolish/archive/dcbfe065297d31823561ba787f51056c147aa682.tar.gz"
   },
   "vim-ai.tar.gz": {
-    "sha256": "89f74a275e4c67af023b9e2718cbeac79a15c02829cdca2efcb1b2927977aa73",
-    "url": "https://github.com/madox2/vim-ai/archive/f46c2343a7d81c74ab249214ed9d0a9c6edac07f.tar.gz"
+    "sha256": "9ece1bba8d0c6d66aaeed625c1180abf23ab6fb19ab493368dcfa1de919d499f",
+    "url": "https://github.com/madox2/vim-ai/archive/70ee6849c6c8bc667ef43c968ccec2f2f46164ca.tar.gz"
   },
   "vim-characterize.tar.gz": {
     "sha256": "f71e16170ee877cc586414641a769c5508897d0ba872b32e44dfbde2f29c481d",
@@ -454,6 +458,10 @@
   "vimux.tar.gz": {
     "sha256": "fb8c602460def64cc2bd839ec7f1a04af860146dd28011b8683bca1a203958cd",
     "url": "https://github.com/preservim/vimux/archive/d6cb7f63a8bb428ffc27060b7f83c77fb115589c.tar.gz"
+  },
+  "wezterm.nvim.tar.gz": {
+    "sha256": "fed09c098bd23997c5ab0f76264d94f630506d503e47ff4c425039e7c06420c8",
+    "url": "https://github.com/jiangyinzuo/wezterm.nvim/archive/0a5047d0050392fe1af9b920b23bd94de14f9717.tar.gz"
   },
   "z.vim.tar.gz": {
     "sha256": "a7d803da35d818a84da214e01236a654f40589030202318913623bc1a1cffcf3",

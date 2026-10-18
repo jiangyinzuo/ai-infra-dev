@@ -11,7 +11,7 @@ import shutil
 from typing import Optional
 
 from core.remote import ROOT
-from config import HOST_ENV_DEFAULTS
+from config import HOST_ENV_DEFAULTS, CONTAINER_ENV_KEYS
 from core.mappings import MappingStore
 from core.process import run
 
@@ -106,7 +106,7 @@ def prepare(
 
 
 def docker_command(name: str, home: str) -> list[str]:
-    return [
+    command = [
         "docker",
         "create",
         "--name",
@@ -133,6 +133,11 @@ def docker_command(name: str, home: str) -> list[str]:
             HOST_ENV_DEFAULTS["NODE_TLS_REJECT_UNAUTHORIZED"],
         ),
     ]
+    # Docker inherits values from this process; logs contain names, not secrets.
+    for key in CONTAINER_ENV_KEYS:
+        if key not in HOST_ENV_DEFAULTS and key in os.environ:
+            command += ["--env", key]
+    return command
 
 
 def runtime_mounts(home: str) -> list[str]:
