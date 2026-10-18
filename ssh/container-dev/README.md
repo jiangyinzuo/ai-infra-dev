@@ -14,6 +14,8 @@ containers create / delete / download / ls
 
 在 `ssh/` 先运行 `./machine-info/machine-info.py` 更新机器信息。先运行 `git-repo update`，再同步资源；同步只传资源，不传管理脚本，目标为远端仓库的 `ssh/container-dev/devtools/`。
 
+WSL 一次完成拉取、下载至本地、同步和远程解压（任一步失败即停止）：`./devtools/cli.py binaries sync-all --host suzhou-a3-130`。
+
 默认只预览，`--apply` 才执行；多个目标重复指定 `--host`：
 
 ```bash

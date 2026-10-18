@@ -1,5 +1,6 @@
 """Persistent bindfs mappings shared by create/delete; Python 3.9+."""
 
+from ssh_common.config import REMOTE_USER
 from contextlib import contextmanager
 import fcntl
 import hashlib
@@ -12,7 +13,7 @@ from .process import containers, run
 
 class MappingStore:
     def __init__(self):
-        self.root = Path("/var/tmp") / ("jiangyinzuo-bindfs-" + str(os.getuid()))
+        self.root = Path("/var/tmp") / (REMOTE_USER + "-bindfs-" + str(os.getuid()))
 
     @contextmanager
     def locked(self):

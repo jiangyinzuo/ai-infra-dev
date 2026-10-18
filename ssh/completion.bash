@@ -111,7 +111,7 @@ _devtools_cli_complete() {
         binaries|containers|git-repo)
             if [[ -z $action ]]; then
                 case $group in
-                    binaries) _complete_values -h --help download extract sync ;;
+                    binaries) _complete_values -h --help download extract sync sync-all ;;
                     containers) _complete_values -h --help create delete download ls ;;
                     git-repo) _complete_values -h --help update ;;
                 esac
@@ -125,6 +125,7 @@ _devtools_cli_complete() {
         binaries:download) options+=(--lock --output --repos --jobs) ;;
         binaries:extract) options+=(--output --jobs) ;;
         binaries:sync) options+=(--apply --dry-run) ;;
+        binaries:sync-all) options+=(--jobs) ;;
         containers:create) options+=(--image --name --no-bindfs --share --test-home) ;;
         containers:delete) options+=(--name --keep-bindfs --remove-bindfs --cleanup-bindfs --yes) ;;
         containers:download) options+=(--npu-platform --date --version) ;;

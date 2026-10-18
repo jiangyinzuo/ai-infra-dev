@@ -1,5 +1,6 @@
 """Interactive container deletion and explicit orphan cleanup."""
 
+from ssh_common.config import REMOTE_USER
 import argparse
 import os
 from typing import Optional
@@ -15,7 +16,7 @@ def select_container(choices: list, name: Optional[str]) -> Optional[dict]:
         for container in choices:
             if container["Name"].lstrip("/") == name:
                 return container
-        raise ValueError("未找到指定的 jiangyinzuo 容器")
+        raise ValueError(f"未找到指定的 {REMOTE_USER} 容器")
     if not choices:
         print("没有可管理的容器；可用 cli.py containers ls 检查映射")
         return None

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Container command registration for devtools/cli.py."""
 
+from ssh_common.config import REMOTE_USER
+
 import argparse
 import sys
 from contextlib import redirect_stdout
@@ -49,7 +51,7 @@ def register(subparsers) -> None:
     fetcher.add_argument("--version", default="26.2.0", help="镜像版本")
     fetcher.set_defaults(handler=download.execute)
     listing = commands.add_parser(
-        "ls", help="列出 jiangyinzuo 容器及 bindfs 映射，不作修改"
+        "ls", help=f"列出 {REMOTE_USER} 容器及 bindfs 映射，不作修改"
     )
     listing.add_argument(
         "--json", action="store_true", help="JSON 输出；命令日志写 stderr"

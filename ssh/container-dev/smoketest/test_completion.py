@@ -49,7 +49,7 @@ printf '%s\\n' "${{COMPREPLY[@]}}"
     [
         ([""], {"git-repo", "binaries", "containers"}),
         (["--no-hints", ""], {"git-repo", "binaries", "containers"}),
-        (["binaries", ""], {"download", "extract", "sync"}),
+        (["binaries", ""], {"download", "extract", "sync", "sync-all"}),
         (
             ["binaries", "download", "--"],
             {"--host", "--lock", "--output", "--repos", "--jobs"},

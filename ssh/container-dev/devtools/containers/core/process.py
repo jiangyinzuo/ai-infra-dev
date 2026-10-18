@@ -1,5 +1,6 @@
 """Printed process execution and Docker inventory."""
 
+from ssh_common.config import REMOTE_USER
 import json
 from ssh_common.terminal import run
 
@@ -14,4 +15,4 @@ def containers() -> list:
 
 
 def managed(name: str) -> bool:
-    return name.lstrip("/").startswith("jiangyinzuo-")
+    return name.lstrip("/").startswith(REMOTE_USER + "-")

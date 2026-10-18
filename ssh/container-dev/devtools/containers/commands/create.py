@@ -11,7 +11,7 @@ import shutil
 from typing import Optional
 
 from ..core.remote import ROOT
-from ssh_common.config import HOST_ENV_DEFAULTS, CONTAINER_ENV_KEYS
+from ssh_common.config import HOST_ENV_DEFAULTS, CONTAINER_ENV_KEYS, REMOTE_USER
 from ..core.mappings import MappingStore
 from ..core.process import run
 from ssh_common.terminal import green, yellow
@@ -44,7 +44,7 @@ def select_image() -> str:
 
 def next_container_name(names: list[str], mapped: bool = True) -> str:
     """生成下一个容器名；mapped=True 使用 bindfs 前缀，否则使用直接挂载前缀。"""
-    prefix = "jiangyinzuo-bindfs-dev" if mapped else "jiangyinzuo-dev"
+    prefix = f"{REMOTE_USER}-bindfs-dev" if mapped else f"{REMOTE_USER}-dev"
     numbers = [
         int(match.group(1))
         for name in names

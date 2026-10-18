@@ -1,5 +1,6 @@
 """Read-only inventory; listing never creates registry directories or locks."""
 
+from ssh_common.config import REMOTE_USER
 import argparse
 from contextlib import redirect_stdout
 import json
@@ -38,7 +39,7 @@ def execute(args: argparse.Namespace) -> None:
             )
         )
         return
-    print("jiangyinzuo 容器：")
+    print(f"{REMOTE_USER} 容器：")
     if not rows:
         print("  无")
     for row in rows:
