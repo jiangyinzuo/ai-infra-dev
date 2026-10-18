@@ -46,6 +46,7 @@ uv run --with pytest python -m pytest smoketest -q
 ## 更新并同步Neovim插件
 
 读取 `$HOME/.config/nvim/lazy-lock.json`，WSL 本地下载源码归档至 `devtools/nvim-plugins/`
+不下载或同步的插件，见 NVIM_PLUGIN_EXCLUDES。
 
 WSL运行：
 ```bash

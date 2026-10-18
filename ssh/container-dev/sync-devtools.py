@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 SSH_DIR = ROOT.parent
 DEVTOOLS = ROOT / "devtools"
 sys.path.insert(0, str(DEVTOOLS))
-from config import REMOTE_USER, REMOTE_DIR, TOOL_PLATFORMS
+from config import REMOTE_USER, REMOTE_DIR, TOOL_PLATFORMS, NVIM_PLUGIN_EXCLUDES
 
 
 def parse_args():
@@ -94,6 +94,10 @@ def synchronize(plans, args):
             "--include=/containers/**.sh",
             "--include=/containers/**.py",
             "--exclude=/containers/**",
+        ]
+        command += [
+            f"--exclude=/nvim-plugins/{name}.tar.gz"
+            for name in sorted(NVIM_PLUGIN_EXCLUDES)
         ]
         command += [
             str(source),

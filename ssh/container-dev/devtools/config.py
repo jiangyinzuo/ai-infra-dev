@@ -32,6 +32,16 @@ SSH_SOURCES = {
 
 REMOTE_USER = "jiangyinzuo"
 REMOTE_DIR = "~/devtools"
+NVIM_PLUGIN_EXCLUDES = frozenset(
+    {
+        "blackjack.nvim",
+        "fscreen.nvim",
+        "mo.nvim",
+        "snake.nvim",
+        "tetris.nvim",
+        "wezterm.nvim",
+    }
+)
 PROXY_ENV_KEYS = (
     "http_proxy",
     "https_proxy",

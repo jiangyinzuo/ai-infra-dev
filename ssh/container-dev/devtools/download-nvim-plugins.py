@@ -28,6 +28,8 @@ import tarfile
 import tempfile
 import urllib.request
 
+from config import NVIM_PLUGIN_EXCLUDES
+
 
 REPO = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
 DECLARATION = re.compile(r"[\"']([\w.-]+/[\w.-]+)[\"']", re.ASCII)
@@ -136,7 +138,11 @@ def main():
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
-    lock = json.loads(args.lock.read_bytes())
+    lock = {
+        name: entry
+        for name, entry in json.loads(args.lock.read_bytes()).items()
+        if name not in NVIM_PLUGIN_EXCLUDES
+    }
     for name, entry in lock.items():
         if not isinstance(entry, dict) or not COMMIT.fullmatch(entry.get("commit", "")):
             raise ValueError(f"{name}: expected a full 40-character commit")
