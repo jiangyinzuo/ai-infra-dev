@@ -20,7 +20,7 @@
 ./createuser/cli.py --group suzhou --group lianqiuhu --apply
 ```
 
-在 `ssh/` 执行 `source ./completion.bash` 后，可用 Tab 补全选项、组名和主机名。
+执行 `source ~/ai-infra-dev/completion.bash` 后，可用 Tab 补全选项、组名和主机名。
 
 | 参数 | 含义 |
 |---|---|

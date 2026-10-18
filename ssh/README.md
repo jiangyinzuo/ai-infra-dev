@@ -73,7 +73,7 @@ Python 3.9+ 入口，按 Host 前缀选择客户端，配置维护在 `ssh_commo
 
 Bash completion:
 ```bash
-source ./completion.bash
+source ~/ai-infra-dev/completion.bash
 ```
 
 ### 共享配置

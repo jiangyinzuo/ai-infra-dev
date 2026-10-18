@@ -8,14 +8,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
 from containers.core import host
 from containers.commands import create
+from ssh_common import container
 
 
 @pytest.fixture
 def bare_host(monkeypatch):
     monkeypatch.setattr(host, "is_wsl", lambda: False)
-    monkeypatch.setattr(host.socket, "gethostname", lambda: "server")
-    monkeypatch.setattr(host.Path, "exists", lambda p: False)
-    monkeypatch.setattr(host.Path, "read_text", lambda p: "0::/\n")
+    monkeypatch.setattr(container.socket, "gethostname", lambda: "server")
+    monkeypatch.setattr(container.Path, "exists", lambda p: False)
+    monkeypatch.setattr(container.Path, "read_text", lambda p: "0::/\n")
 
 
 @pytest.mark.parametrize(
@@ -25,10 +26,10 @@ def test_non_host_rejected_before_statvfs(bare_host, monkeypatch, kind):
     if kind == "wsl":
         monkeypatch.setattr(host, "is_wsl", lambda: True)
     elif kind == "hostname":
-        monkeypatch.setattr(host.socket, "gethostname", lambda: "server-container")
+        monkeypatch.setattr(container.socket, "gethostname", lambda: "server-container")
     elif kind == "cgroup":
         monkeypatch.setattr(
-            host.Path, "read_text", lambda p: "0::/system.slice/docker-123.scope"
+            container.Path, "read_text", lambda p: "0::/system.slice/docker-123.scope"
         )
     else:
         marker = {
@@ -36,7 +37,7 @@ def test_non_host_rejected_before_statvfs(bare_host, monkeypatch, kind):
             "podman": "/run/.containerenv",
             "systemd": "/run/systemd/container",
         }[kind]
-        monkeypatch.setattr(host.Path, "exists", lambda p: str(p) == marker)
+        monkeypatch.setattr(container.Path, "exists", lambda p: str(p) == marker)
     monkeypatch.setattr(host.os, "statvfs", lambda p: pytest.fail("read non-host shm"))
     with pytest.raises(ValueError):
         host.shm_capacity()

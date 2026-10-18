@@ -27,6 +27,7 @@ def register(subparsers) -> None:
     )
     creator.add_argument("--test-home", help="以隔离目录代替真实 HOME")
     add_target_args(creator)
+    creator.add_argument("--connection-host", help=argparse.SUPPRESS)
     creator.set_defaults(handler=execute, container_handler=create.execute)
     remover = commands.add_parser("delete", help="删除容器或清理未引用映射")
     remover.add_argument("--name", help="容器名称；默认交互选择")
@@ -83,6 +84,9 @@ def execute(args: argparse.Namespace):
                 options.append("--" + key.replace("_", "-"))
         if args.container_action == "create":
             from .core.remote import dispatch
+
+            if is_wsl():
+                options += ["--connection-host", args.host]
 
             return dispatch(args, "create", options[2:])
         with (

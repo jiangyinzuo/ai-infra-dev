@@ -260,9 +260,26 @@ path.write_text(''.join(':'.join(row) + '\\n' for row in rows))
     run("docker", "exec", name, "mkdir", "-p", home + "/ascend/log")
 
 
-def print_instructions(name: str, home: str) -> None:
+def print_instructions(
+    name: str, home: str, connection_host: Optional[str] = None
+) -> None:
     print(green(f"容器 {name} 已启动，用户 root，HOME={home}"), flush=True)
     print(shlex.join(["docker", "exec", "-it", name, "bash"]))
+    if connection_host:
+        from ssh_common.remote import host_alias
+
+        host_alias(connection_host)
+        print(yellow("从 WSL 直接进入容器："))
+        print(
+            shlex.join(
+                [
+                    "ssh2",
+                    "-t",
+                    f"{REMOTE_USER}@{connection_host}",
+                    shlex.join(["docker", "exec", "-it", name, "bash"]),
+                ]
+            )
+        )
     print(yellow("删除容器（保留映射以便复用）："))
     print(
         shlex.join(
@@ -345,7 +362,7 @@ def _create_container(
         initialize_home(args.name, home)
         initialize_image(args.name, image)
         verify_identity(args.name, home)
-        print_instructions(args.name, home)
+        print_instructions(args.name, home, getattr(args, "connection_host", None))
     except BaseException:
         print(yellow("创建失败或中断，正在清理本次创建的资源。"), flush=True)
         if created:

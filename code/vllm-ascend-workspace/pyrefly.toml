@@ -1,5 +1,8 @@
-python-interpreter-path = "./.venv/bin/python"
+required-version = ">=1.3.0"
+python-version = "3.11"
+python-interpreter-find-command = ["python3", "dev/lsp_python.py"]
 search-path = [
     "./vllm",
     "./vllm-ascend",
+    "../../ssh",
 ]

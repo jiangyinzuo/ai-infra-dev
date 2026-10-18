@@ -87,7 +87,7 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers delete --cle
 
 ## 补全与测试
 
-在 `ssh/` 执行 `source ./completion.bash`，支持直接运行入口和 `python3 路径/cli.py` 的命令、选项与主机名补全。
+执行 `source ~/ai-infra-dev/completion.bash`，支持直接运行入口及 `python3` 调用的 CLI、workspace `dev/` 入口的命令、选项与主机名补全。
 
 ```bash
 uv run --with pytest python -m pytest smoketest -q

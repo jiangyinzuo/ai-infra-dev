@@ -48,7 +48,7 @@ _ssh2_complete() {
 complete -F _ssh2_complete ssh2
 
 
-_ssh_completion_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+_ssh_completion_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/ssh" && pwd)"
 
 # 候选值逐个匹配，保留路径中的空格。
 _complete_values() {
@@ -146,6 +146,28 @@ _devtools_cli_complete() {
     esac
 }
 
+_build_complete() {
+    local start=${_cli_completion_start:-1} current=${COMP_WORDS[COMP_CWORD]}
+    local resource=${COMP_WORDS[start]:-} previous=${COMP_WORDS[COMP_CWORD-1]}
+    COMPREPLY=()
+    if ((COMP_CWORD == start)); then
+        _complete_values -h --help vllm-ascend devtools
+    elif ((COMP_CWORD == start + 1)); then
+        _complete_values -h --help install
+    else
+        case $previous in
+            --host) _ssh_usg_complete "$HOME/.ssh/config" ;;
+            --container) return ;;
+            *)
+                if [[ $resource == vllm-ascend ]]; then
+                    _complete_values -h --help --host --container --compile-ops
+                else
+                    _complete_values -h --help --host --container
+                fi ;;
+        esac
+    fi
+}
+
 _cli_complete() {
     local command=${_cli_completion_command:-${COMP_WORDS[0]}} directory
     case $command in
@@ -164,6 +186,9 @@ _cli_python_complete() {
     local _cli_completion_command=${COMP_WORDS[1]:-} _cli_completion_start=2
     local directory=${_cli_completion_command%/*}
     [[ $_cli_completion_command == */* && $directory != . ]] || directory=$PWD
+    if ((COMP_CWORD > 1)) && { [[ ${_cli_completion_command##*/} == dev ]] || [[ $_cli_completion_command == */dev/__main__.py ]]; }; then
+        _build_complete; return
+    fi
     if ((COMP_CWORD > 1)) && [[ ${_cli_completion_command##*/} == cli.py ]]; then
         case ${directory##*/} in
             devtools|createuser|npu-top) _cli_complete; return ;;
@@ -180,6 +205,7 @@ _cli_python_complete() {
 }
 
 complete -F _cli_complete cli.py
+complete -F _build_complete "${_ssh_completion_dir%/ssh}/code/vllm-ascend-workspace/dev/__main__.py"
 for _completion_cli in npu-top createuser container-dev/devtools; do
     complete -F _cli_complete "./$_completion_cli/cli.py" "$_completion_cli/cli.py" "$_ssh_completion_dir/$_completion_cli/cli.py"
 done

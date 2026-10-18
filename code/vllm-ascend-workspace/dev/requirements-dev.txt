@@ -1,0 +1,3 @@
+# Interpreter discovery via python-interpreter-find-command requires Pyrefly 1.3.0.
+pyrefly>=1.3.0
+pylint

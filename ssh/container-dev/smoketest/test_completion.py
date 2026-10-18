@@ -7,7 +7,7 @@ import pytest
 
 
 SSH = Path(__file__).resolve().parents[2]
-COMPLETION = SSH / "completion.bash"
+COMPLETION = SSH.parent / "completion.bash"
 
 
 def complete(tmp_path, words, *, setup="", cwd=None):

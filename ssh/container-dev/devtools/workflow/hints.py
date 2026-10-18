@@ -60,4 +60,9 @@ def show(args) -> None:
         print("  " + color(title, "1;35", stream), file=stream)
         for label, command in rows:
             line = shlex.join(["python3", str(cli), *command])
-            print("    {}  {}".format(color(label, "36", stream), line), file=stream)
+            if command[0] == "sync-all":
+                print("    " + color(f"★ {label}  {line}", "1;93", stream), file=stream)
+            else:
+                print(
+                    "    {}  {}".format(color(label, "36", stream), line), file=stream
+                )
