@@ -184,10 +184,10 @@ def test_no_archives_configures_bashrc_once(workspace):
     assert content.count(" || source ") == 1
     assert "ai-infra-dev/ssh/container-dev/devtools/" in content
     # Missing repository template is safe; the data directory cannot supply code.
-    (tools / "path.env").write_text("export EXTRACT_SMOKE=wrong\n")
+    (tools / "bashrc").write_text("export EXTRACT_SMOKE=wrong\n")
     command = ["bash", "-c", 'source "$HOME/.bashrc"']
     subprocess.run(command, env=env, check=True, timeout=30)
-    template = Path(env["TEST_CODE_DIR"]) / "openeuler24.03-lts-aarch64/path.env"
+    template = Path(env["TEST_CODE_DIR"]) / "openeuler24.03-lts-aarch64/bashrc"
     template.write_text("export EXTRACT_SMOKE=loaded\n")
     result = subprocess.run(
         ["bash", "-c", 'source "$HOME/.bashrc"; printf "%s" "$EXTRACT_SMOKE"'],
@@ -257,7 +257,7 @@ def test_corrupt_archive_fails_before_bashrc_changes(workspace):
 def test_repository_path_template_uses_resource_directory(workspace):
     _, tools, env = workspace
     (tools / "nvim-linux-arm64/bin").mkdir(parents=True)
-    template = DEVTOOLS / "openeuler24.03-lts-aarch64/path.env"
+    template = DEVTOOLS / "openeuler24.03-lts-aarch64/bashrc"
     result = subprocess.run(
         ["bash", "-c", 'source "$1"; printf "%s" "$PATH"', "bash", str(template)],
         env=env,

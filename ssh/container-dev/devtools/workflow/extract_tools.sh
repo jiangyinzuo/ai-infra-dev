@@ -77,9 +77,9 @@ done
 
 # Source the repository template, never management code from the resource directory.
 bashrc="$HOME/.bashrc"
-printf -v source_line '[[ ! -f %q ]] || source %q' "$code_dir/openeuler24.03-lts-aarch64/path.env" "$code_dir/openeuler24.03-lts-aarch64/path.env"
+printf -v source_line '[[ ! -f %q ]] || source %q' "$code_dir/openeuler24.03-lts-aarch64/bashrc" "$code_dir/openeuler24.03-lts-aarch64/bashrc"
 if [[ -f $bashrc ]] && grep -Fqx -- "$source_line" "$bashrc"; then
-    printf 'skip %s (path.env already configured)\n' "$bashrc"
+    printf 'skip %s (repository bashrc already configured)\n' "$bashrc"
 else
     printf '\n%s\n' "$source_line" >> "$bashrc"
     printf 'updated %s; run: source ~/.bashrc\n' "$bashrc"

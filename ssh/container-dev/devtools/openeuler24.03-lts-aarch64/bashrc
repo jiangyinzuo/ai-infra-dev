@@ -1,0 +1,39 @@
+# 使用 source 加载；默认按本文件定位仓库资源，不依赖当前工作目录。
+_devtools_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+_devtools_dir=${DEVTOOLS_DATA_DIR:-$_devtools_dir}/openeuler24.03-lts-aarch64
+_devtools_path=$_devtools_dir
+for _devtools_bin in \
+    "$_devtools_dir/bin" \
+    "$_devtools_dir/nvim-linux-arm64/bin" \
+    "$_devtools_dir"/node-v*-linux-arm64/bin \
+    "$_devtools_dir"/ripgrep-*-aarch64-unknown-linux-musl \
+    "$_devtools_dir"/fd-v*-aarch64-unknown-linux-musl \
+    "$_devtools_dir"/delta-*-aarch64-unknown-linux-gnu; do
+    [[ -d $_devtools_bin ]] || continue
+    _devtools_path+=":$_devtools_bin"
+done
+export PATH="$HOME/.local/bin:$_devtools_path:$PATH"
+unset _devtools_dir _devtools_path _devtools_bin
+
+# 仅设置交互 Bash，避免 SSH 命令、rsync 和管道输出受到提示符/别名影响。
+if [[ $- == *i* ]]; then
+    # \w 显示完整工作路径（HOME 缩写为 ~），不沿用发行版仅显示末级目录的提示符。
+    PROMPT_DIRTRIM=0
+    if [[ ${TERM:-dumb} != dumb && ! ${NO_COLOR+x} ]]; then
+        PS1='\[\e[1;32m\]\u@\h\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
+        if command -v dircolors >/dev/null 2>&1; then
+            eval "$(dircolors -b)"
+        fi
+        alias ls='ls --color=auto'
+        alias grep='grep --color=auto'
+    else
+        PS1='\u@\h:\w\$ '
+    fi
+    # 别名仅标识本次 SSH 会话；保留 \h 的真实主机名，不修改内核 hostname。
+    # 限制字符，避免手工设置的值将控制字符带入提示符。
+    if [[ ${SSH_HOSTNAME_ALIAS:-} =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        PS1='[${SSH_HOSTNAME_ALIAS}] '"$PS1"
+    fi
+fi
+# SSH 执行单条命令默认无 TTY；需要终端颜色时用 ssh2 -t HOST '命令'。
+# --color=auto 仍由各命令按输出终端判断，不污染重定向文件。

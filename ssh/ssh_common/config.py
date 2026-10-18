@@ -65,7 +65,7 @@ HOST_ENV_KEYS = (
     *HOST_ENV_DEFAULTS,
 )
 # SoC 由服务器宿主机决定，不能从 WSL 经 SSH 覆盖。
-CONTAINER_ENV_KEYS = (*HOST_ENV_KEYS, "GIT_SSH_COMMAND", "SOC_VERSION")
+CONTAINER_ENV_KEYS = (*HOST_ENV_KEYS, "SSH_HOSTNAME_ALIAS", "GIT_SSH_COMMAND", "SOC_VERSION")
 TOOL_PLATFORMS = {
     ("openeuler", "aarch64"): "openeuler24.03-lts-aarch64",
     ("openeuler", "arm64"): "openeuler24.03-lts-aarch64",

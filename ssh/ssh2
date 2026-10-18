@@ -71,6 +71,7 @@ def build_command(argv):
         )
     if passthrough:
         return [*client, *options, *target]
+    environment["SSH_HOSTNAME_ALIAS"] = host
     exports = "".join(
         f"export {key}={shlex.quote(value)}; " for key, value in environment.items()
     )
