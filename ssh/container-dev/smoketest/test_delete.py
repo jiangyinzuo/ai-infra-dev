@@ -1,4 +1,4 @@
-import importlib.util
+from argparse import Namespace
 from pathlib import Path
 import subprocess
 import sys
@@ -7,16 +7,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1] / "devtools/containers"
 sys.path.insert(0, str(ROOT))
+from commands import delete as module
 
 
 def test_interactive_delete_keeps_mapping_and_targets_selected_id(
     monkeypatch, tmp_path
 ):
-    spec = importlib.util.spec_from_file_location(
-        "container_delete", ROOT / "delete.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     own = {
         "Id": "own-id",
         "Name": "/jiangyinzuo-bindfs-dev1",
@@ -34,12 +30,19 @@ def test_interactive_delete_keeps_mapping_and_targets_selected_id(
     )
     answers = iter(["1", ""])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
-    monkeypatch.setattr(sys, "argv", ["delete.py"])
     calls = []
     monkeypatch.setattr(
         module,
         "run",
         lambda *a, **kw: calls.append(a) or subprocess.CompletedProcess(a, 0),
     )
-    module.main()
+    module.execute(
+        Namespace(
+            name=None,
+            keep_bindfs=False,
+            remove_bindfs=False,
+            cleanup_bindfs=False,
+            yes=False,
+        )
+    )
     assert calls == [("docker", "stop", "own-id"), ("docker", "rm", "-v", "own-id")]

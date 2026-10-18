@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools/containers"))
-import mappings
+from core import mappings
 
 
 def test_reuse_restore_and_referenced_mapping(tmp_path, monkeypatch):

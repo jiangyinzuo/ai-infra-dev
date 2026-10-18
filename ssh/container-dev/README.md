@@ -85,11 +85,11 @@ python3 ~/devtools/update-dev-git-repo.py
 
 ```bash
 # WSL 本地下载，必须指定平台
-./devtools/containers/download.py --host localhost --npu-platform a3 --date 20261014 --version 26.2.0
+./devtools/containers/cli.py download --host localhost --npu-platform a3 --date 20261014 --version 26.2.0
 # 下载到 SSH Host 对应服务器，平台由 CSV 选择
-./devtools/containers/download.py --host suzhou-a3-130
+./devtools/containers/cli.py download --host suzhou-a3-130
 # 服务器直接下载
-python3 ~/devtools/containers/download.py
+python3 ~/devtools/containers/cli.py download
 ```
 
 下载归档后，在服务器用 `docker load -i <归档路径>` 导入镜像。
@@ -97,14 +97,14 @@ python3 ~/devtools/containers/download.py
 ### 创建容器
 
 ```bash
-# 服务器运行；不传参数时交互选择镜像，并确认容器名
-python3 ~/devtools/containers/create.py
+# 服务器运行；create 不带选项时交互选择镜像，并确认容器名
+python3 ~/devtools/containers/cli.py create
 # 也可以明确指定镜像和容器名
-python3 ~/devtools/containers/create.py --image vllm-ascend:TAG --name jiangyinzuo-dev1
+python3 ~/devtools/containers/cli.py create --image vllm-ascend:TAG --name jiangyinzuo-dev1
 # 性能测试：不用 bindfs，直接挂载；新文件可能归宿主机 root 所有
-python3 ~/devtools/containers/create.py --no-bindfs
+python3 ~/devtools/containers/cli.py create --no-bindfs
 # 隔离验证，不挂真实 HOME；测试目录需已存在且可写
-python3 ~/devtools/containers/create.py --test-home /path/to/test-home --share /path/to/test-data
+python3 ~/devtools/containers/cli.py create --test-home /path/to/test-home --share /path/to/test-data
 ```
 
 镜像按创建时间由新到旧列出；bindfs 容器默认名为 `jiangyinzuo-bindfs-dev数字`，直接挂载为 `jiangyinzuo-dev数字`，回车即可接受。
@@ -135,10 +135,12 @@ docker exec -it jiangyinzuo-dev1 bash
 删除时可交互选择是否保留映射，或明确指定；两种方式均删除容器及匿名 volume，不删除共享源目录。仍被其他容器（含已停止容器）使用的映射不会卸载。
 
 ```bash
-python3 ~/devtools/containers/delete.py
-python3 ~/devtools/containers/delete.py --name jiangyinzuo-bindfs-dev1 --keep-bindfs
-python3 ~/devtools/containers/delete.py --name jiangyinzuo-bindfs-dev1 --remove-bindfs
+python3 ~/devtools/containers/cli.py delete
+python3 ~/devtools/containers/cli.py delete --name jiangyinzuo-bindfs-dev1 --keep-bindfs
+python3 ~/devtools/containers/cli.py delete --name jiangyinzuo-bindfs-dev1 --remove-bindfs
 ```
+
+用 `python3 ~/devtools/containers/cli.py ls` 查看容器和映射（自动化可加 `--json`）。容器或测试源目录被手动删除后，用 `python3 ~/devtools/containers/cli.py delete --cleanup-bindfs` 交互确认清理残留；自动化可加 `--yes`。只清理可验证且无容器引用的映射，不删除源目录。
 
 ## 宿主机/容器内执行命令
 

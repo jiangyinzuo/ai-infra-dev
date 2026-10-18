@@ -1,4 +1,4 @@
-import importlib.util
+import importlib
 import csv
 from pathlib import Path
 import subprocess
@@ -8,14 +8,12 @@ import pytest
 
 CONTAINERS = Path(__file__).resolve().parents[1] / "devtools/containers"
 sys.path.insert(0, str(CONTAINERS))
-import common
+from core import remote as common
+from cli import build_parser
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location(name, CONTAINERS / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return importlib.import_module(f"commands.{name}")
 
 
 def test_create_interactive_defaults_and_image_selection(monkeypatch, capsys):
@@ -79,11 +77,10 @@ def test_create_prepare_uses_interactive_defaults(monkeypatch, tmp_path):
     monkeypatch.setattr(module.os, "getuid", lambda: 1000)
     monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/bindfs")
     monkeypatch.setattr(module.Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(sys, "argv", ["create.py"])
     answers = iter(("", ""))
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
 
-    args, home, sources, bindfs = module.prepare()
+    args, home, sources, bindfs = module.prepare(build_parser().parse_args(["create"]))
 
     assert args.image == "vllm-ascend:newest"
     assert args.name == "jiangyinzuo-bindfs-dev1"
@@ -105,10 +102,10 @@ def test_direct_create_needs_neither_bindfs_nor_sudo(monkeypatch, tmp_path):
         return subprocess.CompletedProcess(command, 0, "")
 
     monkeypatch.setattr(module, "run", run)
-    monkeypatch.setattr(
-        sys, "argv", ["create.py", "--image", "image", "--name", "test", "--no-bindfs"]
+    options = build_parser().parse_args(
+        ["create", "--image", "image", "--name", "test", "--no-bindfs"]
     )
-    options, home, sources, bindfs = module.prepare()
+    options, home, sources, bindfs = module.prepare(options)
     assert bindfs is None
     original = tmp_path / "keep"
     original.write_text("user data")
@@ -141,10 +138,10 @@ def args(host=None, npu=None):
 
 def test_wsl_requires_explicit_target_and_local_platform(setup):
     with pytest.raises(ValueError, match="--host"):
-        common.dispatch(args(), "download.py", [])
+        common.dispatch(args(), "download", [])
     with pytest.raises(ValueError, match="--npu-platform"):
-        common.dispatch(args("localhost"), "download.py", [])
-    assert common.dispatch(args("localhost", "a3"), "download.py", []) is None
+        common.dispatch(args("localhost"), "download", [])
+    assert common.dispatch(args("localhost", "a3"), "download", []) is None
 
 
 def test_server_local_platform_uses_real_machine_probe(setup, monkeypatch, tmp_path):
@@ -170,11 +167,11 @@ def test_server_local_platform_uses_real_machine_probe(setup, monkeypatch, tmp_p
     binary.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
     options = args()
-    assert common.dispatch(options, "download.py", []) is None
+    assert common.dispatch(options, "download", []) is None
     assert options.npu_platform == "a3"
     binary.write_text("#!/bin/sh\nprintf 'PCI Device ID : 0xD802\\n'\n")
     with pytest.raises(ValueError, match="无法识别本地"):
-        common.dispatch(args(), "download.py", [])
+        common.dispatch(args(), "download", [])
 
 
 def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
@@ -191,13 +188,61 @@ def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
         return subprocess.CompletedProcess(command, 7)
 
     monkeypatch.setattr(subprocess, "run", run)
-    assert (
-        common.dispatch(args("suzhou-one"), "download.py", ["--date", "20261012"]) == 7
-    )
+    assert common.dispatch(args("suzhou-one"), "download", ["--date", "20261012"]) == 7
     assert calls[0][0].endswith("ssh2")
     assert "--npu-platform a3" in calls[0][2]
+    import shlex
+
+    remote_command = shlex.split(calls[0][2])
+    entrypoint = next(
+        index
+        for index, token in enumerate(remote_command)
+        if token.endswith("containers/cli.py")
+    )
+    assert remote_command[entrypoint + 1 :] == [
+        "download",
+        "--npu-platform",
+        "a3",
+        "--date",
+        "20261012",
+    ]
     with pytest.raises(ValueError, match="没有主机"):
-        common.dispatch(args("missing"), "download.py", [])
+        common.dispatch(args("missing"), "download", [])
+
+
+@pytest.mark.parametrize(
+    "subcommand, options",
+    [
+        ("create", ["--image", "image with spaces", "--name", "jiangyinzuo-dev1"]),
+        ("delete", ["--name", "jiangyinzuo-dev1", "--yes"]),
+        ("download", ["--date", "20261012"]),
+        ("ls", ["--json"]),
+    ],
+)
+def test_remote_dispatch_places_subcommand_before_options(
+    setup, monkeypatch, subcommand, options
+):
+    directory = setup.parents[2] / "machine-info"
+    directory.mkdir()
+    with (directory / "machines-output.csv").open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["Host", "OS", "Arch", "NPUPlatform"])
+        writer.writerow(["suzhou-one", "openEuler", "aarch64", "a3"])
+    calls = []
+
+    def run_remote(host, script, arguments):
+        calls.append((host, script, arguments))
+        return 7
+
+    monkeypatch.setattr(common, "run_remote", run_remote)
+    assert common.dispatch(args("suzhou-one"), subcommand, options) == 7
+    assert calls == [
+        (
+            "suzhou-one",
+            "containers/cli.py",
+            [subcommand, "--npu-platform", "a3", *options],
+        )
+    ]
 
 
 def test_local_download_publishes_only_successful_archive(setup, monkeypatch):

@@ -6,22 +6,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
-import subprocess
-
-
-def run(*args: str, **kwargs):
-    print(shlex.join(args), flush=True)
-    return subprocess.run(list(args), check=True, **kwargs)
-
-
-def containers() -> list:
-    ids = run("docker", "ps", "-aq", capture_output=True, text=True).stdout.split()
-    if not ids:
-        return []
-    return json.loads(
-        run("docker", "inspect", *ids, capture_output=True, text=True).stdout
-    )
+import re
+from .process import containers, run
 
 
 class MappingStore:
@@ -98,9 +84,16 @@ class MappingStore:
             ).stdout
         )
         mounts = info.get("filesystems", [])
+
         if (
             len(mounts) != 1
-            or mounts[0]["fstype"] != "fuse.bindfs"
+            or not (
+                mounts[0]["fstype"] == "fuse.bindfs"
+                or (
+                    mounts[0]["fstype"] == "fuse"
+                    and bindfs_processes().get(str(target)) == str(source)
+                )
+            )
             or mounts[0]["source"] != str(source)
         ):
             raise ValueError("Unexpected mount at " + str(target))
@@ -134,3 +127,33 @@ class MappingStore:
             run("rmdir", str(target))
             run("rm", "--", str(metadata))
             run("rmdir", str(target.parent))
+
+
+def mount_table() -> dict:
+    def decode(value):
+        return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), value)
+
+    result = {}
+    for line in Path("/proc/self/mountinfo").read_text().splitlines():
+        left, right = line.split(" - ", 1)
+        fields = right.split()
+        result[decode(left.split()[4])] = (fields[0], decode(fields[1]))
+    return result
+
+
+def bindfs_processes() -> dict:
+    result = {}
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            args = (entry / "cmdline").read_bytes().decode().rstrip("\0").split("\0")
+        except (OSError, UnicodeError):
+            continue
+        if len(args) >= 3 and Path(args[0]).name == "bindfs":
+            if (
+                "--create-for-user=" + str(os.getuid()) in args
+                and "--create-for-group=" + str(os.getgid()) in args
+            ):
+                result[args[-1]] = args[-2]
+    return result

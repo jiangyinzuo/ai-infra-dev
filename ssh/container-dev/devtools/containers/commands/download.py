@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """下载 NPU 容器镜像；WSL 必须指定 --host。"""
 
-import argparse
 import os
 import platform
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 
-from common import ROOT, NPU_PLATFORMS, add_target_args, dispatch
+from core.remote import ROOT, NPU_PLATFORMS, dispatch
 
 
 def download(args):
@@ -47,23 +45,8 @@ def download(args):
     return 0
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_target_args(parser)
-    parser.add_argument("--date", default="20261014", help="日期 YYYYMMDD")
-    parser.add_argument("--version", default="26.2.0", help="镜像版本")
-    args = parser.parse_args()
-    try:
-        remote = dispatch(
-            args,
-            "download.py",
-            ["--date", args.date, "--version", args.version],
-        )
-        return download(args) if remote is None else remote
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+def execute(args):
+    remote = dispatch(
+        args, "download", ["--date", args.date, "--version", args.version]
+    )
+    return download(args) if remote is None else remote

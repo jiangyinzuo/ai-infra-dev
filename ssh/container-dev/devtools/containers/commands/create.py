@@ -8,13 +8,12 @@ from pathlib import Path
 import re
 import shlex
 import shutil
-import subprocess
-import sys
-from typing import Any, Optional
+from typing import Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from core.remote import ROOT
 from config import HOST_ENV_DEFAULTS
-from mappings import MappingStore
+from core.mappings import MappingStore
+from core.process import run
 
 
 def green(text: str) -> str:
@@ -23,11 +22,6 @@ def green(text: str) -> str:
 
 def yellow(text: str) -> str:
     return f"\033[33m{text}\033[0m"
-
-
-def run(*args: str, **kwargs: Any) -> subprocess.CompletedProcess:
-    print(shlex.join(args), flush=True)
-    return subprocess.run(list(args), check=True, **kwargs)
 
 
 def select_image() -> str:
@@ -71,28 +65,11 @@ def select_container_name(names: list[str], mapped: bool = True) -> str:
     return input(green(f"容器名 [{default}]: ")) or default
 
 
-def prepare() -> tuple[argparse.Namespace, str, list[Path], Optional[str]]:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", help="镜像名或 ID；默认交互选择")
-    parser.add_argument("--name", help="容器名；默认递增并交互确认")
-    parser.add_argument(
-        "--no-bindfs",
-        action="store_true",
-        help="直接挂载 HOME 和共享目录，避免 FUSE 开销；新文件可能归宿主机 root 所有",
-    )
-    parser.add_argument(
-        "--share",
-        action="append",
-        default=[],
-        help="额外可写共享目录，容器内保持相同路径，可重复指定",
-    )
-    parser.add_argument(
-        "--test-home",
-        help="使用隔离目录代替真实 HOME，供验证使用",
-    )
-    args = parser.parse_args()
+def prepare(
+    args: argparse.Namespace,
+) -> tuple[argparse.Namespace, str, list[Path], Optional[str]]:
     if os.getuid() == 0:
-        parser.error("Run as the owning ordinary user, not sudo")
+        raise ValueError("Run as the owning ordinary user, not sudo")
     if not args.image:
         args.image = select_image()
     existing_names = run(
@@ -108,21 +85,21 @@ def prepare() -> tuple[argparse.Namespace, str, list[Path], Optional[str]]:
     if not args.name:
         args.name = select_container_name(existing_names, not args.no_bindfs)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]+", args.name):
-        parser.error("Invalid container name")
+        raise ValueError("Invalid container name")
     bindfs = None if args.no_bindfs else shutil.which("bindfs")
     if not args.no_bindfs and not bindfs:
-        parser.error("bindfs is required on the host")
+        raise ValueError("bindfs is required on the host")
     home = str(Path.home())
     sources = [Path(args.test_home or home).resolve()] + [
         Path(p).resolve() for p in args.share
     ]
     for source in sources:
         if not source.is_dir() or not os.access(source, os.W_OK):
-            parser.error(
+            raise ValueError(
                 "Source must be an existing writable directory: " + str(source)
             )
     if args.name in existing_names:
-        parser.error("Container name already exists")
+        raise ValueError("Container name already exists")
     if bindfs is not None:
         run("sudo", "-n", "true")
     return args, home, sources, bindfs
@@ -207,7 +184,8 @@ def print_instructions(name: str, home: str) -> None:
         shlex.join(
             [
                 "python3",
-                str(Path(__file__).with_name("delete.py")),
+                str(ROOT / "cli.py"),
+                "delete",
                 "--name",
                 name,
                 "--keep-bindfs",
@@ -219,7 +197,8 @@ def print_instructions(name: str, home: str) -> None:
         shlex.join(
             [
                 "python3",
-                str(Path(__file__).with_name("delete.py")),
+                str(ROOT / "cli.py"),
+                "delete",
                 "--name",
                 name,
                 "--remove-bindfs",
@@ -284,9 +263,5 @@ def _create_container(
         raise
 
 
-def main() -> None:
-    create_container(*prepare())
-
-
-if __name__ == "__main__":
-    main()
+def execute(args: argparse.Namespace) -> None:
+    create_container(*prepare(args))

@@ -6,7 +6,7 @@ import platform
 import re
 import sys
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(ROOT.parent))
 from config import NPU_PLATFORMS
@@ -59,5 +59,5 @@ def dispatch(args, script, options):
     if args.npu_platform and args.npu_platform != npu:
         raise ValueError("指定平台与机器 CSV 不一致")
     return run_remote(
-        args.host, "containers/" + script, ["--npu-platform", npu, *options]
+        args.host, "containers/cli.py", [script, "--npu-platform", npu, *options]
     )
