@@ -85,26 +85,15 @@ class MappingStore:
         )
         mounts = info.get("filesystems", [])
 
-        if (
-            len(mounts) != 1
-            or not (
-                mounts[0]["fstype"] == "fuse.bindfs"
-                or (
-                    mounts[0]["fstype"] == "fuse"
-                    and bindfs_processes().get(str(target)) == str(source)
-                )
-            )
-            or mounts[0]["source"] != str(source)
+        if len(mounts) != 1 or not is_bindfs_mount(
+            target,
+            source,
+            (mounts[0]["fstype"], mounts[0]["source"]),
+            bindfs_processes() if mounts[0]["fstype"] == "fuse" else {},
         ):
             raise ValueError("Unexpected mount at " + str(target))
 
     def remove_unused(self, sources: list, remaining: list) -> None:
-        references = [
-            Path(m["Source"])
-            for c in remaining
-            for m in c.get("Mounts", [])
-            if m.get("Type") == "bind"
-        ]
         for target in dict.fromkeys(map(Path, sources)):
             # Only mappings created by this registry; never delete host source directories.
             if target.parent.parent != self.root or target.name != "view":
@@ -115,18 +104,54 @@ class MappingStore:
             record = json.loads(metadata.read_text())
             if record["uid"] != os.getuid() or record["gid"] != os.getgid():
                 raise ValueError("Mapping ownership mismatch: " + str(target))
-            if any(
-                p == target or target in p.parents or p in target.parents
-                for p in references
-            ):
+            if referencing_containers(target, remaining):
                 print("keep bindfs (referenced by another container): " + str(target))
                 continue
-            if target.is_mount():
+            mounted = target.is_mount()
+            if mounted:
                 self.validate_mount(target, Path(record["source"]))
-                run("sudo", "-n", "umount", str(target))
-            run("rmdir", str(target))
-            run("rm", "--", str(metadata))
-            run("rmdir", str(target.parent))
+            # The caller's snapshot may predate a newly created container.
+            if referencing_containers(target, containers()):
+                print("keep bindfs (referenced by another container): " + str(target))
+                continue
+            remove_mapping_entry(target, mounted, managed=True)
+
+
+def referencing_containers(target: Path, snapshot: list) -> list:
+    """Include bind references to the mapping, its ancestors, and descendants."""
+    return [
+        container
+        for container in snapshot
+        if any(
+            mount.get("Type") == "bind" and paths_overlap(target, Path(mount["Source"]))
+            for mount in container.get("Mounts", [])
+        )
+    ]
+
+
+def paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left in right.parents or right in left.parents
+
+
+def is_bindfs_mount(target: Path, source: Path, mount: tuple, processes: dict) -> bool:
+    """Generic FUSE mounts need a matching, owned bindfs process as evidence."""
+    fstype, mounted_source = mount
+    return mounted_source == str(source) and (
+        fstype == "fuse.bindfs"
+        or (fstype == "fuse" and processes.get(str(target)) == str(source))
+    )
+
+
+def remove_mapping_entry(target: Path, mounted: bool, managed: bool) -> None:
+    """Remove an already verified entry without recursively deleting any contents."""
+    if mounted:
+        run("sudo", "-n", "umount", str(target))
+    if target.exists():
+        run("rmdir", str(target))
+    if managed:
+        run("rm", "--", str(target.parent / "mapping.json"))
+    if not any(target.parent.iterdir()):
+        run("rmdir", str(target.parent))
 
 
 def mount_table() -> dict:

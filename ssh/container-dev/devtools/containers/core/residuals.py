@@ -3,25 +3,20 @@
 import json
 import os
 from pathlib import Path
-import re
 
-from .process import containers, run
-from .mappings import mount_table, bindfs_processes
+from .process import containers
+from .mappings import (
+    mount_table,
+    bindfs_processes,
+    referencing_containers,
+    is_bindfs_mount,
+    remove_mapping_entry,
+)
 
 
 def references(target: Path, snapshot: list) -> list:
     return sorted(
-        {
-            c["Name"].lstrip("/")
-            for c in snapshot
-            for m in c.get("Mounts", [])
-            if m.get("Type") == "bind"
-            and (
-                Path(m["Source"]) == target
-                or target in Path(m["Source"]).parents
-                or Path(m["Source"]) in target.parents
-            )
-        }
+        {c["Name"].lstrip("/") for c in referencing_containers(target, snapshot)}
     )
 
 
@@ -58,12 +53,8 @@ def scan(store, snapshot: list) -> list:
     for target, (source, kind) in sorted(candidates.items()):
         mount = mounts.get(target)
         users = references(Path(target), snapshot)
-        verified = mount is None or (
-            mount[1] == source
-            and (
-                mount[0] == "fuse.bindfs"
-                or (mount[0] == "fuse" and processes.get(target) == source)
-            )
+        verified = mount is None or is_bindfs_mount(
+            Path(target), Path(source), mount, processes
         )
         rows.append(
             dict(
@@ -87,11 +78,4 @@ def cleanup(store, rows: list) -> None:
             print("保留（仍有引用或无法验证）：" + old["target"])
             continue
         target = Path(current["target"])
-        if current["mounted"]:
-            run("sudo", "-n", "umount", str(target))
-        if target.exists():
-            run("rmdir", str(target))
-        if current["kind"] == "managed":
-            run("rm", "--", str(target.parent / "mapping.json"))
-        if not any(target.parent.iterdir()):
-            run("rmdir", str(target.parent))
+        remove_mapping_entry(target, current["mounted"], current["kind"] == "managed")

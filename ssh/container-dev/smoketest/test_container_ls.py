@@ -56,7 +56,7 @@ def test_ls_json_filters_display_but_checks_all_references(
     def forbidden(*args, **kwargs):
         pytest.fail("ls must not create, mount, remove, or prompt")
 
-    for module in (process, mappings, residuals):
+    for module in (process, mappings):
         monkeypatch.setattr(module, "run", forbidden)
     monkeypatch.setattr(residuals, "cleanup", forbidden)
     monkeypatch.setattr("builtins.input", forbidden)
@@ -97,7 +97,7 @@ def test_ls_json_empty_registry_is_read_only(tmp_path, monkeypatch, capsys):
     def forbidden(*args, **kwargs):
         pytest.fail("empty ls must not initialize or modify the registry")
 
-    for module in (process, mappings, residuals):
+    for module in (process, mappings):
         monkeypatch.setattr(module, "run", forbidden)
     monkeypatch.setattr(residuals, "cleanup", forbidden)
     monkeypatch.setattr("builtins.input", forbidden)
