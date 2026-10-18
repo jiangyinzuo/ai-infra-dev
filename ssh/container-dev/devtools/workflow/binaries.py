@@ -3,12 +3,11 @@
 from pathlib import Path
 import subprocess
 
-from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
-from arguments import add_jobs_argument
+from ssh_common.remote import add_host_argument, is_remote_host, is_wsl, run_remote_cli
+from ssh_common.arguments import add_jobs_argument
 from . import sync, binaries_download
 
-DEVTOOLS = Path(__file__).resolve().parents[1]
-PLATFORM_DIR = DEVTOOLS / "openeuler24.03-lts-aarch64"
+from .paths import PLATFORM_DIR
 
 
 def register(subparsers):
@@ -35,5 +34,6 @@ def execute(args):
     if args.binaries_action == "download":
         return binaries_download.download(PLATFORM_DIR, args.jobs)
     return subprocess.run(
-        ["bash", str(Path(__file__).with_name("extract_tools.sh"))], check=False
+        ["bash", str(Path(__file__).with_name("extract_tools.sh")), str(PLATFORM_DIR)],
+        check=False,
     ).returncode

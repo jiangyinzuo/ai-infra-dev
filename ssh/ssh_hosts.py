@@ -13,8 +13,8 @@ import sys
 from functools import lru_cache
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent / "container-dev/devtools"))
-from config import HOST_GROUPS, SSH_SOURCES
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ssh_common.config import HOST_GROUPS, SSH_SOURCES
 
 from ssh_config import host_passwords
 

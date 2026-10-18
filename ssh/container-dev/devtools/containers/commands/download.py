@@ -6,15 +6,16 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from ..core.remote import ROOT, NPU_PLATFORMS, dispatch
-from remote_exec import is_wsl
+from ..core.remote import NPU_PLATFORMS, dispatch
+from ssh_common.remote import is_wsl
+from workflow.paths import DATA_ROOT
 
 
 def download(args):
     tag = f"dev-{args.version}.day{args.date}-{NPU_PLATFORMS[args.npu_platform]}"
     image = f"vllm-ascend:{tag}"
-    directory = ROOT
-    directory.mkdir(exist_ok=True)
+    directory = DATA_ROOT / "containers"
+    directory.mkdir(parents=True, exist_ok=True)
     archive = directory / f"vllm-ascend_{tag}.tar.gz"
     if archive.is_file():
         print(f"skip {archive} (archive exists)")

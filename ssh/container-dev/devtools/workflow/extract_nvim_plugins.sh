@@ -3,10 +3,12 @@ set -euo pipefail
 
 # Internal extractor invoked by cli.py nvim-plugins extract.
 # Run up to N tar processes concurrently (default: 8).
-# Read devtools/nvim-plugins/*.tar.gz, stripping the GitHub archive's root directory.
+# Read the supplied plugin resource directory, stripping the archive root directory.
 # Install plugins into ~/plugged/; lazy.nvim uses ~/.local/share/nvim/lazy/lazy.nvim.
 # Overwrite matching files; retain archives and existing destination-only files.
-script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+(($# >= 1)) || { echo 'error: expected plugin data directory' >&2; exit 2; }
+data_dir=$1
+shift
 jobs=8
 while (($#)); do
     case $1 in
@@ -22,7 +24,7 @@ done
 
 command -v tar >/dev/null || { echo 'error: tar is required' >&2; exit 1; }
 shopt -s nullglob
-archives=("$script_dir"/../nvim-plugins/*.tar.gz)
+archives=("$data_dir"/*.tar.gz)
 
 if ((${#archives[@]} == 0)); then
     echo 'No plugin archives found.'

@@ -8,8 +8,10 @@ import pytest
 
 CONTAINERS = Path(__file__).resolve().parents[1] / "devtools/containers"
 sys.path.insert(0, str(CONTAINERS.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from containers.core import remote as common
 from cli import build_parser
+from ssh_common import remote as shared_remote
 
 
 def load(name):
@@ -149,12 +151,8 @@ def test_wsl_requires_explicit_target_and_local_platform(setup):
 
 def test_server_local_platform_uses_real_machine_probe(setup, monkeypatch, tmp_path):
     monkeypatch.setattr(common, "is_wsl", lambda: False)
-    probe_dir = setup.parent
-    import shutil
     import os
 
-    source = CONTAINERS.parent / "machine_probe.py"
-    shutil.copy2(source, probe_dir / "machine_probe.py")
     binary = tmp_path / "npu-smi"
     sudo = tmp_path / "sudo"
     sudo.write_text('#!/bin/sh\n[ "$1" = -n ] || exit 2\nshift\nexec "$@"\n')
@@ -191,12 +189,13 @@ def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
         return subprocess.CompletedProcess(command, 7)
 
     monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(shared_remote, "local_commit", lambda: "a" * 40)
     assert common.dispatch(args("suzhou-one"), "download", ["--date", "20261012"]) == 7
     assert calls[0][0].endswith("ssh2")
     assert "--npu-platform a3" in calls[0][2]
     import shlex
 
-    remote_command = shlex.split(calls[0][2])
+    remote_command = shlex.split(calls[0][2].split("; fi; ", 1)[1])
     entrypoint = next(
         index for index, token in enumerate(remote_command) if token.endswith("/cli.py")
     )
@@ -249,7 +248,7 @@ def test_remote_dispatch_places_subcommand_before_options(
 
 def test_local_download_publishes_only_successful_archive(setup, monkeypatch):
     module = load("download")
-    monkeypatch.setattr(module, "ROOT", setup)
+    monkeypatch.setattr(module, "DATA_ROOT", setup)
     options = args("localhost", "a3")
     options.date = "20261013"
     options.version = "26.2.0"
@@ -262,7 +261,7 @@ def test_local_download_publishes_only_successful_archive(setup, monkeypatch):
 
     monkeypatch.setattr(module.subprocess, "run", run)
     assert module.download(options) == 0
-    archives = list(setup.glob("*.tar.gz"))
+    archives = list((setup / "containers").glob("*.tar.gz"))
     assert len(archives) == 1 and archives[0].read_bytes() == b"archive"
     monkeypatch.setattr(
         module.subprocess,

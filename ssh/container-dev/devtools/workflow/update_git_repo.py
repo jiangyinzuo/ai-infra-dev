@@ -5,17 +5,28 @@ import os
 from pathlib import Path
 import shutil
 
-from config import REMOTE_USER
-from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
-from terminal import run
+from ssh_common.config import REMOTE_USER
+from ssh_common.remote import (
+    add_host_argument,
+    is_remote_host,
+    is_wsl,
+    update_remote_repositories,
+)
+from ssh_common.terminal import run
 
 
 def update_repositories(debug):
-    if shutil.which("git") is None:
-        raise RuntimeError("git is required")
+    missing = [name for name in ("git", "ncat") if shutil.which(name) is None]
+    if missing:
+        raise RuntimeError(
+            "缺少必需命令：" + ", ".join(missing) + "；请安装后重试（不会自动安装）"
+        )
     env = dict(os.environ)
     if debug:
-        env.update(GIT_TRACE="1", GIT_SSH_COMMAND="ssh -vvv")
+        env.update(
+            GIT_TRACE="1",
+            GIT_SSH_COMMAND=(env.get("GIT_SSH_COMMAND") or "ssh") + " -vvv",
+        )
     for repo in ("ai-infra-dev", "vimrc"):
         destination = Path.home() / repo
         cloning = not (destination.exists() or destination.is_symlink())
@@ -59,8 +70,5 @@ def execute(args):
     if is_wsl() and not is_remote_host(args.host):
         parser.error(f"WSL requires --host HOST (user: {REMOTE_USER})")
     if is_remote_host(args.host):
-        remote_args = ["git-repo", "update"]
-        if args.debug:
-            remote_args.append("--debug")
-        return run_remote_cli(args.host, remote_args)
+        return update_remote_repositories(args.host, args.debug)
     return update_repositories(args.debug)

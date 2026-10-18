@@ -7,8 +7,8 @@ import shlex
 import sys
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "container-dev/devtools"))
-from config import HOST_ENV_DEFAULTS, HOST_ENV_KEYS, PROXY_ENV_KEYS, SSH_ROUTES
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ssh_common.config import HOST_ENV_DEFAULTS, HOST_ENV_KEYS, PROXY_ENV_KEYS, SSH_ROUTES
 
 VALUE_OPTIONS = set("BbcDEeFIiJLlmOopQRSWw")
 
@@ -63,6 +63,12 @@ def build_command(argv):
         environment["USG_IP"] = ip
         for key in PROXY_ENV_KEYS:
             environment[key] = f"http://{ip}:3128"
+    if environment.get("USG_IP"):
+        proxy = shlex.join(["ncat", "--proxy", environment["USG_IP"] + ":3128",
+                            "--proxy-type", "http", "%h", "%p"])
+        environment["GIT_SSH_COMMAND"] = shlex.join(
+            ["ssh", "-o", "HostName=ssh.github.com", "-p", "443", "-o", "ProxyCommand=" + proxy]
+        )
     if passthrough:
         return [*client, *options, *target]
     exports = "".join(

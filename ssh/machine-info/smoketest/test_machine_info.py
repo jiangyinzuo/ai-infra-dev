@@ -23,7 +23,8 @@ def load_module(name, filename):
 
 
 CLI = load_module("machine_info", "machine-info.py")
-PROBE = load_module("machine_probe", "../container-dev/devtools/machine_probe.py")
+sys.path.insert(0, str(ROOT.parent))
+from ssh_common import machine_probe as PROBE
 
 
 @pytest.mark.parametrize(

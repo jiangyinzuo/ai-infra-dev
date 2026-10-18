@@ -6,8 +6,8 @@ import pytest
 
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
-import npu_devices
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from ssh_common import npu_devices
 
 
 def test_discovers_only_supported_character_devices(tmp_path):

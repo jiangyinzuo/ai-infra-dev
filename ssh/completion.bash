@@ -79,7 +79,7 @@ _profile_cli_complete() {
         --group)
             while IFS= read -r group; do
                 [[ $group != "$current"* ]] || COMPREPLY+=("$group")
-            done < <(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from config import HOST_GROUPS; print("\n".join(HOST_GROUPS))' "$_ssh_completion_dir/container-dev/devtools" 2>/dev/null)
+            done < <(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from ssh_common.config import HOST_GROUPS; print("\n".join(HOST_GROUPS))' "$_ssh_completion_dir" 2>/dev/null)
             ;;
         --host-glob|--limit|-l) _ssh_usg_complete "$HOME/.ssh/config" ;;
         -i|--inventory)
@@ -183,7 +183,7 @@ complete -F _cli_complete cli.py
 for _completion_cli in npu-top createuser container-dev/devtools; do
     complete -F _cli_complete "./$_completion_cli/cli.py" "$_completion_cli/cli.py" "$_ssh_completion_dir/$_completion_cli/cli.py"
 done
-complete -F _cli_complete ./devtools/cli.py devtools/cli.py "$HOME/devtools/cli.py"
+complete -F _cli_complete ./devtools/cli.py devtools/cli.py "$HOME/ai-infra-dev/ssh/container-dev/devtools/cli.py"
 # 保留已加载的 Python 补全函数及其选项；其他脚本仍交给原补全处理。
 _cli_python_spec=$(complete -p python3 2>/dev/null) || _cli_python_spec=
 if [[ $_cli_python_spec != *' -F _cli_python_complete '* ]]; then

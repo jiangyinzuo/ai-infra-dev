@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -26,6 +27,15 @@ def workspace(tmp_path):
                 "__pycache__", "*.tar", "*.tar.gz", "*.tar.zst"
             ),
         )
+    shutil.copytree(ROOT.parent / "ssh_common", ssh / "ssh_common")
+    data = tmp_path / "resource data"
+    (data / "openeuler24.03-lts-aarch64").mkdir(parents=True)
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    (hooks / "sitecustomize.py").write_text(
+        f"import sys; sys.path.insert(0, {str(ssh)!r})\n"
+        "import ssh_common.remote\nssh_common.remote.local_commit = lambda: 'a' * 40\n"
+    )
     (tools / "openeuler24.03-lts-aarch64").mkdir()
     (tools / "proxy.env").touch()
     binaries = tmp_path / "bin"
@@ -42,6 +52,8 @@ def workspace(tmp_path):
         **os.environ,
         "PATH": f"{binaries}:{os.environ['PATH']}",
         "SYNC_LOG": str(tmp_path / "log"),
+        "DEVTOOLS_DATA_DIR": str(data),
+        "PYTHONPATH": str(hooks),
     }
     return ssh, container, env
 
@@ -90,16 +102,25 @@ def test_host_selects_platform_from_csv(workspace, mode):
     ]
     assert len(calls) == 2
     for args, host in zip(calls, ("suzhou-a3-130", "lianqiuhu-one")):
-        assert str(container / "devtools/openeuler24.03-lts-aarch64") in args
-        assert args[-1] == f"jiangyinzuo@{host}:~/devtools/"
+        data = Path(env["DEVTOOLS_DATA_DIR"])
+        assert str(data / "openeuler24.03-lts-aarch64") in args
+        assert (
+            args[-1] == f"jiangyinzuo@{host}:~/ai-infra-dev/ssh/container-dev/devtools/"
+        )
         assert ("--dry-run" in args) == (mode == "--dry-run")
-        assert str(container / "devtools/workflow") in args
-        assert str(container / "devtools/containers") in args
-        assert str(container / "devtools/cli.py") in args
-        assert str(container / "devtools/nvim-plugins") in args
-        assert "--exclude=*.md" in args
-        assert "--exclude=__pycache__/" in args
-        assert "--exclude=/containers/**" in args
+        assert str(container / "devtools/workflow") not in args
+        assert str(container / "devtools/containers") not in args
+        assert str(container / "devtools/cli.py") not in args
+        assert str(data / "nvim-plugins") in args
+        assert "--include=/nvim-plugins/archive-hashes.json" in args
+        assert "--include=/openeuler24.03-lts-aarch64/*.gz" in args
+        assert "--include=/openeuler24.03-lts-aarch64/fzf-*-support/*.sh" in args
+        assert "--include=/openeuler24.03-lts-aarch64/omp" in args
+        assert "--exclude=*" in args
+        assert not any(arg.startswith("--delete") for arg in args)
+        guard = args[args.index("--rsync-path") + 1]
+        assert "a" * 40 in guard
+        assert "git-repo update" in guard
 
 
 @pytest.mark.parametrize(
@@ -129,3 +150,44 @@ def test_rsync_failure_stops_remaining_hosts(workspace):
     result = run(workspace, "--apply", "--host", "one", "--host", "two")
     assert result.returncode == 23
     assert len(Path(env["SYNC_LOG"]).read_text().splitlines()) == 1
+
+
+@pytest.mark.parametrize("kernel", ["Linux", "microsoft-WSL2"])
+@pytest.mark.parametrize("cwd_kind", ["repository", "home", "unrelated"])
+def test_default_resources_do_not_depend_on_cwd(workspace, tmp_path, cwd_kind, kernel):
+    ssh, container, original_env = workspace
+    write_machines(ssh, [("suzhou-one", "openEuler", "aarch64")])
+    env = dict(original_env)
+    env.pop("DEVTOOLS_DATA_DIR")
+    home = tmp_path / "home"
+    home.mkdir()
+    env["HOME"] = str(home)
+    hooks = Path(env["PYTHONPATH"]) / "sitecustomize.py"
+    with hooks.open("a") as stream:
+        stream.write(f"import platform\nplatform.release = lambda: {kernel!r}\n")
+    unrelated = tmp_path / "unrelated directory"
+    unrelated.mkdir()
+    cwd = {"repository": container, "home": home, "unrelated": unrelated}[cwd_kind]
+    source = container / "devtools/openeuler24.03-lts-aarch64"
+    (source / "sample.tar.gz").write_bytes(b"archive")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(container / "devtools/cli.py"),
+            "--no-hints",
+            "binaries",
+            "sync",
+            "--host",
+            "suzhou-one",
+        ],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    command = json.loads(Path(env["SYNC_LOG"]).read_text().splitlines()[0])
+    assert str(source) in command
+    assert str(container / "devtools/nvim-plugins") in command
+    assert not (home / "devtools").exists()

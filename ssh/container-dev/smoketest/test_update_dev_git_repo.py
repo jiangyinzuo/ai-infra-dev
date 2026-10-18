@@ -67,7 +67,7 @@ def workspace(tmp_path):
     )
     wrapper.chmod(0o755)
     for name, body in {
-        "nc": 'echo "${NC_HELP:-Ncat}"',
+        "ncat": 'echo "Ncat"',
     }.items():
         stub = binaries / name
         stub.write_text(f"#!/bin/sh\n{body}\n")
@@ -118,6 +118,17 @@ def test_clone_then_fast_forward(workspace, args):
         assert git("rev-parse", "HEAD", cwd=home / name, env=env) == git(
             "rev-parse", "HEAD", cwd=sources / name, env=env
         )
+
+
+def test_debug_preserves_git_ssh_proxy(workspace):
+    home, _, env = workspace
+    proxy = "ssh -o 'ProxyCommand=ncat --proxy 192.0.2.10:3128 --proxy-type http %h %p'"
+    env["GIT_SSH_COMMAND"] = proxy
+    result = run_script(env, "--debug")
+    assert result.returncode == 0, result.stderr
+    assert set((home / "git-ssh-commands").read_text().splitlines()) == {
+        proxy + " -vvv"
+    }
 
 
 def test_setup_failure_is_reported(workspace):

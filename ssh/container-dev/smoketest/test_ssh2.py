@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import shlex
 
 import pytest
 
@@ -27,7 +28,8 @@ def environment(monkeypatch):
 @pytest.mark.parametrize(
     "host,ip", [("suzhou-one", "192.0.2.10"), ("user@lianqiuhu-one", "192.0.2.11")]
 )
-def test_gateway_binding_and_all_proxy_values(host, ip):
+def test_gateway_binding_and_all_proxy_values(host, ip, monkeypatch):
+    monkeypatch.setenv("GIT_SSH_COMMAND", "do-not-forward-local-command")
     command = MODULE.build_command(["-p", "2222", host, "true"])
     assert command[:5] == [
         "/mnt/c/Windows/System32/OpenSSH/ssh.exe",
@@ -45,6 +47,24 @@ def test_gateway_binding_and_all_proxy_values(host, ip):
     assert values["USG_IP"] == ip
     for key in MODULE.PROXY_ENV_KEYS:
         assert values[key] == f"http://{ip}:3128"
+    git_ssh = shlex.split(values["GIT_SSH_COMMAND"])
+    assert git_ssh[:5] == ["ssh", "-o", "HostName=ssh.github.com", "-p", "443"]
+    proxy = next(value for value in git_ssh if value.startswith("ProxyCommand="))
+    assert shlex.split(proxy.split("=", 1)[1]) == [
+        "ncat",
+        "--proxy",
+        ip + ":3128",
+        "--proxy-type",
+        "http",
+        "%h",
+        "%p",
+    ]
+
+
+def test_native_route_does_not_forward_local_git_command(monkeypatch):
+    monkeypatch.setenv("GIT_SSH_COMMAND", "local-only")
+    command = MODULE.build_command(["xiaoqiaoling-one", "true"])
+    assert "GIT_SSH_COMMAND" not in command[-1]
 
 
 def test_native_route_and_quoted_environment(monkeypatch):

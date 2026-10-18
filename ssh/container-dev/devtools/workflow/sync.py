@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """按机器 OS/Arch 同步 devtools，默认 dry-run，不传输 Docker 镜像归档。"""
 
-from pathlib import Path
 import shlex
 import shutil
 
-DEVTOOLS = Path(__file__).resolve().parents[1]
+from .paths import DATA_ROOT, DEVTOOLS
+
 SSH_DIR = DEVTOOLS.parent.parent
-from config import REMOTE_USER, REMOTE_DIR, TOOL_PLATFORMS, NVIM_PLUGIN_EXCLUDES
-from remote_exec import add_host_argument
-from inventory import read_machines, machine_record
-from terminal import green, run
+from ssh_common.config import (
+    REMOTE_USER,
+    REMOTE_DIR,
+    TOOL_PLATFORMS,
+    NVIM_PLUGIN_EXCLUDES,
+)
+from ssh_common.remote import add_host_argument, checked_command
+from ssh_common.inventory import read_machines, machine_record
+from ssh_common.terminal import green, run
 
 
 def register(subparsers):
@@ -34,7 +39,7 @@ def build_plan(hosts):
         os_name = row["OS"].strip().lower().split(maxsplit=1)
         key = (os_name[0] if os_name else "", row["Arch"].strip().lower())
         try:
-            source = DEVTOOLS / TOOL_PLATFORMS[key]
+            source = DATA_ROOT / TOOL_PLATFORMS[key]
         except KeyError:
             raise ValueError(
                 f"{host}: unsupported OS/Arch: {row['OS']} / {row['Arch']}"
@@ -56,46 +61,52 @@ def remote_path(path):
 
 
 def synchronize(plans, args):
-    (DEVTOOLS / "nvim-plugins").mkdir(exist_ok=True)
-    common = [
-        DEVTOOLS / "nvim-plugins",
-        *sorted(DEVTOOLS.glob("*.py")),
-        *sorted(DEVTOOLS.glob("*.sh")),
-        DEVTOOLS / "proxy.env",
-        DEVTOOLS / "containers",
-        DEVTOOLS / "workflow",
-    ]
+    plugins = DATA_ROOT / "nvim-plugins"
+    plugins.mkdir(parents=True, exist_ok=True)
+    destination = REMOTE_DIR
     for host, source, ssh in plans:
-        command = ["rsync", "-av", "--info=progress2", "-e", shlex.quote(ssh)]
+        remote_command = "exec rsync"
         if args.apply:
-            command += [
-                "--rsync-path",
-                f"mkdir -p -- {remote_path(REMOTE_DIR)} && exec rsync",
-            ]
-        else:
-            command.append("--dry-run")
-        # 镜像目录只同步目录和脚本，不传输归档。
-        command += [
-            "--exclude=*.md",
-            "--exclude=__pycache__/",
-            "--exclude=*.pyc",
-            "--include=/containers/**/",
-            "--include=/containers/**.sh",
-            "--include=/containers/**.py",
-            "--exclude=/containers/**",
+            remote_command = f"mkdir -p -- {remote_path(destination)} && exec rsync"
+        command = [
+            "rsync",
+            "-av",
+            "--info=progress2",
+            "-e",
+            shlex.quote(ssh),
+            "--rsync-path",
+            checked_command(host, remote_command),
         ]
+        if not args.apply:
+            command.append("--dry-run")
         command += [
             f"--exclude=/nvim-plugins/{name}.tar.gz"
             for name in sorted(NVIM_PLUGIN_EXCLUDES)
         ]
+        # Only resource archives, plugin metadata, and fzf runtime helpers cross SSH.
         command += [
+            f"--include=/{source.name}/",
+            f"--include=/{source.name}/omp",
+            f"--include=/{source.name}/fzf-*-support/",
+            f"--include=/{source.name}/fzf-*-support/*.sh",
+            f"--include=/{source.name}/fzf-*-support/fzf-tmux",
+        ]
+        command += [
+            f"--include=/{source.name}/*{suffix}"
+            for suffix in (".tar", ".gz", ".tgz", ".tar.xz", ".tar.bz2", ".tar.zst")
+        ]
+        command += [
+            "--include=/nvim-plugins/",
+            "--include=/nvim-plugins/*.tar.gz",
+            "--include=/nvim-plugins/archive-hashes.json",
+            "--exclude=*",
             str(source),
-            *(str(path) for path in common),
-            f"{REMOTE_USER}@{host}:{REMOTE_DIR}/",
+            str(plugins),
+            f"{REMOTE_USER}@{host}:{destination}/",
         ]
         mode = "sync" if args.apply else "dry-run"
         print(
-            green(f"{mode} {source} + common -> {REMOTE_USER}@{host}:{REMOTE_DIR}"),
+            green(f"{mode} {source} + plugins -> {REMOTE_USER}@{host}:{destination}"),
             flush=True,
         )
         result = run(*command, check=False)

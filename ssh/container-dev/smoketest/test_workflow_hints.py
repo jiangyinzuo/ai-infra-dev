@@ -3,6 +3,7 @@ import sys
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from cli import build_parser
 from workflow import hints
 

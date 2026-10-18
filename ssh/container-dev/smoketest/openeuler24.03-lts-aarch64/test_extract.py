@@ -17,12 +17,16 @@ def workspace(tmp_path):
     home = tmp_path / "home with spaces"
     tools = home / "devtools/openeuler24.03-lts-aarch64"
     tools.mkdir(parents=True)
+    code = home / "ai-infra-dev/ssh/container-dev/devtools"
+    code.mkdir(parents=True)
+    shutil.copytree(DEVTOOLS.parents[1] / "ssh_common", code.parents[1] / "ssh_common")
+    (code / "openeuler24.03-lts-aarch64").mkdir()
     for source in DEVTOOLS.glob("*.py"):
-        shutil.copy2(source, tools.parent / source.name)
+        shutil.copy2(source, code / source.name)
     for package in ("workflow", "containers"):
         shutil.copytree(
             DEVTOOLS / package,
-            tools.parent / package,
+            code / package,
             ignore=shutil.ignore_patterns(
                 "__pycache__", "*.tar", "*.tar.gz", "*.tar.zst"
             ),
@@ -49,6 +53,8 @@ def workspace(tmp_path):
     uname.write_text("#!/bin/sh\necho Linux\n")
     uname.chmod(0o755)
     env = {**os.environ, "HOME": str(home), "PATH": str(binaries)}
+    env["DEVTOOLS_DATA_DIR"] = str(tools.parent)
+    env["TEST_CODE_DIR"] = str(code)
     hooks = tmp_path / "python-hooks"
     hooks.mkdir()
     (hooks / "sitecustomize.py").write_text(
@@ -63,7 +69,7 @@ def extract(workspace):
     return subprocess.run(
         [
             sys.executable,
-            str(tools.parent / "cli.py"),
+            str(Path(env["TEST_CODE_DIR"]) / "cli.py"),
             "--no-hints",
             "binaries",
             "extract",
@@ -174,14 +180,14 @@ def test_no_archives_configures_bashrc_once(workspace):
         assert result.returncode == 0, result.stderr
     content = bashrc.read_text()
     assert content.startswith("# existing configuration without final newline\n")
-    assert (
-        content.count('source "$HOME/devtools/openeuler24.03-lts-aarch64/path.env"')
-        == 1
-    )
-    # Missing path.env is safe; when present, the installed line loads it.
+    assert content.count(" || source ") == 1
+    assert "ai-infra-dev/ssh/container-dev/devtools/" in content
+    # Missing repository template is safe; the data directory cannot supply code.
+    (tools / "path.env").write_text("export EXTRACT_SMOKE=wrong\n")
     command = ["bash", "-c", 'source "$HOME/.bashrc"']
     subprocess.run(command, env=env, check=True, timeout=30)
-    (tools / "path.env").write_text("export EXTRACT_SMOKE=loaded\n")
+    template = Path(env["TEST_CODE_DIR"]) / "openeuler24.03-lts-aarch64/path.env"
+    template.write_text("export EXTRACT_SMOKE=loaded\n")
     result = subprocess.run(
         ["bash", "-c", 'source "$HOME/.bashrc"; printf "%s" "$EXTRACT_SMOKE"'],
         env=env,
@@ -214,9 +220,7 @@ def test_tar_overwrites_files_preserving_extras_and_archive(workspace):
     assert (directory / "extra").read_bytes() == b"keep"
     assert directory.stat().st_mode & 0o777 == 0o700
     assert archive.read_bytes() == original
-    assert (home / ".bashrc").read_text().count(
-        'source "$HOME/devtools/openeuler24.03-lts-aarch64/path.env"'
-    ) == 1
+    assert (home / ".bashrc").read_text().count(" || source ") == 1
 
 
 def test_single_gzip_renames_tree_sitter_and_makes_it_executable(workspace):
@@ -247,3 +251,50 @@ def test_corrupt_archive_fails_before_bashrc_changes(workspace):
     result = extract(workspace)
     assert result.returncode != 0
     assert not (home / ".bashrc").exists()
+
+
+def test_repository_path_template_uses_resource_directory(workspace):
+    _, tools, env = workspace
+    (tools / "nvim-linux-arm64/bin").mkdir(parents=True)
+    template = DEVTOOLS / "openeuler24.03-lts-aarch64/path.env"
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; printf "%s" "$PATH"', "bash", str(template)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert str(tools / "nvim-linux-arm64/bin") in result.stdout.split(":")
+    assert str(DEVTOOLS / "openeuler24.03-lts-aarch64") not in result.stdout.split(":")
+
+
+def test_plugins_extract_from_data_not_code(workspace):
+    home, tools, env = workspace
+    plugins = tools.parent / "nvim-plugins"
+    plugins.mkdir()
+    with tarfile.open(plugins / "sample.tar.gz", "w:gz") as archive:
+        entry = tarfile.TarInfo("sample-commit/plugin.lua")
+        entry.size = len(b"return true")
+        archive.addfile(entry, io.BytesIO(b"return true"))
+    code_plugins = Path(env["TEST_CODE_DIR"]) / "nvim-plugins"
+    code_plugins.mkdir()
+    (code_plugins / "bad.tar.gz").write_bytes(b"not a plugin archive")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(env["TEST_CODE_DIR"]) / "cli.py"),
+            "--no-hints",
+            "nvim-plugins",
+            "extract",
+            "--jobs",
+            "2",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (home / "plugged/sample/plugin.lua").read_bytes() == b"return true"
+    assert (plugins / "sample.tar.gz").is_file()
+    assert not (home / "plugged/bad").exists()

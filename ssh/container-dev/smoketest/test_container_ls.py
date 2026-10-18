@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from cli import build_parser
 from containers.commands import ls
 from containers.core import mappings, process, residuals

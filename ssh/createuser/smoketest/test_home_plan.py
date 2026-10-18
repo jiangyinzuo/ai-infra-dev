@@ -1,15 +1,11 @@
-import importlib.util
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location(
-    "home_plan",
-    Path(__file__).resolve().parents[2] / "container-dev/devtools/home_plan.py",
-)
-MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from ssh_common import home_plan as MODULE
 
 
 @pytest.fixture

@@ -1,14 +1,12 @@
 """容器平台选择与远程调度。"""
 
 from pathlib import Path
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
-sys.path.insert(0, str(ROOT.parent))
-from config import NPU_PLATFORMS
-from inventory import read_machines, machine_record
-from remote_exec import (
+from ssh_common.config import NPU_PLATFORMS
+from ssh_common.inventory import read_machines, machine_record
+from ssh_common.remote import (
     add_host_argument,
     host_alias,
     is_remote_host,
@@ -27,8 +25,7 @@ def add_target_args(parser):
 
 
 def detect_local_platform():
-    sys.path.insert(0, str(ROOT.parent))
-    from machine_probe import npu_platform
+    from ssh_common.machine_probe import npu_platform
 
     result = npu_platform()
     if result["platform"] not in NPU_PLATFORMS:

@@ -263,27 +263,70 @@ class Downloader:
         directory = "bindfs-" + version
         archive = self.directory / (directory + ".tar.gz")
         archive.parent.mkdir(parents=True, exist_ok=True)
+        checksum = archive.with_name(archive.name + ".sha256")
+        # Locally recorded digest detects cache changes, not upstream authenticity.
+        if archive.is_file() and checksum.is_file():
+            expected = checksum.read_text().strip()
+            if (
+                re.fullmatch(r"[0-9a-f]{64}", expected)
+                and self.digest(archive) == expected
+            ):
+                size = archive.stat().st_size
+                self.display.update(
+                    "bindfs",
+                    "skip (local sha256 matches)",
+                    completed=size,
+                    total=size,
+                    reset=True,
+                )
+                return
         fd, temporary = tempfile.mkstemp(
             prefix=archive.name + ".tmp.", dir=archive.parent
         )
         os.close(fd)
         temporary = Path(temporary)
         try:
-            # No published SHA-256 endpoint: refresh over HTTPS, never claim hash verification.
+            # No upstream digest: validate the archive before recording its local hash.
             self.transfer("bindfs", base + archive.name, temporary)
             with tarfile.open(temporary, "r:gz") as source:
-                names = source.getnames()
-                if directory + "/configure" not in names:
+                members = source.getmembers()
+                if directory + "/configure" not in [member.name for member in members]:
                     raise ValueError("bindfs: source archive lacks configure")
+                # TarInfo strips the trailing slash from directory entries.
                 if any(
-                    not name.startswith(directory + "/") or ".." in Path(name).parts
-                    for name in names
+                    not (
+                        member.name.startswith(directory + "/")
+                        or (member.name == directory and member.isdir())
+                    )
+                    or ".." in Path(member.name).parts
+                    for member in members
                 ):
                     raise ValueError("bindfs: unexpected archive paths")
+            digest = self.digest(temporary)
             self.check_cancel()
             temporary.replace(archive)
+            # Atomic sidecar publication; an interrupted/mismatched pair is downloaded again.
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=archive.parent,
+                prefix=checksum.name + ".tmp.",
+                delete=False,
+            ) as stream:
+                checksum_temp = Path(stream.name)
+                try:
+                    stream.write(digest + "\n")
+                    stream.flush()
+                    self.check_cancel()
+                    checksum_temp.replace(checksum)
+                finally:
+                    checksum_temp.unlink(missing_ok=True)
+            size = archive.stat().st_size
             self.display.update(
-                "bindfs", "saved (HTTPS; archive checked, no upstream SHA-256)"
+                "bindfs",
+                "saved (local sha256 recorded)",
+                completed=size,
+                total=size,
+                reset=True,
             )
         finally:
             temporary.unlink(missing_ok=True)

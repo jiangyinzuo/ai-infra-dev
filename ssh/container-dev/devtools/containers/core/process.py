@@ -1,7 +1,7 @@
 """Printed process execution and Docker inventory."""
 
 import json
-from terminal import run
+from ssh_common.terminal import run
 
 
 def containers() -> list:

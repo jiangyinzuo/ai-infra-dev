@@ -6,8 +6,8 @@ import sys
 import pytest
 
 DEVTOOLS = Path(__file__).resolve().parents[1] / "devtools"
-sys.path.insert(0, str(DEVTOOLS))
-import remote_exec
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from ssh_common import remote as remote_exec
 
 
 @pytest.mark.parametrize(
@@ -42,14 +42,16 @@ def test_remote_cli_quotes_arguments_and_preserves_exit_status(monkeypatch):
         return subprocess.CompletedProcess(command, 19)
 
     monkeypatch.setattr(remote_exec.subprocess, "run", run)
+    monkeypatch.setattr(remote_exec, "local_commit", lambda: "a" * 40)
     arguments = ["containers", "create", "--name", "a b;$(touch unwanted)"]
     assert remote_exec.run_remote_cli("suzhou-one", arguments) == 19
     assert len(calls) == 1
     command, kwargs = calls[0]
     assert command[1] == "jiangyinzuo@suzhou-one"
-    assert shlex.split(command[2]) == [
+    assert 'actual=$(git -C "$repo" rev-parse HEAD' in command[2]
+    assert shlex.split(command[2].split("; fi; ", 1)[1]) == [
         "python3",
-        "$HOME/devtools/cli.py",
+        "$HOME/ai-infra-dev/ssh/container-dev/devtools/cli.py",
         "--no-hints",
         *arguments,
     ]
@@ -90,6 +92,23 @@ def test_extract_dispatches_once_as_fixed_user(tmp_path, command, args):
             "__pycache__", "nvim-plugins", "*.tar.gz", "*.tar.xz"
         ),
     )
+    shutil.copytree(DEVTOOLS.parents[1] / "ssh_common", tools.parents[1] / "ssh_common")
+    for arguments in (
+        ["init"],
+        [
+            "-c",
+            "user.name=Smoke",
+            "-c",
+            "user.email=smoke@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "fixture",
+        ],
+    ):
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *arguments], check=True, capture_output=True
+        )
     ssh = tools.parents[1] / "ssh2"
     ssh.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
     ssh.chmod(0o755)
@@ -111,7 +130,9 @@ def test_extract_dispatches_once_as_fixed_user(tmp_path, command, args):
     assert result.returncode == 0, result.stderr
     assert "jiangyinzuo@suzhou-one" in result.stdout
     assert (
-        'python3 "$HOME"/devtools/cli.py --no-hints ' + command + " extract"
+        'python3 "$HOME"/ai-infra-dev/ssh/container-dev/devtools/cli.py --no-hints '
+        + command
+        + " extract"
         in result.stdout
     )
     assert "No supported archives" not in result.stdout

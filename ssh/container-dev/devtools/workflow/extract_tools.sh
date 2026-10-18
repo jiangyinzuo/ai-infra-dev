@@ -3,7 +3,9 @@ set -euo pipefail
 
 # Internal extraction helper; the Python workflow owns CLI and remote dispatch.
 # Extract platform archives only, preserving archives and unrelated files.
-script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../openeuler24.03-lts-aarch64" && pwd)
+code_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+(($# == 1)) || { echo 'error: expected platform data directory' >&2; exit 2; }
+script_dir=$(CDPATH= cd -- "$1" && pwd)
 cd -- "$script_dir"
 
 command -v tar >/dev/null || { echo "error: tar is required" >&2; exit 1; }
@@ -73,9 +75,9 @@ for archive in "${gzip_archives[@]}"; do
     [[ $file != tree-sitter ]] || chmod +x -- "$file"
 done
 
-# 只添加一次；path.env 尚未同步时不影响 shell 启动。
+# Source the repository template, never management code from the resource directory.
 bashrc="$HOME/.bashrc"
-source_line='[[ ! -f "$HOME/devtools/openeuler24.03-lts-aarch64/path.env" ]] || source "$HOME/devtools/openeuler24.03-lts-aarch64/path.env"'
+printf -v source_line '[[ ! -f %q ]] || source %q' "$code_dir/openeuler24.03-lts-aarch64/path.env" "$code_dir/openeuler24.03-lts-aarch64/path.env"
 if [[ -f $bashrc ]] && grep -Fqx -- "$source_line" "$bashrc"; then
     printf 'skip %s (path.env already configured)\n' "$bashrc"
 else

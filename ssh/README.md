@@ -53,7 +53,7 @@ Host lianqiuhu-950dt-xx
 
 ### ssh2
 
-Python 3.9+ 入口，按 Host 前缀选择客户端，配置维护在 `container-dev/devtools/config.py`：
+Python 3.9+ 入口，按 Host 前缀选择客户端，配置维护在 `ssh_common/config.py`：
 - `suzhou*`：Windows SSH，绑定 `$USG0_IP`。
 - `lianqiuhu*`：Windows SSH，绑定 `$USG1_IP`。
 - `xiaoqiaoling*`：WSL `/usr/bin/ssh`，不绑定网卡。
@@ -66,6 +66,8 @@ Python 3.9+ 入口，按 Host 前缀选择客户端，配置维护在 `container
 
 网关连接导出 `USG_IP` 和六个大小写 HTTP/HTTPS/ALL 代理变量；WSL SSH 透传本地已设置的同名变量。两者均透传已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`，未设置的不覆盖远端值。SFTP、仅转发及配置查询不注入环境。
 
+`GIT_SSH_COMMAND` 按本次 `USG_IP` 自动生成 GitHub SSH-over-443 代理（远端需 ncat），不透传本地同名变量；新容器继承宿主机的值。`git-repo update --debug` 保留代理，仅追加 `-vvv`。
+
 密钥会进入 SSH 进程参数，勿分享包含远端命令的调试日志。
 
 
@@ -76,7 +78,7 @@ source ./completion.bash
 
 ### 共享配置
 
-`container-dev/devtools/config.py` 统一维护主机分组、Windows/WSL SSH 路由、配置路径、公钥、远端用户、平台和环境变量名单。组名加 `*` 匹配主机；所有组通过 `ssh2` 连接。
+`ssh_common/config.py` 统一维护主机分组、Windows/WSL SSH 路由、配置路径、公钥、远端用户、平台和环境变量名单。组名加 `*` 匹配主机；所有组通过 `ssh2` 连接。
 
 ## machine-info: 查看机器基本情况
 
@@ -96,3 +98,5 @@ source ./completion.bash
 ## createuser: 批量创建用户
 
 ## container-dev: 初始化容器开发环境
+
+参见 [开发环境说明](container-dev/README.md)。先推送本地提交到远端可访问的上游，再运行 `./container-dev/devtools/cli.py git-repo update --host HOST`，之后才同步资源。服务器入口为 `python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py`；两端资源均默认保存在仓库的 devtools 目录，sync 不传管理脚本。远程 CLI（引导更新除外）要求两端 HEAD 一致；不一致时先重新更新仓库，再重试。

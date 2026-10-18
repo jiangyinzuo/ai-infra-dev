@@ -11,10 +11,10 @@ import shutil
 from typing import Optional
 
 from ..core.remote import ROOT
-from config import HOST_ENV_DEFAULTS, CONTAINER_ENV_KEYS
+from ssh_common.config import HOST_ENV_DEFAULTS, CONTAINER_ENV_KEYS
 from ..core.mappings import MappingStore
 from ..core.process import run
-from terminal import green, yellow
+from ssh_common.terminal import green, yellow
 
 
 def select_image() -> str:

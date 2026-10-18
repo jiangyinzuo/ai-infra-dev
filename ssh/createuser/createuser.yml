@@ -26,7 +26,7 @@
         argv:
           - "{{ ansible_python_interpreter }}"
           - -c
-          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../container-dev/devtools/npu_devices.py') }}"
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../ssh_common/npu_devices.py') }}"
       register: npu_device_groups
       changed_when: false
       check_mode: false
@@ -45,7 +45,7 @@
         argv:
           - "{{ ansible_python_interpreter }}"
           - -c
-          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../container-dev/devtools/home_plan.py') }}"
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../ssh_common/home_plan.py') }}"
           - "{{ item.name }}"
       loop: "{{ managed_users }}"
       loop_control:

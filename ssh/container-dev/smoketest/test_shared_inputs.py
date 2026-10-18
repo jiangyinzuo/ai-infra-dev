@@ -4,9 +4,9 @@ import sys
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
-from arguments import add_jobs_argument
-from inventory import read_machines, machine_record
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from ssh_common.arguments import add_jobs_argument
+from ssh_common.inventory import read_machines, machine_record
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "abc"])

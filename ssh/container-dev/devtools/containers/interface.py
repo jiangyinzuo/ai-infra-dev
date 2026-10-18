@@ -6,7 +6,7 @@ import sys
 from contextlib import redirect_stdout
 from .commands import create, delete, download, ls
 from .core.remote import add_target_args
-from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
+from ssh_common.remote import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 
 
 def register(subparsers) -> None:

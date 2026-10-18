@@ -18,9 +18,10 @@ import tarfile
 import tempfile
 import urllib.request
 
-from arguments import add_jobs_argument
-from config import NVIM_PLUGIN_EXCLUDES
-from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
+from ssh_common.arguments import add_jobs_argument
+from ssh_common.config import NVIM_PLUGIN_EXCLUDES
+from ssh_common.remote import add_host_argument, is_remote_host, is_wsl, run_remote_cli
+from .paths import DATA_ROOT
 
 
 REPO = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
@@ -156,13 +157,14 @@ def execute(args):
             [
                 "bash",
                 str(Path(__file__).with_name("extract_nvim_plugins.sh")),
+                str(DATA_ROOT / "nvim-plugins"),
                 "--jobs",
                 str(args.jobs),
             ],
             check=False,
         ).returncode
     args.lock = args.lock or Path.home() / ".config/nvim/lazy-lock.json"
-    args.output = args.output or Path(__file__).resolve().parents[1] / "nvim-plugins"
+    args.output = args.output or DATA_ROOT / "nvim-plugins"
     download_plugins(args)
     return 0
 

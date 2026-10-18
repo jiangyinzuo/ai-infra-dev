@@ -3,8 +3,8 @@
 from pathlib import Path
 import shlex
 import sys
-from remote_exec import is_wsl
-from terminal import color
+from ssh_common.remote import is_wsl
+from ssh_common.terminal import color
 
 
 def suggestions(args) -> list:
