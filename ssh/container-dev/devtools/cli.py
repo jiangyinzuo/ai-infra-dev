@@ -13,7 +13,7 @@ from workflow import hints
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from workflow import binaries, update_git_repo
+    from workflow import binaries, update_git_repo, sync_all
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-hints", action="store_true", help="不显示后续操作提示")
@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     binaries.register(commands)
     update_git_repo.register(commands)
     containers.register(commands)
+    sync_all.register(commands)
     return parser
 
 

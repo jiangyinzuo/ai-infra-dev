@@ -47,9 +47,10 @@ printf '%s\\n' "${{COMPREPLY[@]}}"
 @pytest.mark.parametrize(
     "args,expected",
     [
-        ([""], {"git-repo", "binaries", "containers"}),
-        (["--no-hints", ""], {"git-repo", "binaries", "containers"}),
-        (["binaries", ""], {"download", "extract", "sync", "sync-all"}),
+        ([""], {"git-repo", "binaries", "containers", "sync-all"}),
+        (["--no-hints", ""], {"git-repo", "binaries", "containers", "sync-all"}),
+        (["binaries", ""], {"download", "extract", "sync"}),
+        (["sync-all", "--"], {"--host", "--jobs"}),
         (
             ["binaries", "download", "--"],
             {"--host", "--lock", "--output", "--repos", "--jobs"},

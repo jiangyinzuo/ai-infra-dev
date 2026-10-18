@@ -22,6 +22,10 @@ def yellow(text: str) -> str:
     return color(text, "33")
 
 
+def title(text: str) -> str:
+    return color(text, "1;35")
+
+
 def run(*args: str, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess:
     command = shlex.join(args)
     if kwargs.get("cwd") is not None:

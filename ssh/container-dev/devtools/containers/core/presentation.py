@@ -1,8 +1,10 @@
 """供列表与清理流程共用的映射展示。"""
 
+from ssh_common.terminal import title
+
 
 def print_mappings(rows: list) -> None:
-    print("bindfs 映射：")
+    print(title("bindfs 映射："))
     if not rows:
         print("  无")
     for row in rows:

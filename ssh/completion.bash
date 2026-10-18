@@ -104,19 +104,20 @@ _devtools_cli_complete() {
         if [[ -z $group ]]; then group=$word; else action=$word; break; fi
     done
     if [[ -z $group ]]; then
-        _complete_values -h --help --no-hints git-repo binaries containers
+        _complete_values -h --help --no-hints git-repo binaries containers sync-all
         return
     fi
     case $group in
         binaries|containers|git-repo)
             if [[ -z $action ]]; then
                 case $group in
-                    binaries) _complete_values -h --help download extract sync sync-all ;;
+                    binaries) _complete_values -h --help download extract sync ;;
                     containers) _complete_values -h --help create delete download ls ;;
                     git-repo) _complete_values -h --help update ;;
                 esac
                 return
             fi ;;
+        sync-all) options+=(--jobs) ;;
         *) return ;;
     esac
     options+=(--host)
@@ -125,7 +126,6 @@ _devtools_cli_complete() {
         binaries:download) options+=(--lock --output --repos --jobs) ;;
         binaries:extract) options+=(--output --jobs) ;;
         binaries:sync) options+=(--apply --dry-run) ;;
-        binaries:sync-all) options+=(--jobs) ;;
         containers:create) options+=(--image --name --no-bindfs --share --test-home) ;;
         containers:delete) options+=(--name --keep-bindfs --remove-bindfs --cleanup-bindfs --yes) ;;
         containers:download) options+=(--npu-platform --date --version) ;;

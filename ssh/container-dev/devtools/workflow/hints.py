@@ -32,6 +32,8 @@ def groups(args) -> list:
         ),
         ("解压安装", ["binaries", "extract", *target]),
     ]
+    if wsl:
+        workflow.append(("一键执行以上四步", ["sync-all", *target]))
     container = [
         ("创建容器", ["containers", "create", *target]),
         ("查看容器和映射", ["containers", "ls", *target]),

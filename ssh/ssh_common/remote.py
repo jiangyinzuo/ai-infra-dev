@@ -2,11 +2,13 @@
 """通过 ssh2 执行远程仓库代码；普通操作要求两端 HEAD 一致。"""
 
 import argparse
+import os
 from pathlib import Path, PurePosixPath
 import platform
 import re
 import shlex
 import subprocess
+import sys
 
 from .config import REMOTE_USER
 
@@ -38,13 +40,19 @@ def checked_command(host: str, command: str) -> str:
     if not re.fullmatch(r"[0-9a-f]{40,64}", expected):
         raise ValueError("无法识别本地 Git commit")
     hint = "请先提交并推送本地改动，再执行：" + update_command(host)
+    color_warning = "1" if sys.stderr.isatty() and "NO_COLOR" not in os.environ else "0"
     # Check and execute in one SSH session; preserve stdin for interactive commands.
     return (
         'repo="$HOME/ai-infra-dev"; '
         'actual=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || actual=missing; '
         f'if [ "$actual" != {shlex.quote(expected)} ]; then '
+        "warning_start=; warning_end=; "
+        f'if {{ [ -t 2 ] || [ {color_warning} = 1 ]; }} && [ "${{NO_COLOR+x}}" != x ]; then '
+        "warning_start=$(printf '\\033[33m'); warning_end=$(printf '\\033[0m'); fi; "
+        'printf "%s" "$warning_start" >&2; '
         f'printf "远程仓库 commit 不一致：local=%s remote=%s\\n" {shlex.quote(expected)} "$actual" >&2; '
-        f'printf "%s\\n" {shlex.quote(hint)} >&2; exit 2; fi; ' + command
+        f'printf "%s\\n" {shlex.quote(hint)} >&2; printf "%s" "$warning_end" >&2; exit 2; fi; '
+        + command
     )
 
 

@@ -19,6 +19,7 @@ def test_host_reused_in_valid_followup_commands(monkeypatch):
         ["binaries", "download"],
         ["binaries", "sync"],
         ["binaries", "extract"],
+        ["sync-all", "--host"],
     ]
     for _, command in hints.suggestions(args):
         parsed = build_parser().parse_args(command)

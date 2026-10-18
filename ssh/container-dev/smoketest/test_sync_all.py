@@ -29,7 +29,7 @@ def test_order_local_download_and_stop_on_failure(monkeypatch, fail):
     monkeypatch.setattr(binaries, "execute", binary)
     monkeypatch.setattr(sync_all.sync, "execute", step(2))
     args = build_parser().parse_args(
-        ["binaries", "sync-all", "--host", "suzhou-one", "--jobs", "3"]
+        ["sync-all", "--host", "suzhou-one", "--jobs", "3"]
     )
     assert sync_all.execute(args) == (0 if fail is None else 23)
     assert [i for i, _ in calls] == list(range(4 if fail is None else fail + 1))
@@ -42,6 +42,6 @@ def test_order_local_download_and_stop_on_failure(monkeypatch, fail):
 
 def test_sync_all_rejects_server_before_actions(monkeypatch):
     monkeypatch.setattr(sync_all, "is_wsl", lambda: False)
-    args = build_parser().parse_args(["binaries", "sync-all", "--host", "suzhou-one"])
+    args = build_parser().parse_args(["sync-all", "--host", "suzhou-one"])
     with pytest.raises(ValueError, match="WSL"):
         sync_all.execute(args)

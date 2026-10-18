@@ -49,7 +49,7 @@ def test_remote_cli_quotes_arguments_and_preserves_exit_status(monkeypatch):
     command, kwargs = calls[0]
     assert command[1] == "jiangyinzuo@suzhou-one"
     assert 'actual=$(git -C "$repo" rev-parse HEAD' in command[2]
-    assert shlex.split(command[2].split("; fi; ", 1)[1]) == [
+    assert shlex.split(command[2].rsplit("; fi; ", 1)[1]) == [
         "python3",
         "$HOME/ai-infra-dev/ssh/container-dev/devtools/cli.py",
         "--no-hints",

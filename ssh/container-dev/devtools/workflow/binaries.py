@@ -5,7 +5,7 @@ import subprocess
 
 from ssh_common.remote import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 from ssh_common.arguments import add_jobs_argument
-from . import sync, sync_all, binaries_download, nvim_plugins
+from . import sync, binaries_download, nvim_plugins
 
 from .paths import DATA_ROOT, PLATFORM_DIR
 
@@ -29,7 +29,6 @@ def register(subparsers):
         )
         command.set_defaults(handler=execute, command_parser=command)
     sync.register(actions)
-    sync_all.register(actions)
 
 
 def execute(args):

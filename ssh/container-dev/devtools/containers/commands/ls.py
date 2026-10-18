@@ -5,6 +5,7 @@ import argparse
 from contextlib import redirect_stdout
 import json
 import sys
+from ssh_common.terminal import title
 
 from ..core.mappings import MappingStore
 from ..core.process import containers, managed
@@ -39,7 +40,7 @@ def execute(args: argparse.Namespace) -> None:
             )
         )
         return
-    print(f"{REMOTE_USER} 容器：")
+    print(title(f"{REMOTE_USER} 容器："))
     if not rows:
         print("  无")
     for row in rows:
