@@ -3,7 +3,7 @@
 from pathlib import Path
 import subprocess
 
-from remote_exec import add_host_argument, is_wsl, run_remote
+from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 from . import sync, binaries_download
 
 DEVTOOLS = Path(__file__).resolve().parents[1]
@@ -26,17 +26,13 @@ def execute(args):
     parser = args.command_parser
     if args.binaries_action == "download" and args.jobs < 1:
         parser.error("--jobs requires a positive integer")
-    if (
-        args.binaries_action == "extract"
-        and is_wsl()
-        and (not args.host or args.host == "localhost")
-    ):
+    if args.binaries_action == "extract" and is_wsl() and not is_remote_host(args.host):
         parser.error("WSL requires --host HOST")
-    if args.host and args.host != "localhost":
-        remote_args = ["--no-hints", "binaries", args.binaries_action]
+    if is_remote_host(args.host):
+        remote_args = ["binaries", args.binaries_action]
         if args.binaries_action == "download":
             remote_args.extend(["--jobs", str(args.jobs)])
-        return run_remote(args.host, "cli.py", remote_args)
+        return run_remote_cli(args.host, remote_args)
     if args.binaries_action == "download":
         return binaries_download.download(PLATFORM_DIR, args.jobs)
     return subprocess.run(

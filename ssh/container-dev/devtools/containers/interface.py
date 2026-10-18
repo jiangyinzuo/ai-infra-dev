@@ -6,7 +6,7 @@ import sys
 from contextlib import redirect_stdout
 from .commands import create, delete, download, ls
 from .core.remote import add_target_args
-from remote_exec import add_host_argument, is_wsl, run_remote
+from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 
 
 def register(subparsers) -> None:
@@ -59,8 +59,8 @@ def register(subparsers) -> None:
 
 
 def execute(args: argparse.Namespace):
-    if args.host and args.host != "localhost":
-        options = ["--no-hints", "containers", args.container_action]
+    if is_remote_host(args.host):
+        options = ["containers", args.container_action]
         for key in ("image", "name", "test_home"):
             value = getattr(args, key, None)
             if value is not None:
@@ -82,7 +82,7 @@ def execute(args: argparse.Namespace):
             if getattr(args, "json", False)
             else redirect_stdout(sys.stdout)
         ):
-            return run_remote(args.host, "cli.py", options)
+            return run_remote_cli(args.host, options)
     if is_wsl():
         raise ValueError("请通过 --host 指定服务器执行容器管理")
     return args.container_handler(args)

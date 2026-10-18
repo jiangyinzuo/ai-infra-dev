@@ -42,6 +42,16 @@ def is_wsl():
     return "microsoft" in platform.release().lower()
 
 
+def is_remote_host(host):
+    """Classify an optional CLI target; omitted hosts and localhost run locally."""
+    return bool(host) and host != "localhost"
+
+
+def run_remote_cli(host, args=()):
+    """Run explicit CLI arguments remotely without printing follow-up hints."""
+    return run_remote(host, "cli.py", ["--no-hints", *args])
+
+
 def run_remote(host, script, args=()):
     host_alias(host)
     path = PurePosixPath(script)

@@ -128,7 +128,8 @@ def setup(tmp_path, monkeypatch):
     root = tmp_path / "ssh/container-dev/devtools/containers"
     root.mkdir(parents=True)
     monkeypatch.setattr(common, "ROOT", root)
-    monkeypatch.setattr(common.platform, "release", lambda: "Microsoft-WSL2")
+    monkeypatch.setattr(common, "is_wsl", lambda: True)
+    monkeypatch.setattr(load("download"), "is_wsl", lambda: True)
     return root
 
 
@@ -147,7 +148,7 @@ def test_wsl_requires_explicit_target_and_local_platform(setup):
 
 
 def test_server_local_platform_uses_real_machine_probe(setup, monkeypatch, tmp_path):
-    monkeypatch.setattr(common.platform, "release", lambda: "Linux")
+    monkeypatch.setattr(common, "is_wsl", lambda: False)
     probe_dir = setup.parent
     import shutil
     import os
@@ -232,17 +233,16 @@ def test_remote_dispatch_places_subcommand_before_options(
         writer.writerow(["suzhou-one", "openEuler", "aarch64", "a3"])
     calls = []
 
-    def run_remote(host, script, arguments):
-        calls.append((host, script, arguments))
+    def run_remote_cli(host, arguments):
+        calls.append((host, arguments))
         return 7
 
-    monkeypatch.setattr(common, "run_remote", run_remote)
+    monkeypatch.setattr(common, "run_remote_cli", run_remote_cli)
     assert common.dispatch(args("suzhou-one"), subcommand, options) == 7
     assert calls == [
         (
             "suzhou-one",
-            "cli.py",
-            ["--no-hints", "containers", subcommand, "--npu-platform", "a3", *options],
+            ["containers", subcommand, "--npu-platform", "a3", *options],
         )
     ]
 

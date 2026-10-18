@@ -2,14 +2,19 @@
 
 import csv
 from pathlib import Path
-import platform
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(ROOT.parent))
 from config import NPU_PLATFORMS
-from remote_exec import add_host_argument, host_alias, run_remote
+from remote_exec import (
+    add_host_argument,
+    host_alias,
+    is_remote_host,
+    is_wsl,
+    run_remote_cli,
+)
 
 
 def add_target_args(parser):
@@ -33,10 +38,10 @@ def detect_local_platform():
 
 
 def dispatch(args, script, options):
-    wsl = "microsoft" in platform.release().lower()
+    wsl = is_wsl()
     if wsl and not args.host:
         raise ValueError("WSL 必须指定 --host（本地使用 localhost）")
-    if not args.host or args.host == "localhost":
+    if not is_remote_host(args.host):
         if not args.npu_platform:
             if wsl:
                 raise ValueError("WSL 本地下载必须指定 --npu-platform a3")
@@ -56,8 +61,7 @@ def dispatch(args, script, options):
         raise ValueError(f"{args.host}: 不支持或未探测到 NPU 平台 {npu!r}")
     if args.npu_platform and args.npu_platform != npu:
         raise ValueError("指定平台与机器 CSV 不一致")
-    return run_remote(
+    return run_remote_cli(
         args.host,
-        "cli.py",
-        ["--no-hints", "containers", script, "--npu-platform", npu, *options],
+        ["containers", script, "--npu-platform", npu, *options],
     )

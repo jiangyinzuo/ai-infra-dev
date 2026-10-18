@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 from config import REMOTE_USER
-from remote_exec import add_host_argument, is_wsl, run_remote
+from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 
 
 def update_repositories(debug):
@@ -63,11 +63,11 @@ def register(subparsers):
 
 def execute(args):
     parser = args.command_parser
-    if is_wsl() and (not args.host or args.host == "localhost"):
+    if is_wsl() and not is_remote_host(args.host):
         parser.error(f"WSL requires --host HOST (user: {REMOTE_USER})")
-    if args.host and args.host != "localhost":
-        remote_args = ["--no-hints", "git-repo", "update"]
+    if is_remote_host(args.host):
+        remote_args = ["git-repo", "update"]
         if args.debug:
             remote_args.append("--debug")
-        return run_remote(args.host, "cli.py", remote_args)
+        return run_remote_cli(args.host, remote_args)
     return update_repositories(args.debug)

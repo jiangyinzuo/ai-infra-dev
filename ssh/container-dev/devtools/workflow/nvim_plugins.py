@@ -19,7 +19,7 @@ import tempfile
 import urllib.request
 
 from config import NVIM_PLUGIN_EXCLUDES
-from remote_exec import add_host_argument, is_wsl, run_remote
+from remote_exec import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 
 
 REPO = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
@@ -147,15 +147,10 @@ def register(subparsers):
 
 
 def execute(args):
-    if (
-        args.plugin_action == "extract"
-        and is_wsl()
-        and args.host in (None, "localhost")
-    ):
+    if args.plugin_action == "extract" and is_wsl() and not is_remote_host(args.host):
         raise ValueError("nvim-plugins extract on WSL requires a remote --host")
-    if args.host and args.host != "localhost":
+    if is_remote_host(args.host):
         remote_args = [
-            "--no-hints",
             "nvim-plugins",
             args.plugin_action,
             "--jobs",
@@ -166,7 +161,7 @@ def execute(args):
                 value = getattr(args, option)
                 if value is not None:
                     remote_args.extend(["--" + option, str(value)])
-        return run_remote(args.host, "cli.py", remote_args)
+        return run_remote_cli(args.host, remote_args)
     if args.plugin_action == "extract":
         return subprocess.run(
             [

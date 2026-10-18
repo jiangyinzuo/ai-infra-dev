@@ -2,12 +2,12 @@
 """下载 NPU 容器镜像；WSL 必须指定 --host。"""
 
 import os
-import platform
 from pathlib import Path
 import subprocess
 import tempfile
 
 from ..core.remote import ROOT, NPU_PLATFORMS, dispatch
+from remote_exec import is_wsl
 
 
 def download(args):
@@ -19,7 +19,7 @@ def download(args):
     if archive.is_file():
         print(f"skip {archive} (archive exists)")
         return 0
-    if "microsoft" not in platform.release().lower():
+    if not is_wsl():
         result = subprocess.run(
             ["docker", "images", "vllm-ascend", "--format", "{{.Repository}}:{{.Tag}}"],
             capture_output=True,
