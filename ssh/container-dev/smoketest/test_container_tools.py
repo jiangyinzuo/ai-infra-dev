@@ -26,7 +26,14 @@ def test_create_interactive_defaults_and_image_selection(monkeypatch, capsys):
     )
 
     def run(*command, **kwargs):
-        assert command[:3] == ("docker", "images", "vllm-ascend")
+        assert command[:6] == (
+            "docker",
+            "images",
+            "--filter",
+            "reference=vllm-ascend:*",
+            "--filter",
+            "reference=quay.io/ascend/vllm-ascend:*",
+        )
         return subprocess.CompletedProcess(command, 0, "\n".join(rows))
 
     monkeypatch.setattr(module, "run", run)
@@ -57,6 +64,24 @@ def test_create_image_selection_rejects_empty_image_list(monkeypatch):
     )
     with pytest.raises(ValueError, match="没有可用的 vllm-ascend 镜像"):
         module.select_image()
+
+
+def test_create_selects_quay_image_with_real_subprocess(monkeypatch, tmp_path, capsys):
+    module = load("create")
+    docker = tmp_path / "docker"
+    docker.write_text(
+        "#!"
+        + sys.executable
+        + '\nimport sys\nfilters=[sys.argv[i+1] for i,arg in enumerate(sys.argv) if arg=="--filter"]\nfor repo,created,tag in [("vllm-ascend","2026-10-14","old"),("quay.io/ascend/vllm-ascend","2026-10-19","nightly-main-a3-openeuler-20261019")]:\n if "reference="+repo+":*" in filters: print(created+"\\t"+repo+":"+tag)\n'
+    )
+    docker.chmod(0o755)
+    import os
+
+    monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
+    monkeypatch.setattr("builtins.input", lambda prompt: "")
+    selected = module.select_image()
+    assert selected == "quay.io/ascend/vllm-ascend:nightly-main-a3-openeuler-20261019"
+    assert "2) vllm-ascend:old" in capsys.readouterr().out
 
 
 def test_create_prepare_uses_interactive_defaults(monkeypatch, tmp_path):

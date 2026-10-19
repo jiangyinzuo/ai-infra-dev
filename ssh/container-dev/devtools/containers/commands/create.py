@@ -20,6 +20,7 @@ from ssh_common.npu_devices import discover_devices
 from ..core.process import run
 from ssh_common.terminal import green, yellow
 from ..core.host import require_host, shm_capacity
+from ssh_common.images import image_list_command
 
 
 @dataclass(frozen=True)
@@ -87,9 +88,7 @@ def verify_identity(name: str, home: str) -> None:
 def select_image() -> str:
     rows = sorted(
         run(
-            "docker",
-            "images",
-            "vllm-ascend",
+            *image_list_command(),
             "--format",
             "{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}",
             capture_output=True,

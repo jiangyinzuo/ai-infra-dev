@@ -254,13 +254,8 @@ def list_images(args):
         return run_remote_cli(args.host, ["images", "ls"])
     if is_wsl():
         raise ValueError("WSL 请通过 --host 指定服务器")
-    command = [
-        "docker",
-        "images",
-        "--filter",
-        "reference=vllm-ascend:*",
-        "--filter",
-        "reference=quay.io/ascend/vllm-ascend:*",
-    ]
+    from ssh_common.images import image_list_command
+
+    command = image_list_command()
     print(shlex.join(command), flush=True)
     return subprocess.run(command, check=False).returncode
