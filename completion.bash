@@ -150,16 +150,13 @@ _devtools_cli_complete() {
             compopt -o filenames 2>/dev/null || true
             ;;
         --archive)
+            [[ $group:$action == images:upload ]] || return
             local archive candidate value
             for archive in "$_ssh_completion_dir"/container-dev/devtools/containers/{vllm-ascend*,nightly-*,v[0-9]*,qwen*}; do
                 [[ -f $archive ]] || continue
                 candidate=${archive##*/}
                 if [[ $candidate == "$current"* || $archive == "$current"* ]]; then
-                    if [[ $group:$action == images:upload ]]; then
-                        value=$archive
-                    elif [[ $group:$action == images:download ]]; then
-                        value=$candidate
-                    fi
+                    value=$archive
                     # Insert shell quoting ourselves; escape embedded single quotes.
                     value=${value//\'/\'\\\'\'}
                     COMPREPLY+=("'$value'")
