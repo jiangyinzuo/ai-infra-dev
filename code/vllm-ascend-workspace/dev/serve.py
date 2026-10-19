@@ -76,7 +76,14 @@ def stop(state, timeout=30):
 def execute(args):
     script = None
     if args.serve_action != "stop":
-        script = Path(args.script).expanduser().resolve()
+        name = Path(args.script)
+        if (
+            name.name != args.script
+            or name.suffix != ".py"
+            or name.name == "__init__.py"
+        ):
+            raise ValueError("--script 仅接受 serve_config 下的 Python 配置文件名")
+        script = Path(__file__).resolve().parent / "serve_config" / name
         if not script.is_file():
             raise ValueError("启动脚本不存在：" + str(script))
         config = load_config(script)

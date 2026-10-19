@@ -32,7 +32,9 @@ def service(monkeypatch, tmp_path):
     )
     binary.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
-    (tmp_path / "launch.py").write_text(
+    (tmp_path / "serve_config").mkdir()
+    monkeypatch.setattr(module, "__file__", str(tmp_path / "serve.py"))
+    (tmp_path / "serve_config/launch.py").write_text(
         'from serve_config import ServeConfig\nconfig = ServeConfig(1, ["vllm", "serve", "{model}", "--max-model-len", "1024"])\n'
     )
     monkeypatch.chdir(tmp_path)

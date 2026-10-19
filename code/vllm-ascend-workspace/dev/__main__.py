@@ -42,7 +42,7 @@ def main(argv=None):
             serve.add_argument("--model", help="模型目录；省略时交互选择")
             serve.add_argument(
                 "--script",
-                help="定义 config = ServeConfig(...) 的 Python 配置文件（容器内路径）",
+                help="serve_config/ 下的 Python 配置文件名，例如 qwen3.5-0.8b.py",
             )
             serve.add_argument(
                 "--devices", help="逗号分隔的空闲 NPU device IDs；省略时选择"

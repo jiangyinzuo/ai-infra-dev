@@ -164,7 +164,16 @@ _build_complete() {
             --host) _ssh_usg_complete "$HOME/.ssh/config" ;;
             --container|--devices) return ;;
             --model) mapfile -t COMPREPLY < <(compgen -d -- "$current"); compopt -o filenames 2>/dev/null || true ;;
-            --script) mapfile -t COMPREPLY < <(compgen -f -- "$current"); compopt -o filenames 2>/dev/null || true ;;
+            --script)
+                local config name
+                local base=${_cli_completion_command:-${COMP_WORDS[0]}}
+                base=${base%/}
+                [[ $base != */__main__.py ]] || base=${base%/__main__.py}
+                for config in "$base"/serve_config/*.py; do
+                    [[ -f $config && ${config##*/} != __init__.py ]] || continue
+                    name=${config##*/}
+                    [[ $name == "$current"* ]] && COMPREPLY+=("$name")
+                done ;;
             *)
                 if [[ $resource == vllm-ascend ]]; then
                     if [[ ${COMP_WORDS[start+1]:-} == serve ]]; then
@@ -195,6 +204,7 @@ _cli_complete() {
 
 _cli_python_complete() {
     local _cli_completion_command=${COMP_WORDS[1]:-} _cli_completion_start=2
+    _cli_completion_command=${_cli_completion_command%/}
     local directory=${_cli_completion_command%/*}
     [[ $_cli_completion_command == */* && $directory != . ]] || directory=$PWD
     if ((COMP_CWORD > 1)) && { [[ ${_cli_completion_command##*/} == dev ]] || [[ $_cli_completion_command == */dev/__main__.py ]]; }; then

@@ -38,10 +38,10 @@ config = ServeConfig(
 ```
 
 ```bash
-python3 dev vllm-ascend serve --script dev/serve_config/qwen3.5-0.8b.py
-python3 dev vllm-ascend serve --script dev/serve_config/qwen3.5-0.8b.py --model /mnt/share/weights/Qwen3.5-0.8B --devices 0
+python3 dev vllm-ascend serve --script qwen3.5-0.8b.py
+python3 dev vllm-ascend serve --script qwen3.5-0.8b.py --model /mnt/share/weights/Qwen3.5-0.8B --devices 0
 python3 dev vllm-ascend serve stop
-# WSL 可追加 --host HOST --container NAME；--script 是容器内路径
+# WSL 可追加 --host HOST --container NAME；--script 只传 dev/serve_config 下的文件名
 ```
 
 dev 将 `serve_command` 参数中的 `{model}` 替换为所选路径，设置 `ASCEND_RT_VISIBLE_DEVICES`，并检查所选设备数等于 `device_count`。命令直接执行，不经 shell，不额外添加 TP、端口或其他参数；工作目录为配置文件所在目录。启动前打印最终命令。配置导入会执行 Python 顶层代码，只加载可信文件；顶层只定义配置，不启动进程或占用 NPU。

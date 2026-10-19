@@ -112,11 +112,7 @@ def show_dev(args):
             "--container",
             name or "<CONTAINER>",
         ]
-    config = (
-        "~/ai-infra-dev/code/vllm-ascend-workspace/dev/serve_config/qwen3.5-0.8b.py"
-        if connection
-        else str(dev / "serve_config/qwen3.5-0.8b.py")
-    )
+    config = "qwen3.5-0.8b.py"
     print("  " + color("vLLM Ascend Dev", "1;35", stream), file=stream)
     for label, arguments in [
         ("安装开发工具", ["devtools", "install"]),
