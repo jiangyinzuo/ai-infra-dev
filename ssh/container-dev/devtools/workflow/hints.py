@@ -89,3 +89,35 @@ def show(args) -> None:
                 print(
                     "    {}  {}".format(color(label, "36", stream), line), file=stream
                 )
+    if getattr(args, "command", None) != "containers":
+        return
+    dev = Path(__file__).resolve().parents[4] / "code/vllm-ascend-workspace/dev"
+    selected_host = host[0] if isinstance(host, list) and host else host
+    connection = []
+    if is_wsl() or (selected_host and selected_host != "localhost"):
+        name = (
+            getattr(args, "name", None)
+            if getattr(args, "container_action", None) == "create"
+            else None
+        )
+        connection = [
+            "--host",
+            selected_host or "<HOST>",
+            "--container",
+            name or "<CONTAINER>",
+        ]
+    config = (
+        "~/ai-infra-dev/code/vllm-ascend-workspace/dev/serve_config/qwen3.5-0.8b.py"
+        if connection
+        else str(dev / "serve_config/qwen3.5-0.8b.py")
+    )
+    print("  " + color("vLLM Ascend Dev", "1;35", stream), file=stream)
+    for label, arguments in [
+        ("安装开发工具", ["devtools", "install"]),
+        ("安装 vllm-ascend", ["vllm-ascend", "install"]),
+        ("编译算子并安装 vllm-ascend", ["vllm-ascend", "install", "--compile-ops"]),
+        ("启动服务", ["vllm-ascend", "serve", "--script", config]),
+        ("停止服务", ["vllm-ascend", "serve", "stop"]),
+    ]:
+        line = shlex.join(["python3", str(dev), *arguments, *connection])
+        print("    {}  {}".format(color(label, "36", stream), line), file=stream)
