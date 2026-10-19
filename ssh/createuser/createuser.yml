@@ -187,13 +187,20 @@
       no_log: true
       diff: false
 
-    - name: 配置 GitHub HTTP CONNECT 代理脚本
+    - name: 配置 GitHub HTTP CONNECT 代理解析器
       ansible.builtin.copy:
-        src: github-proxy.sh
-        dest: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh/github-proxy.sh"
+        src: ../ssh_common/http_proxy.py
+        dest: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh/github-proxy.py"
         owner: "{{ item.name }}"
         group: "{{ ansible_facts.getent_passwd[item.name][2] }}"
         mode: '0700'
+      when: item.name in ansible_facts.getent_passwd
+      loop: "{{ managed_users }}"
+
+    - name: 删除已由 Python 代理替代的旧 Bash 包装脚本
+      ansible.builtin.file:
+        path: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh/github-proxy.sh"
+        state: absent
       when: item.name in ansible_facts.getent_passwd
       loop: "{{ managed_users }}"
       loop_control:
@@ -230,7 +237,7 @@
               StrictHostKeyChecking accept-new
               IdentityFile ~/.ssh/id_ed25519
               IdentitiesOnly yes
-              ProxyCommand bash "$HOME/.ssh/github-proxy.sh" %h %p
+              ProxyCommand python3 "$HOME/.ssh/github-proxy.py" %h %p
           Host *
       when: item.name in ansible_facts.getent_passwd
       loop: "{{ managed_users }}"

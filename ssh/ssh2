@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 import shlex
 import sys
-from urllib.parse import urlsplit
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ssh_common.http_proxy import proxy_arguments
 from ssh_common.config import HOST_ENV_DEFAULTS, HOST_ENV_KEYS, PROXY_ENV_KEYS, SSH_ROUTES
 
 VALUE_OPTIONS = set("BbcDEeFIiJLlmOopQRSWw")
@@ -66,15 +66,7 @@ def build_command(argv):
     if environment.get("DEVTOOLS_HTTP_PROXY"):
         for key in PROXY_ENV_KEYS:
             environment[key] = environment["DEVTOOLS_HTTP_PROXY"]
-        parsed = urlsplit(environment["DEVTOOLS_HTTP_PROXY"])
-        if parsed.scheme != "http" or not parsed.hostname or parsed.username or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-            raise ValueError("DEVTOOLS_HTTP_PROXY 必须是无认证的 HTTP CONNECT 代理地址")
-        address = parsed.hostname
-        if ":" in address:
-            address = "[" + address + "]"
-        address = f"{address}:{parsed.port or 80}"
-        proxy = shlex.join(["ncat", "--proxy", address,
-                            "--proxy-type", "http", "%h", "%p"])
+        proxy = shlex.join(["ncat", *proxy_arguments(environment["DEVTOOLS_HTTP_PROXY"]), "%h", "%p"])
         environment["GIT_SSH_COMMAND"] = shlex.join(
             ["ssh", "-o", "HostName=ssh.github.com", "-p", "443", "-o", "ProxyCommand=" + proxy]
         )
