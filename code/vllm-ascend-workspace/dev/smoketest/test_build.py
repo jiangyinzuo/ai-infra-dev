@@ -161,3 +161,25 @@ def test_unsupported_python_rejected(builder, monkeypatch):
     monkeypatch.setattr(builder.sys, "version_info", (3, 10, 0))
     with pytest.raises(ValueError):
         builder.main(["devtools", "install"])
+
+
+@pytest.mark.parametrize("operation", [["install"], ["serve", "stop"]])
+def test_interactive_remote_uses_managed_user(
+    builder, monkeypatch, tmp_path, operation
+):
+    from ssh_common import remote
+
+    ssh = tmp_path / "ssh2"
+    ssh.write_text(
+        '#!/bin/sh\n[ "$1" = -t ] || exit 81\n[ "$2" = jiangyinzuo@suzhou-one ] || exit 82\ncase "$3" in *"docker exec --user root -it dev1"*) exit 0;; *) exit 83;; esac\n'
+    )
+    ssh.chmod(0o755)
+    monkeypatch.setattr(remote, "SSH_DIR", tmp_path)
+    monkeypatch.setattr(builder, "is_wsl", lambda: True)
+    monkeypatch.setattr(builder, "checked_command", lambda host, command: command)
+    assert (
+        builder.main(
+            ["vllm-ascend", *operation, "--host", "suzhou-one", "--container", "dev1"]
+        )
+        == 0
+    )

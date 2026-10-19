@@ -22,6 +22,8 @@ python3 ~/ai-infra-dev/code/vllm-ascend-workspace/dev vllm-ascend install \
 
 普通宿主机禁止执行。远程模式复用 `ssh/` 的连接和仓库 commit 检查，要求容器共享宿主机 HOME 下的仓库；先提交、推送并更新远程仓库。安装不拉取依赖、不使用 build isolation，失败会返回原退出码，不能保证保留原安装状态。
 
+远程安装与 serve 均通过共享 SSH 接口固定登录 `jiangyinzuo`（不沿用 SSH config 的默认 User），再进入指定容器；commit 检查与 `git-repo update` 使用同一宿主机 HOME。
+
 ## 启动服务（容器内）
 
 配置文件位于 `dev/serve_config/`，仅通过 Python import 加载，不支持 Bash。例如 `qwen3.5-0.8b.py`：

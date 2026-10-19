@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "ssh"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ssh_common.remote import checked_command, host_alias, is_wsl, ssh_command
 from ssh_common.container import is_container
+from ssh_common.config import USER_IN_CONTAINER
 
 
 def main(argv=None):
@@ -64,32 +65,35 @@ def main(argv=None):
             for key in ("model", "devices", "script"):
                 if getattr(args, key):
                     command += " " + shlex.join(["--" + key, getattr(args, key)])
-            remote = shlex.join(
-                ["docker", "exec", "-it", args.container, "bash", "-lc", command]
-            )
-            return subprocess.run(
-                [
-                    str(ROOT / "ssh/ssh2"),
-                    "-t",
-                    args.host,
-                    checked_command(args.host, remote),
-                ],
-                check=False,
-            ).returncode
         if args.resource == "vllm-ascend":
             remote = shlex.join(
-                ["docker", "exec", "-it", args.container, "bash", "-lc", command]
-            )
-            return subprocess.run(
                 [
-                    str(ROOT / "ssh/ssh2"),
-                    "-t",
-                    args.host,
-                    checked_command(args.host, remote),
-                ],
-                check=False,
-            ).returncode
-        remote = shlex.join(["docker", "exec", args.container, "bash", "-lc", command])
+                    "docker",
+                    "exec",
+                    "--user",
+                    USER_IN_CONTAINER,
+                    "-it",
+                    args.container,
+                    "bash",
+                    "-lc",
+                    command,
+                ]
+            )
+            return ssh_command(
+                args.host, checked_command(args.host, remote), interactive=True
+            )
+        remote = shlex.join(
+            [
+                "docker",
+                "exec",
+                "--user",
+                USER_IN_CONTAINER,
+                args.container,
+                "bash",
+                "-lc",
+                command,
+            ]
+        )
         return ssh_command(args.host, checked_command(args.host, remote))
     if args.host or args.container:
         parser.error("--host 和 --container 仅用于 WSL 远程调用")

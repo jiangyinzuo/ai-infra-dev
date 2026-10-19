@@ -30,7 +30,9 @@ SSH_SOURCES = {
     ),
 }
 
+# 宿主机 SSH 登录用户与容器内执行用户分别配置。
 REMOTE_USER = "jiangyinzuo"
+USER_IN_CONTAINER = "root"
 REMOTE_DIR = "~/ai-infra-dev/ssh/container-dev/devtools"
 NVIM_PLUGIN_EXCLUDES = frozenset(
     {
