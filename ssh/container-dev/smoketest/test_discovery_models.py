@@ -43,9 +43,7 @@ def test_discovers_models_at_every_data_level(server, tmp_path):
             child = root / name
             roots.append(child)
             expected.append(make_model(child / "模型 with spaces"))
-        expected.append(
-            make_model(root / "other" / "nested", "pytorch_model-00001.bin")
-        )
+        make_model(root / "other" / "nested", "pytorch_model-00001.bin")
     roots.append(tmp_path / "missing")
     assert discovery.discover_models(roots=roots) == sorted(expected)
 
@@ -78,29 +76,18 @@ def test_supports_weight_links_without_following_directory_links(server, tmp_pat
     assert discovery.discover_models(roots=[root]) == [str(root)]
 
 
-def test_overlapping_roots_do_not_repeat_scan_but_explicit_links_work(
-    server, tmp_path, monkeypatch
-):
+def test_only_immediate_children_and_explicit_link_roots(server, tmp_path):
     parent = tmp_path / "data"
-    model = parent / "weights" / "model"
-    expected = make_model(model)
+    direct = make_model(parent / "direct")
+    nested = make_model(parent / "weights" / "model")
+    assert discovery.discover_models(roots=[parent]) == [direct]
     outside = tmp_path / "outside"
-    linked_model = make_model(outside / "other")
+    make_model(outside / "other")
     link = parent / "linked"
     link.symlink_to(outside, target_is_directory=True)
-    walk = discovery.os.walk
-    traversed = []
-
-    def tracked(*args, **kwargs):
-        for row in walk(*args, **kwargs):
-            traversed.append(row[0])
-            yield row
-
-    monkeypatch.setattr(discovery.os, "walk", tracked)
     assert discovery.discover_models(
         roots=[parent, parent / "weights", link]
-    ) == sorted([expected, str(link / "other")])
-    assert traversed.count(str(model)) == 1
+    ) == sorted([direct, nested, str(link / "other")])
 
 
 @pytest.mark.parametrize("host", [None, "", "localhost"])

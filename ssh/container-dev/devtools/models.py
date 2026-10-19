@@ -40,8 +40,8 @@ def discover_models(
 ) -> list[str]:
     """返回排序、去重的绝对路径；服务器默认扫描本机，WSL 必须指定远端 host。
 
-    roots 默认为 DEFAULT_ROOTS，空列表表示不扫描。递归扫描但不跟随子目录
-    符号链接；配置和权重文件允许是有效符号链接。不验证配置内容、分片
+    roots 默认为 DEFAULT_ROOTS，空列表表示不扫描。只检查根目录自身及直接子目录，
+    不跟随子目录符号链接；配置和权重文件允许是有效符号链接。不验证配置内容、分片
     完整性或推理框架兼容性。缺失或无权限的目录跳过，其他文件系统错误抛出。
     timeout 仅限制远端 SSH 调用；SSH 失败抛出 CalledProcessError。
     """
@@ -72,11 +72,8 @@ def discover_models(
         return json.loads(result.stdout)
 
     models = set()
-    visited = set()
     for value in search_roots:
         root = Path(value).expanduser().absolute()
-        if root in visited:
-            continue
         try:
             root.stat()
         except (FileNotFoundError, PermissionError):
@@ -88,17 +85,15 @@ def discover_models(
         for directory, subdirs, filenames in os.walk(
             root, followlinks=False, onerror=_raise_walk_error
         ):
-            path = Path(directory)
-            if path in visited:
+            # Each explicit root gets its own one-level scan, even when roots overlap.
+            if Path(directory) != root:
                 subdirs[:] = []
-                continue
-            visited.add(path)
-            subdirs[:] = [
-                name
-                for name in subdirs
-                if Path(directory) / name not in visited
-                and os.access(Path(directory) / name, os.R_OK | os.X_OK)
-            ]
+            else:
+                subdirs[:] = [
+                    name
+                    for name in subdirs
+                    if os.access(root / name, os.R_OK | os.X_OK)
+                ]
             if "config.json" not in filenames:
                 continue
             path = Path(directory)

@@ -19,7 +19,7 @@ models discovery
 ./devtools/cli.py models discovery --root /data/weights
 ```
 
-默认扫描 `/data{,1,2,3}` 及其中的 `weight/weights/model/models`，以及 `/mnt/share/weights`。候选目录需有 `config.json` 和 safetensors 或 pytorch_model bin 权重；不验证模型完整性。WSL 必须指定远端，远程执行要求仓库 commit 一致；`--timeout` 默认 60 秒。
+默认检查 `/data{,1,2,3}` 及其中的 `weight/weights/model/models`，以及 `/mnt/share/weights`，每个搜索根目录只检查自身及直接子目录，不递归深入。候选目录需有 `config.json` 和 safetensors 或 pytorch_model bin 权重；不验证模型完整性。WSL 必须指定远端，远程执行要求仓库 commit 一致；`--timeout` 默认 60 秒。
 
 ## 拉取服务器模型（仅 WSL）
 
