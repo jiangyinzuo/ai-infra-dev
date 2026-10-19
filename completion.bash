@@ -144,7 +144,7 @@ _devtools_cli_complete() {
             [[ localhost != "$current"* || " ${COMPREPLY[*]} " == *' localhost '* ]] || COMPREPLY+=(localhost)
             ;;
         --npu-platform) _complete_values a3 ;;
-        --from) _complete_values quay cmc.rnd cmc ;;
+        --from) _complete_values quay cmc.rnd ;;
         --lock|--output|--repos|--share|--test-home|--root)
             mapfile -t COMPREPLY < <(compgen -f -- "$current")
             compopt -o filenames 2>/dev/null || true
