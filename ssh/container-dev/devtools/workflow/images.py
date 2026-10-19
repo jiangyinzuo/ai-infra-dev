@@ -23,6 +23,7 @@ from ssh_common.remote import (
     run_remote_cli,
     host_alias,
 )
+from workflow.image_store import ensure_image
 from workflow.sync import remote_path
 from workflow.paths import DATA_ROOT
 
@@ -97,6 +98,11 @@ def download(args):
     directory = DATA_ROOT / "containers"
     directory.mkdir(parents=True, exist_ok=True)
     archive = directory / filename
+    server = not is_wsl()
+    image = image_from_archive(filename)
+    emit = lambda command: print(shlex.join(command), flush=True)
+    if server and ensure_image(directory, image, emit) != "missing":
+        return 0
     if archive.is_file():
         print(f"skip {archive} (archive exists)")
         return 0
@@ -120,6 +126,8 @@ def download(args):
         os.replace(name, archive)
     finally:
         Path(name).unlink(missing_ok=True)
+    if server and ensure_image(directory, image, emit) == "missing":
+        raise RuntimeError("下载后未找到镜像归档")
     return 0
 
 
@@ -139,7 +147,11 @@ def image_from_archive(filename):
         r"((?:nightly-|v\d|qwen)[A-Za-z0-9_.-]*?)(?:-(\d{8}))?\.tar\.gz", filename
     )
     if quay:
-        return "quay.io/ascend/vllm-ascend:" + quay[1]
+        return (
+            "quay.io/ascend/vllm-ascend:"
+            + quay[1]
+            + ("-" + quay[2] if quay[2] and quay[1].startswith("nightly-") else "")
+        )
     match = re.fullmatch(
         r"vllm-ascend[:_]([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})\.tar\.gz", filename
     )
@@ -150,37 +162,20 @@ def image_from_archive(filename):
     return "vllm-ascend:" + match[1]
 
 
-REMOTE_LOAD = """import json,pathlib,subprocess,sys,shlex
-directory=pathlib.Path(sys.argv[1]).expanduser()
-image=sys.argv[2]
-def present():
-    result=subprocess.run(["docker","images","--format","{{.Repository}}:{{.Tag}}"],capture_output=True,text=True,check=True)
-    return image in result.stdout.splitlines()
-if present():
-    print(json.dumps({"status":"image"}))
-else:
-    tag=image.split(":",1)[1]
-    candidates=[directory/("vllm-ascend"+separator+tag+".tar.gz") for separator in (":","_")]
-    if image.startswith("quay.io/"):
-        candidates=[directory/(tag+".tar.gz"), *sorted(directory.glob(tag+"-????????.tar.gz"),reverse=True)]
-        candidates=[path for path in candidates if path.name==tag+".tar.gz" or (path.name.startswith(tag+"-") and len(path.name)==len(tag)+16 and path.name[len(tag)+1:-7].isdigit())]
-    archive=next((path for path in candidates if path.is_file()),None)
-    if archive is None:
-        print(json.dumps({"status":"missing"}))
-    else:
-        command=["docker","load","--input",str(archive)]
-        print(json.dumps({"command":shlex.join(command)}),flush=True)
-        subprocess.run(command,stdout=sys.stderr,check=True)
-        if not present():
-            raise RuntimeError("归档导入后未找到预期镜像："+image)
-        print(json.dumps({"status":"loaded"}))
-"""
+REMOTE_LOAD = "from workflow.image_store import ensure_image; import json,sys; print(json.dumps({'status':ensure_image(sys.argv[1],sys.argv[2])}),flush=True)"
 
 
 def remote_load(host, image):
     host_alias(host)
     command = shlex.join(
-        ["python3", "-c", REMOTE_LOAD, REMOTE_DIR + "/containers", image]
+        [
+            "python3",
+            "-c",
+            "import sys; from pathlib import Path; sys.path.insert(0,str(Path.home()/'ai-infra-dev/ssh/container-dev/devtools')); "
+            + REMOTE_LOAD,
+            REMOTE_DIR + "/containers",
+            image,
+        ]
     )
     with subprocess.Popen(
         [

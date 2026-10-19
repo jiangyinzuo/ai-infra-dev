@@ -125,6 +125,7 @@ def test_remote_probe_loads_alternate_archive_and_verifies_tag(tmp_path):
         os.environ,
         PATH=str(tmp_path) + ":" + os.environ["PATH"],
         DOCKER_STATE=str(state),
+        PYTHONPATH=str(Path(images.__file__).resolve().parents[1]),
     )
 
     def probe():
@@ -169,5 +170,6 @@ def test_quay_nightly_url_and_local_date():
     )
     assert (
         images.image_from_archive(saved)
-        == "quay.io/ascend/vllm-ascend:nightly-main-a3-openeuler"
+        == "quay.io/ascend/vllm-ascend:nightly-main-a3-openeuler-"
+        + date.today().strftime("%Y%m%d")
     )

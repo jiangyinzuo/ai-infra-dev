@@ -93,7 +93,7 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py git-repo update
 
 ## 容器
 
-下载镜像归档后，用 `docker load -i <归档路径>` 导入。
+服务器执行 `images download` 会先检查 Docker 精确 tag；已存在则跳过下载，已有对应归档则直接导入，否则下载后自动导入。与 upload 共用镜像检查和导入逻辑。WSL 本地下载只保存归档，不调用 Docker。
 `images upload` 从 WSL 上传并导入 Docker：远端已有精确镜像 tag 时跳过全部操作；已有归档则直接导入；否则上传到 `~/ai-infra-dev/ssh/container-dev/devtools/containers/` 后导入并核对 tag。文件名须为 `vllm-ascend:TAG.tar.gz` 或 `vllm-ascend_TAG.tar.gz`。传输中的部分文件单独保存在 `.rsync-partial/`，不会作为完整归档导入。
 
 `images ls --host HOST` 只列出 `vllm-ascend` 和 `quay.io/ascend/vllm-ascend` 两个 repository。下载默认 `--from cmc.rnd`（原 daily 地址）；`--from quay` 使用 CMC-LFG Quay 归档地址，仅传 tag 文件名：
@@ -102,7 +102,7 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py git-repo update
 ./devtools/cli.py images download --host localhost --from quay --archive nightly-main-a3-openeuler.tar.gz
 ```
 
-URL 为 `https://cmc-lfg-artifactory.cmc.tools.huawei.com/artifactory/generic-8166/hw-cr/quay.io/ascend/vllm-ascend/nightly-main-a3-openeuler.tar.gz`。nightly 本地文件名追加执行机器当天日期，例如 `nightly-main-a3-openeuler-20261019.tar.gz`；上传仍匹配原始 Docker tag `nightly-main-a3-openeuler`。两种下载方式的完整命令及 URL 示例见 `images download --help`。
+URL 为 `https://cmc-lfg-artifactory.cmc.tools.huawei.com/artifactory/generic-8166/hw-cr/quay.io/ascend/vllm-ascend/nightly-main-a3-openeuler.tar.gz`。nightly 文件名追加执行机器当天日期，例如 `nightly-main-a3-openeuler-20261019.tar.gz`；下载和上传导入后额外打上 Docker tag `nightly-main-a3-openeuler-20261019`，只以该日期 tag 判定当天已存在，不复用旧日期归档。保留归档自带的无日期 tag。两种下载方式的完整命令及 URL 示例见 `images download --help`。
 
 ```bash
 # 指定完整归档文件名，原 HTTPS 地址自动生成；WSL 本地使用 localhost
