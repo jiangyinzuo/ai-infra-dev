@@ -63,6 +63,7 @@ def build_command(argv):
         environment["USG_IP"] = ip
         for key in PROXY_ENV_KEYS:
             environment[key] = f"http://{ip}:3128"
+        environment["DEVTOOLS_HTTP_PROXY"] = f"http://{ip}:3128"
     if environment.get("USG_IP"):
         proxy = shlex.join(["ncat", "--proxy", environment["USG_IP"] + ":3128",
                             "--proxy-type", "http", "%h", "%p"])

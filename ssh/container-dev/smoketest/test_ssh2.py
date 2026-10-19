@@ -46,6 +46,7 @@ def test_gateway_binding_and_all_proxy_values(host, ip, monkeypatch):
     )
     assert values["USG_IP"] == ip
     assert values["SSH_HOSTNAME_ALIAS"] == host.rsplit("@", 1)[-1]
+    assert values["DEVTOOLS_HTTP_PROXY"] == f"http://{ip}:3128"
     for key in MODULE.PROXY_ENV_KEYS:
         assert values[key] == f"http://{ip}:3128"
     git_ssh = shlex.split(values["GIT_SSH_COMMAND"])

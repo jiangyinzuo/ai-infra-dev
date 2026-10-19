@@ -199,6 +199,19 @@
       loop_control:
         label: "{{ item.name }}"
 
+    - name: 在用户 shell 初始化末尾恢复会话代理
+      ansible.builtin.blockinfile:
+        path: "{{ ansible_facts.getent_passwd[item.name][4] }}/.bashrc"
+        create: true
+        insertafter: EOF
+        marker: "# {mark} AI-INFRA SESSION PROXY"
+        block: "{{ lookup('ansible.builtin.file', 'session-proxy.bash') }}"
+        owner: "{{ item.name }}"
+        group: "{{ ansible_facts.getent_passwd[item.name][2] }}"
+        mode: '0644'
+      when: item.name in ansible_facts.getent_passwd
+      loop: "{{ managed_users }}"
+
     - name: 配置 GitHub SSH Host，保留其他配置
       ansible.builtin.blockinfile:
         path: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh/config"

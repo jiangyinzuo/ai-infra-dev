@@ -80,6 +80,33 @@ source ~/ai-infra-dev/completion.bash
 
 `ssh_common/config.py` 统一维护主机分组、Windows/WSL SSH 路由、配置路径、公钥、远端用户、平台和环境变量名单。组名加 `*` 匹配主机；所有组通过 `ssh2` 连接。
 
+## discovery_models.py: 发现模型目录
+
+支持 Python 3.9+，默认递归扫描 `/data{,1,2,3}/{weight,weights,model,models}` 的 16 个根目录；不存在的目录跳过，权限等扫描错误直接报错。候选目录须包含有效的 `config.json` 文件以及 `*.safetensors` 或 `pytorch_model*.bin` 文件，不验证配置内容、分片完整性或框架兼容性，也不区分主模型与辅助模型。不跟随子目录符号链接，但支持权重文件符号链接。
+
+```bash
+# 在服务器上扫描本机；不传 --host 或传 localhost 都是本地执行
+python3 ~/ai-infra-dev/ssh/discovery_models.py
+# 在 WSL 上通过项目 ssh2 扫描远端，输出 JSON 数组
+python3 discovery_models.py --host suzhou-a3-130 --json
+# 自定义搜索范围（--root 可以重复，覆盖默认目录）
+python3 discovery_models.py --root /data/weight --root /data2/models
+```
+
+远端调用复用 `ssh_common.remote` 的主机参数、用户配置及仓库 commit 校验，通过 `ssh2` 沿用 Windows/WSL SSH 路由和网卡配置。须先提交、推送脚本，再通过 `container-dev/devtools/cli.py git-repo update --host HOST` 更新远端仓库；脚本不会自动上传代码。`--timeout` 默认 60 秒，仅限制远端调用。默认每行输出一个路径，`--json` 输出数组，失败退出码为 1。
+
+将仓库的 `ssh` 目录加入 Python 模块搜索路径后，也可导入：
+
+```python
+from discovery_models import discover_models
+
+local_models = discover_models()
+remote_models = discover_models(host="suzhou-a3-130", timeout=120)
+custom_models = discover_models(roots=["/data/weight"])
+```
+
+返回排序、去重的绝对路径列表；`roots=None` 使用默认目录，`roots=[]` 返回空列表。导入调用时，文件系统错误、SSH 失败及超时直接抛异常。
+
 ## machine-info: 查看机器基本情况
 
 输出到 `machine-info/`：`machines-output.md` 保存本次报告，`machines-output.csv` 按 Host 更新 `OS,Arch,NPUPlatform`，保留未查询或采集失败的数据。NPU 平台通过 `sudo -n npu-smi info -t board -i 0` 的 PCI Device ID 判断：`0xD803 → a3`、`0xD802 → a2`，其他为 `unknown`；需免密 sudo，缺少 npu-smi 不算采集错误。

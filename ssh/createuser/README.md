@@ -2,6 +2,8 @@
 
 通过 Ansible 管理 `jiangyinzuo` 账号、SSH 密钥、Docker 用户组及 sudo 权限。支持创建新用户和更新已有用户；默认仅输出 plan，不连接远端。
 
+用户 `.bashrc` 中幂等维护会话代理恢复块：当 `ssh2` 传入非空 `DEVTOOLS_HTTP_PROXY` 时覆盖 HTTP/HTTPS 代理，否则保留原配置；不修改 `.bash_profile` 或系统配置。
+
 ## 使用方式
 
 以下命令在 `ssh/` 目录执行。
