@@ -122,6 +122,37 @@ def test_bindfs_build_runs_only_when_bindfs_is_missing(workspace, location):
     assert not (home / "packages-installed").exists()
 
 
+def test_bindfs_yum_receives_proxy_after_sudo_clears_environment(workspace):
+    home, tools, env = workspace
+    bindfs_archive(tools)
+    builder = home / "vimrc/install/build_bindfs.sh"
+    builder.parent.mkdir(parents=True)
+    builder.write_text('printf built > "$HOME/build-completed"\n')
+    binaries = Path(env["PATH"])
+    sudo = binaries / "sudo"
+    sudo.write_text('#!/bin/sh\nexec /usr/bin/env -i PATH="$PATH" "$@"\n')
+    sudo.chmod(0o755)
+    yum = binaries / "yum"
+    yum.write_text(
+        "#!/bin/sh\n"
+        'test "$http_proxy" = "http://proxy:3128" || exit 81\n'
+        'test "$https_proxy" = "http://proxy:3128" || exit 82\n'
+        'test "$NO_PROXY" = "localhost,.internal" || exit 83\n'
+        'test -z "${UNRELATED_SECRET+x}" || exit 84\n'
+        'test "$*" = "install -y gcc make pkgconf-pkg-config fuse-devel" || exit 85\n'
+    )
+    yum.chmod(0o755)
+    env.update(
+        http_proxy="http://proxy:3128",
+        https_proxy="http://proxy:3128",
+        NO_PROXY="localhost,.internal",
+        UNRELATED_SECRET="not-forwarded",
+    )
+    result = extract(workspace)
+    assert result.returncode == 0, result.stderr
+    assert (home / "build-completed").read_text() == "built"
+
+
 def test_bindfs_package_failure_prevents_build(workspace):
     home, tools, env = workspace
     bindfs_archive(tools)

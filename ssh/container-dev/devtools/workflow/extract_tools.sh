@@ -53,7 +53,14 @@ for archive in "${archives[@]}"; do
                     echo "error: missing $builder; update vimrc first" >&2
                     exit 1
                 }
-                sudo yum install -y gcc make pkgconf-pkg-config fuse-devel
+                # sudo 默认清理代理；只传递已设置的代理，不保留整个用户环境。
+                package_env=()
+                for key in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY; do
+                    if [[ -v $key ]]; then
+                        package_env+=("$key=${!key}")
+                    fi
+                done
+                sudo env "${package_env[@]}" yum install -y gcc make pkgconf-pkg-config fuse-devel
                 bash "$builder" "$script_dir/${archive%.tar.gz}"
             else
                 printf 'skip bindfs build (already installed: %s)\n' "$bindfs_path"

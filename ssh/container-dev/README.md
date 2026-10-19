@@ -39,6 +39,8 @@ python3 ssh/container-dev/devtools/cli.py models fetch \
 
 WSL 一次完成拉取、下载至本地、同步和远程解压（任一步失败即停止）：`./devtools/cli.py sync-all --host suzhou-a3-130`。
 
+首次构建 bindfs 时自动安装系统依赖；`sudo yum` 显式继承当前已设置的 HTTP/HTTPS/ALL 代理及 NO_PROXY（含大小写形式），不保留其他用户环境，不修改系统软件源或证书策略。
+
 默认只预览，`--apply` 才执行；多个目标重复指定 `--host`：
 
 ```bash
