@@ -20,6 +20,19 @@ python3 ~/ai-infra-dev/code/vllm-ascend-workspace/dev vllm-ascend install \
 
 普通宿主机禁止执行。远程模式复用 `ssh/` 的连接和仓库 commit 检查，要求容器共享宿主机 HOME 下的仓库；先提交、推送并更新远程仓库。安装不拉取依赖、不使用 build isolation，失败会返回原退出码，不能保证保留原安装状态。
 
+## 启动服务（容器内）
+
+```bash
+python3 dev vllm-ascend serve
+python3 dev vllm-ascend serve --model /mnt/share/weights/Qwen3-1.7B --devices 0
+python3 dev vllm-ascend serve stop
+# WSL 可追加 --host HOST --container NAME，通过交互终端在容器执行
+```
+
+省略模型时复用 `models discovery` 搜索本机模型，使用 `~/plugged/fzf/bin/fzf` 实时模糊选择；缺少 fzf 时退回编号选择。启动前复用 npu-top 检查空闲设备，并选择可用设备；TP 数量等于所选设备数，不另加自定义服务参数。
+
+服务后台运行，日志路径在启动后打印；后台进程启动不等于 API 已就绪。再次启动时询问是否停止旧服务并重启，`serve stop` 只停止本工具记录的实例，绝不按进程名批量杀进程。状态和日志按用户及容器 hostname 保存在 `/tmp/vllm-ascend-dev-*`，容器重建后不保证保留。空闲检查只涵盖容器可见信息，不提供跨用户独占分配，检查与启动之间仍有竞争窗口。
+
 ## 开发工具与 LSP
 
 ```bash

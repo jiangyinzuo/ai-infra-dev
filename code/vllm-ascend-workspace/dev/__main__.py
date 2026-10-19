@@ -11,6 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "ssh"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ssh_common.remote import checked_command, host_alias, is_wsl, ssh_command
 from ssh_common.container import is_container
 
@@ -32,6 +33,14 @@ def main(argv=None):
             install.add_argument(
                 "--compile-ops", action="store_true", help="编译算子（首次安装时使用）"
             )
+            serve = actions.add_parser("serve", help="后台启动服务或停止本工具的服务")
+            serve.add_argument("serve_action", nargs="?", choices=["stop"])
+            serve.add_argument("--host", type=host_alias)
+            serve.add_argument("--container")
+            serve.add_argument("--model", help="模型目录；省略时交互选择")
+            serve.add_argument(
+                "--devices", help="逗号分隔的空闲 NPU device IDs；省略时选择"
+            )
     args = parser.parse_args(argv)
     if is_wsl():
         if not args.host or not args.container:
@@ -43,6 +52,24 @@ def main(argv=None):
         command += " " + shlex.join([args.resource, args.action])
         if getattr(args, "compile_ops", False):
             command += " --compile-ops"
+        if args.action == "serve":
+            if args.serve_action:
+                command += " " + args.serve_action
+            for key in ("model", "devices"):
+                if getattr(args, key):
+                    command += " " + shlex.join(["--" + key, getattr(args, key)])
+            remote = shlex.join(
+                ["docker", "exec", "-it", args.container, "bash", "-lc", command]
+            )
+            return subprocess.run(
+                [
+                    str(ROOT / "ssh/ssh2"),
+                    "-t",
+                    args.host,
+                    checked_command(args.host, remote),
+                ],
+                check=False,
+            ).returncode
         remote = shlex.join(["docker", "exec", args.container, "bash", "-lc", command])
         return ssh_command(args.host, checked_command(args.host, remote))
     if args.host or args.container:
@@ -57,6 +84,10 @@ def main(argv=None):
         or sys.prefix != sys.base_prefix
     ):
         raise ValueError("禁止在虚拟环境内构建；请使用容器自带的 pip")
+    if args.action == "serve":
+        import serve
+
+        return serve.execute(args)
     if args.resource == "devtools":
         requirements = Path(__file__).resolve().parent / "requirements-dev.txt"
         command = ["pip", "install", "-r", str(requirements)]
@@ -88,6 +119,12 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, ValueError) as error:
+    except (
+        OSError,
+        ValueError,
+        RuntimeError,
+        EOFError,
+        subprocess.SubprocessError,
+    ) as error:
         print("error: " + str(error), file=sys.stderr)
         sys.exit(1)

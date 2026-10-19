@@ -157,14 +157,19 @@ _build_complete() {
     if ((COMP_CWORD == start)); then
         _complete_values -h --help vllm-ascend devtools
     elif ((COMP_CWORD == start + 1)); then
-        _complete_values -h --help install
+        if [[ $resource == vllm-ascend ]]; then _complete_values -h --help install serve; else _complete_values -h --help install; fi
     else
         case $previous in
             --host) _ssh_usg_complete "$HOME/.ssh/config" ;;
-            --container) return ;;
+            --container|--devices) return ;;
+            --model) mapfile -t COMPREPLY < <(compgen -d -- "$current"); compopt -o filenames 2>/dev/null || true ;;
             *)
                 if [[ $resource == vllm-ascend ]]; then
-                    _complete_values -h --help --host --container --compile-ops
+                    if [[ ${COMP_WORDS[start+1]:-} == serve ]]; then
+                        _complete_values -h --help stop --host --container --model --devices
+                    else
+                        _complete_values -h --help --host --container --compile-ops
+                    fi
                 else
                     _complete_values -h --help --host --container
                 fi ;;
