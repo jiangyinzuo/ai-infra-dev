@@ -43,6 +43,14 @@ def main() -> int:
         subprocess.SubprocessError,
         tarfile.TarError,
     ) as exc:
+        if isinstance(exc, subprocess.TimeoutExpired):
+            host = getattr(args, "host", None)
+            print(
+                f"error: 远程操作超时（主机 {host}，{exc.timeout} 秒）。"
+                "模型扫描可用 --root 缩小范围，或用 --timeout 增加等待时间。",
+                file=sys.stderr,
+            )
+            return 1
         if isinstance(exc, subprocess.CalledProcessError):
             if exc.stderr:
                 print(exc.stderr.rstrip(), file=sys.stderr)

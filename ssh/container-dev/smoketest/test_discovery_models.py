@@ -78,6 +78,31 @@ def test_supports_weight_links_without_following_directory_links(server, tmp_pat
     assert discovery.discover_models(roots=[root]) == [str(root)]
 
 
+def test_overlapping_roots_do_not_repeat_scan_but_explicit_links_work(
+    server, tmp_path, monkeypatch
+):
+    parent = tmp_path / "data"
+    model = parent / "weights" / "model"
+    expected = make_model(model)
+    outside = tmp_path / "outside"
+    linked_model = make_model(outside / "other")
+    link = parent / "linked"
+    link.symlink_to(outside, target_is_directory=True)
+    walk = discovery.os.walk
+    traversed = []
+
+    def tracked(*args, **kwargs):
+        for row in walk(*args, **kwargs):
+            traversed.append(row[0])
+            yield row
+
+    monkeypatch.setattr(discovery.os, "walk", tracked)
+    assert discovery.discover_models(
+        roots=[parent, parent / "weights", link]
+    ) == sorted([expected, str(link / "other")])
+    assert traversed.count(str(model)) == 1
+
+
 @pytest.mark.parametrize("host", [None, "", "localhost"])
 def test_wsl_rejects_local_scan_before_accessing_roots(monkeypatch, host):
     monkeypatch.setattr(discovery, "is_wsl", lambda: True)

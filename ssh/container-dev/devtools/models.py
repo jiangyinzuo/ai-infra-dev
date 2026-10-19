@@ -24,7 +24,7 @@ DEFAULT_ROOTS = tuple(
     f"/data{suffix}/{name}".rstrip("/")
     for suffix in ("", "1", "2", "3")
     for name in ("", "weight", "weights", "model", "models")
-) + ("/mnt/share/weights", "/mnt/share/weight")
+) + ("/mnt/share/weights",)
 
 
 def _raise_walk_error(error: OSError) -> None:
@@ -72,8 +72,11 @@ def discover_models(
         return json.loads(result.stdout)
 
     models = set()
+    visited = set()
     for value in search_roots:
         root = Path(value).expanduser().absolute()
+        if root in visited:
+            continue
         try:
             root.stat()
         except (FileNotFoundError, PermissionError):
@@ -85,10 +88,16 @@ def discover_models(
         for directory, subdirs, filenames in os.walk(
             root, followlinks=False, onerror=_raise_walk_error
         ):
+            path = Path(directory)
+            if path in visited:
+                subdirs[:] = []
+                continue
+            visited.add(path)
             subdirs[:] = [
                 name
                 for name in subdirs
-                if os.access(Path(directory) / name, os.R_OK | os.X_OK)
+                if Path(directory) / name not in visited
+                and os.access(Path(directory) / name, os.R_OK | os.X_OK)
             ]
             if "config.json" not in filenames:
                 continue
