@@ -50,6 +50,9 @@ def main(argv=None):
             serve.add_argument(
                 "--no-hints", action="store_true", help=argparse.SUPPRESS
             )
+            serve.add_argument(
+                "--print-log", action="store_true", help=argparse.SUPPRESS
+            )
     args = parser.parse_args(argv)
     result = execute(args, parser)
     if result == 0 and not args.no_hints:
@@ -61,7 +64,12 @@ def main(argv=None):
 
 
 def execute(args, parser):
-    if args.action == "serve" and args.serve_action != "stop" and not args.script:
+    if (
+        args.action == "serve"
+        and args.serve_action != "stop"
+        and not args.script
+        and not args.print_log
+    ):
         parser.error("启动服务必须指定 --script，命令及参数由用户维护")
     if is_wsl():
         if not args.host or not args.container:
@@ -94,9 +102,14 @@ def execute(args, parser):
                     command,
                 ]
             )
-            return ssh_command(
+            result = ssh_command(
                 args.host, checked_command(args.host, remote), interactive=True
             )
+            if result == 0 and args.action == "serve" and args.serve_action != "stop":
+                from log_view import attach
+
+                attach(args)
+            return result
         remote = shlex.join(
             [
                 "docker",

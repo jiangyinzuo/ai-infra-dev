@@ -74,6 +74,10 @@ def stop(state, timeout=30):
 
 
 def execute(args):
+    if getattr(args, "print_log", False):
+        state = json.loads((state_directory() / "service.json").read_text())
+        print(state["log"])
+        return 0
     script = None
     if args.serve_action != "stop":
         name = Path(args.script)
@@ -120,8 +124,12 @@ def execute(args):
         command = [
             argument.replace("{model}", model) for argument in config.serve_command
         ]
+        # 不要为日志跟随添加 PYTHONUNBUFFERED=1：它会改变 vLLM 进程的输出缓冲，
+        # 可能增加写系统调用和 I/O 开销、影响性能；宁可接受日志延迟，也要保留 vLLM 进程原有环境。
         environment = dict(
-            os.environ, MODEL_PATH=model, ASCEND_RT_VISIBLE_DEVICES=devices
+            os.environ,
+            MODEL_PATH=model,
+            ASCEND_RT_VISIBLE_DEVICES=devices,
         )
         print(
             "MODEL_PATH="
