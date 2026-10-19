@@ -31,7 +31,7 @@ def test_reuse_restore_and_referenced_mapping(tmp_path, monkeypatch):
                     {"filesystems": [{"source": str(source), "fstype": "fuse.bindfs"}]}
                 ),
             )
-        if command[:3] == ("sudo", "-n", "bindfs"):
+        if command[:3] == ("sudo", "-n", "prlimit"):
             mounted.add(Path(command[-1]))
             mounts.append(command)
         elif command[:3] == ("sudo", "-n", "umount"):

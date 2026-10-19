@@ -30,6 +30,7 @@ def main(argv=None):
             "--host", type=host_alias, help="WSL 远程服务器 SSH Host 别名"
         )
         install.add_argument("--container", help="远程容器名称或 ID")
+        install.add_argument("--no-hints", action="store_true", help=argparse.SUPPRESS)
         if resource == "vllm-ascend":
             install.add_argument(
                 "--compile-ops", action="store_true", help="编译算子（首次安装时使用）"
@@ -46,7 +47,20 @@ def main(argv=None):
             serve.add_argument(
                 "--devices", help="逗号分隔的空闲 NPU device IDs；省略时选择"
             )
+            serve.add_argument(
+                "--no-hints", action="store_true", help=argparse.SUPPRESS
+            )
     args = parser.parse_args(argv)
+    result = execute(args, parser)
+    if result == 0 and not args.no_hints:
+        sys.path.insert(0, str(ROOT / "ssh/container-dev/devtools"))
+        from workflow.hints import show_dev
+
+        show_dev(args)
+    return result
+
+
+def execute(args, parser):
     if args.action == "serve" and args.serve_action != "stop" and not args.script:
         parser.error("启动服务必须指定 --script，命令及参数由用户维护")
     if is_wsl():
@@ -57,6 +71,7 @@ def main(argv=None):
         # 本项目容器共享宿主机 HOME；在容器内展开 HOME，且用 login shell 加载工具环境。
         command = 'exec python3 "$HOME"/ai-infra-dev/code/vllm-ascend-workspace/dev'
         command += " " + shlex.join([args.resource, args.action])
+        command += " --no-hints"
         if getattr(args, "compile_ops", False):
             command += " --compile-ops"
         if args.action == "serve":

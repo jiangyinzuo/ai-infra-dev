@@ -108,6 +108,8 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers ls --json
 
 创建默认交互选择镜像和容器名，并通过 bindfs 共享 HOME；容器内 root 创建的文件归宿主机当前用户。`--share PATH` 添加共享目录，`--test-home PATH` 使用隔离目录，`--no-bindfs` 改为直接挂载（文件可能归 root 所有，避免 FUSE 开销）。
 
+新建或复用托管 bindfs 挂载时提高守护进程的 open-files 限制，防止并行编译受默认 1024 上限影响；不需要改变容器自身的限制。
+
 删除容器及匿名 volume，不删除共享源目录；仍被其他容器使用的映射不会卸载：
 
 ```bash

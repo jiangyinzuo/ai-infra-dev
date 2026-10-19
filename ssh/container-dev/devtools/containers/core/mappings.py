@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+from .bindfs_limits import NOFILE
 from .process import containers, run
 
 
@@ -51,13 +52,18 @@ class MappingStore:
         target.mkdir(exist_ok=True)
         if target.is_mount():
             self.validate_mount(target, source)
+            repair_bindfs_limit(target, source)
             print("reuse bindfs: {} -> {}".format(source, target), flush=True)
             return target
         if any(target.iterdir()):
             raise ValueError("Unmounted mapping directory is not empty: " + str(target))
+        # 编译项目会读写大量文件：启动 bindfs 前将 open-files 软/硬限制设为 524288。
         run(
             "sudo",
             "-n",
+            "prlimit",
+            "--nofile={}:{}".format(NOFILE, NOFILE),
+            "--",
             bindfs,
             "--map={}/0:@{}/@0".format(record["uid"], record["gid"]),
             "--create-for-user=" + str(record["uid"]),
@@ -165,6 +171,19 @@ def mount_table() -> dict:
         fields = right.split()
         result[decode(left.split()[4])] = (fields[0], decode(fields[1]))
     return result
+
+
+def repair_bindfs_limit(target: Path, source: Path) -> None:
+    run(
+        "sudo",
+        "-n",
+        "python3",
+        str(Path(__file__).with_name("bindfs_limits.py")),
+        str(target),
+        str(source),
+        str(os.getuid()),
+        str(os.getgid()),
+    )
 
 
 def bindfs_processes() -> dict:

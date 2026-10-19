@@ -91,13 +91,19 @@ def show(args) -> None:
                 )
     if getattr(args, "command", None) != "containers":
         return
+    show_dev(args)
+
+
+def show_dev(args):
+    stream = sys.stderr
+    host = getattr(args, "host", None)
     dev = Path(__file__).resolve().parents[4] / "code/vllm-ascend-workspace/dev"
     selected_host = host[0] if isinstance(host, list) and host else host
     connection = []
     if is_wsl() or (selected_host and selected_host != "localhost"):
         name = (
-            getattr(args, "name", None)
-            if getattr(args, "container_action", None) == "create"
+            getattr(args, "container", None) or getattr(args, "name", None)
+            if getattr(args, "container_action", "create") == "create"
             else None
         )
         connection = [
