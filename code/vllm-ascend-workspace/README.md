@@ -8,6 +8,8 @@ uv venv --python 3.12 --seed --managed-python --system-certs
 
 `dev/` 入口要求 Python >=3.11，使用容器自带的 `pip`，不创建虚拟环境、不预先卸载。默认不编译算子；首次安装需加 `--compile-ops`。
 
+源码目录不存在时交互询问仓库 URL 和分支，默认 `git@github.com:vllm-project/vllm-ascend.git`、`main`，以 `--depth=1000` 克隆后继续安装。已有目录不覆盖、不自动切分支；远程安装需要交互终端。
+
 ```bash
 # 容器内执行（自动定位 workspace 下的 vllm-ascend）
 python3 ~/ai-infra-dev/code/vllm-ascend-workspace/dev vllm-ascend install

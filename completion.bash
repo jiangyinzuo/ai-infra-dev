@@ -104,7 +104,7 @@ _devtools_cli_complete() {
         if [[ -z $group ]]; then group=$word; else action=$word; break; fi
     done
     if [[ -z $group ]]; then
-        _complete_values -h --help --no-hints git-repo binaries containers models sync-all
+        _complete_values -h --help --no-hints git-repo binaries containers models sync-all checkhealth
         return
     fi
     case $group in
@@ -119,6 +119,7 @@ _devtools_cli_complete() {
                 return
             fi ;;
         sync-all) options+=(--jobs) ;;
+        checkhealth) ;;
         *) return ;;
     esac
     options+=(--host)

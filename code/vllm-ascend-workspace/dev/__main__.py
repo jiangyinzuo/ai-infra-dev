@@ -76,6 +76,19 @@ def main(argv=None):
                 ],
                 check=False,
             ).returncode
+        if args.resource == "vllm-ascend":
+            remote = shlex.join(
+                ["docker", "exec", "-it", args.container, "bash", "-lc", command]
+            )
+            return subprocess.run(
+                [
+                    str(ROOT / "ssh/ssh2"),
+                    "-t",
+                    args.host,
+                    checked_command(args.host, remote),
+                ],
+                check=False,
+            ).returncode
         remote = shlex.join(["docker", "exec", args.container, "bash", "-lc", command])
         return ssh_command(args.host, checked_command(args.host, remote))
     if args.host or args.container:
@@ -100,6 +113,28 @@ def main(argv=None):
         print(shlex.join(command), flush=True)
         return subprocess.run(command, check=False).returncode
     project = Path(__file__).resolve().parents[1] / "vllm-ascend"
+    if not project.exists() and not project.is_symlink():
+        url = (
+            input(
+                "vllm-ascend 仓库 URL [git@github.com:vllm-project/vllm-ascend.git]："
+            ).strip()
+            or "git@github.com:vllm-project/vllm-ascend.git"
+        )
+        branch = input("分支名 [main]：").strip() or "main"
+        clone = [
+            "git",
+            "clone",
+            "--depth=1000",
+            "--branch",
+            branch,
+            "--",
+            url,
+            str(project),
+        ]
+        print(shlex.join(clone), flush=True)
+        result = subprocess.run(clone, check=False)
+        if result.returncode:
+            return result.returncode
     if (
         not (project / "pyproject.toml").is_file()
         and not (project / "setup.py").is_file()

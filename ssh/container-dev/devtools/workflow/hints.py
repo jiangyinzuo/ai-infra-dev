@@ -34,6 +34,7 @@ def groups(args) -> list:
     ]
     if wsl:
         workflow.append(("一键执行以上四步", ["sync-all", *target]))
+    workflow.append(("检查开发环境", ["checkhealth", *target]))
     container = [
         ("创建容器", ["containers", "create", *target]),
         ("查看容器和映射", ["containers", "ls", *target]),
@@ -68,6 +69,8 @@ def suggestions(args) -> list:
 
 
 def show(args) -> None:
+    if getattr(args, "command", None) == "checkhealth":
+        return
     if getattr(args, "no_hints", False) or getattr(args, "json", False):
         return
     stream = sys.stderr

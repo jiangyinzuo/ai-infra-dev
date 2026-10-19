@@ -11,6 +11,8 @@ models discovery
 
 各操作均支持 `--host HOST`；服务器本地执行时省略。WSL 更新仓库或解压时必须指定远程主机。使用 `--help` 查看选项，入口处加 `--no-hints` 可关闭后续步骤提示。
 
+`python3 ssh/container-dev/devtools/cli.py checkhealth --host HOST` 快速只读检查两个 Git 仓库、bindfs/nvim/fzf 版本和插件目录数量，不输出插件清单、不联网、不 sudo；WARN 时退出 1。插件仅检查目录存在且非空，不代表版本或内容一致。
+
 ## 发现模型
 
 ```bash

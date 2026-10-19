@@ -86,9 +86,59 @@ def test_virtual_environment_forbidden(builder, monkeypatch, variable):
         builder.main(["devtools", "install"])
 
 
-def test_missing_project_rejected(builder):
+def test_invalid_existing_project_not_overwritten(builder, tmp_path):
+    (tmp_path / "vllm-ascend").mkdir()
     with pytest.raises(ValueError):
         builder.main(["vllm-ascend", "install"])
+
+
+def test_missing_checkout_clones_selected_branch_before_install(
+    builder, monkeypatch, tmp_path
+):
+    import subprocess
+    import os
+
+    origin = tmp_path / "origin"
+    subprocess.run(
+        ["git", "init", "-q", "--initial-branch=main", str(origin)], check=True
+    )
+    (origin / "setup.py").write_text("# fixture")
+    subprocess.run(["git", "-C", str(origin), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(origin),
+            "-c",
+            "user.name=Smoke",
+            "-c",
+            "user.email=smoke@example.test",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
+    answers = iter([origin.as_uri(), ""])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    pip = tmp_path / "pip"
+    pip.write_text("#!/bin/sh\ntest -f setup.py || exit 82\nexit 17\n")
+    pip.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
+    assert builder.main(["vllm-ascend", "install"]) == 17
+    checkout = tmp_path / "vllm-ascend"
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(checkout), "remote", "get-url", "origin"], text=True
+        ).strip()
+        == origin.as_uri()
+    )
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(checkout), "branch", "--show-current"], text=True
+        ).strip()
+        == "main"
+    )
 
 
 @pytest.mark.parametrize(
