@@ -43,9 +43,22 @@ def main() -> int:
         subprocess.SubprocessError,
         tarfile.TarError,
     ) as exc:
-        print("error: " + str(exc), file=sys.stderr)
         if isinstance(exc, subprocess.CalledProcessError):
+            if exc.stderr:
+                print(exc.stderr.rstrip(), file=sys.stderr)
+            else:
+                command = exc.cmd
+                program = (
+                    Path(command[0]).name
+                    if isinstance(command, (list, tuple))
+                    else "子进程"
+                )
+                print(
+                    f"error: {program} 执行失败（退出码 {exc.returncode}）",
+                    file=sys.stderr,
+                )
             return exc.returncode if exc.returncode >= 0 else 128 - exc.returncode
+        print("error: " + str(exc), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("已取消", file=sys.stderr)
