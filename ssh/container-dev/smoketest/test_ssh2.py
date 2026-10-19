@@ -89,6 +89,55 @@ def test_native_route_and_quoted_environment(monkeypatch):
     assert json.loads(check.stdout) == [value, "http://native-proxy:3128"]
 
 
+def test_native_git_uses_session_proxy_not_local_git_command(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEVTOOLS_HTTP_PROXY", "http://192.0.2.20:3128")
+    monkeypatch.setenv("USG_IP", "192.0.2.99")
+    monkeypatch.setenv("http_proxy", "http://wrong:8080")
+    monkeypatch.setenv("GIT_SSH_COMMAND", "do-not-forward")
+    command = MODULE.build_command(["xiaoqiaoling-one", "true"])[-1]
+    result = subprocess.run(
+        ["sh", "-c", command + '; printf "%s" "$GIT_SSH_COMMAND"'],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    argv = shlex.split(result.stdout)
+    proxy = next(
+        value.split("=", 1)[1] for value in argv if value.startswith("ProxyCommand=")
+    )
+    assert shlex.split(proxy) == [
+        "ncat",
+        "--proxy",
+        "192.0.2.20:3128",
+        "--proxy-type",
+        "http",
+        "%h",
+        "%p",
+    ]
+    nc = tmp_path / "nc"
+    nc.write_text(
+        '#!/bin/sh\nif [ "$1" = --help ]; then echo Ncat; else printf "%s\\n" "$@"; fi\n'
+    )
+    nc.chmod(0o755)
+    env = dict(os.environ, PATH=str(tmp_path) + ":" + os.environ["PATH"])
+    env["USG_IP"] = "192.0.2.99"
+    result = subprocess.run(
+        ["bash", str(SSH / "createuser/github-proxy.sh"), "ssh.github.com", "443"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.splitlines() == [
+        "--proxy-type",
+        "http",
+        "--proxy",
+        "192.0.2.20:3128",
+        "ssh.github.com",
+        "443",
+    ]
+
+
 @pytest.mark.parametrize(
     "options", [["-s"], ["-N"], ["-o", "BatchMode=yes", "-s"], ["-p2222", "-N"]]
 )

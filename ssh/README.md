@@ -64,9 +64,9 @@ Python 3.9+ 入口，按 Host 前缀选择客户端，配置维护在 `ssh_commo
 ./ssh2 xiaoqiaoling-a3-24
 ```
 
-网关连接导出 `USG_IP` 和六个大小写 HTTP/HTTPS/ALL 代理变量；WSL SSH 透传本地已设置的同名变量。两者均透传已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`，未设置的不覆盖远端值。SFTP、仅转发及配置查询不注入环境。
+网关连接保留 `USG_IP`，并由它生成 `DEVTOOLS_HTTP_PROXY=http://<USG_IP>:3128`；WSL 原生 SSH 透传本地 `DEVTOOLS_HTTP_PROXY`。非空时统一覆盖六个大小写 HTTP/HTTPS/ALL 代理变量；未设置时仍透传已有代理变量。两者均透传已设置的 `SUDOCODE_API_KEY`、`OPENAI_API_KEY`，未设置的不覆盖远端值。SFTP、仅转发及配置查询不注入环境。
 
-`GIT_SSH_COMMAND` 按本次 `USG_IP` 自动生成 GitHub SSH-over-443 代理（远端需 ncat），不透传本地同名变量；新容器继承宿主机的值。`git-repo update --debug` 保留代理，仅追加 `-vvv`。
+`GIT_SSH_COMMAND` 和 createuser 部署的 GitHub 代理脚本统一从 `DEVTOOLS_HTTP_PROXY` 解析 HTTP CONNECT 地址（无认证），不再根据 USG_IP 分支；USG_IP 仅保留网关信息。远端需 ncat。不会透传本地同名 GIT_SSH_COMMAND；新容器继承生成的值。`git-repo update --debug` 保留代理，仅追加 `-vvv`。
 
 密钥会进入 SSH 进程参数，勿分享包含远端命令的调试日志。
 
