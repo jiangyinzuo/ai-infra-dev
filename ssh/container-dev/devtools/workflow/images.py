@@ -110,6 +110,7 @@ def download(args):
                 "--no-check-certificate",
                 "-O",
                 name,
+                "--progress=bar:force:noscroll",
                 url,
             ],
             check=False,
