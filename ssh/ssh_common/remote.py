@@ -84,6 +84,7 @@ def update_remote_repositories(host: str, debug: bool = False) -> int:
         commands.append(
             'export GIT_TRACE=1; export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -vvv"'
         )
+    # 面向程序员的工具优先展示实际命令，不用抽象流程标签代替。
     for name in ("ai-infra-dev", "vimrc"):
         path = '"$HOME"/' + name
         url = shlex.quote(f"git@github.com:{REMOTE_USER}/{name}.git")
@@ -92,15 +93,12 @@ def update_remote_repositories(host: str, debug: bool = False) -> int:
             f"if [ ! -d {path}/.git ] && [ ! -f {path}/.git ]; then "
             f'printf "%s\\n" "Not a Git repository: {name}" >&2; exit 2; fi; '
             f"git -C {path} rev-parse --show-toplevel >/dev/null; "
+            f'printf "git -C %s pull --ff-only\\n" {path}; '
             f"git -C {path} pull --ff-only; "
-            f"else git clone {url} {path}; "
+            f'else printf "git clone %s %s\\n" {url} {path}; git clone {url} {path}; '
             + (f"(cd {path} && ./install/setup.sh); " if name == "vimrc" else "")
             + "fi"
         )
-    print(
-        f"update repositories on {REMOTE_USER}@{host} (bootstrap; commit check exempt)",
-        flush=True,
-    )
     return ssh_command(host, "; ".join(commands))
 
 
