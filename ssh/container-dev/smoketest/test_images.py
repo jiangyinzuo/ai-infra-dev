@@ -141,7 +141,10 @@ def test_remote_probe_loads_alternate_archive_and_verifies_tag(tmp_path):
             text=True,
             check=True,
         )
-        return json.loads(result.stdout)["status"]
+        events = [json.loads(line) for line in result.stdout.splitlines()]
+        if events[-1]["status"] == "loaded":
+            assert events[0]["command"].startswith("docker load --input ")
+        return events[-1]["status"]
 
     assert probe() == "loaded"
     archive.unlink()

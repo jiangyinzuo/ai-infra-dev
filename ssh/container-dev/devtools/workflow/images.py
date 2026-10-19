@@ -94,7 +94,7 @@ def image_from_archive(filename):
     return "vllm-ascend:" + match[1]
 
 
-REMOTE_LOAD = """import json,pathlib,subprocess,sys
+REMOTE_LOAD = """import json,pathlib,subprocess,sys,shlex
 directory=pathlib.Path(sys.argv[1]).expanduser()
 image=sys.argv[2]
 def present():
@@ -109,7 +109,9 @@ else:
     if archive is None:
         print(json.dumps({"status":"missing"}))
     else:
-        subprocess.run(["docker","load","--input",str(archive)],stdout=sys.stderr,check=True)
+        command=["docker","load","--input",str(archive)]
+        print(json.dumps({"command":shlex.join(command)}),flush=True)
+        subprocess.run(command,stdout=sys.stderr,check=True)
         if not present():
             raise RuntimeError("归档导入后未找到预期镜像："+image)
         print(json.dumps({"status":"loaded"}))
@@ -121,20 +123,29 @@ def remote_load(host, image):
     command = shlex.join(
         ["python3", "-c", REMOTE_LOAD, REMOTE_DIR + "/containers", image]
     )
-    result = subprocess.run(
+    with subprocess.Popen(
         [
             str(SSH_DIR / "ssh2"),
             "-T",
             f"{REMOTE_USER}@{host}",
             checked_command(host, command),
         ],
-        capture_output=True,
+        stdout=subprocess.PIPE,
         text=True,
-        check=True,
-    )
-    if result.stderr:
-        print(result.stderr.rstrip(), file=sys.stderr)
-    return json.loads(result.stdout)["status"]
+    ) as process:
+        status = None
+        for line in process.stdout:
+            event = json.loads(line)
+            if "command" in event:
+                print(event["command"], flush=True)
+            else:
+                status = event["status"]
+        returncode = process.wait()
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, process.args)
+        if status is None:
+            raise RuntimeError("远端未返回镜像状态")
+        return status
 
 
 def upload(args):
@@ -144,10 +155,8 @@ def upload(args):
     image = image_from_archive(archive.name)
     status = remote_load(args.host, image)
     if status != "missing":
-        print(
-            f"{image}: {'镜像已存在，跳过上传和导入' if status == 'image' else '使用远端归档导入完成'}",
-            flush=True,
-        )
+        if status == "image":
+            print(f"{image}: 镜像已存在，跳过上传和导入", flush=True)
         return 0
     if not archive.is_file():
         raise ValueError("镜像归档不存在：" + str(archive))
