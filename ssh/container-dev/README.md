@@ -19,7 +19,7 @@ models discovery
 ./devtools/cli.py models discovery --root /data/weights
 ```
 
-默认扫描 `/data{,1,2,3}` 及其中的 `weight/weights/model/models`。候选目录需有 `config.json` 和 safetensors 或 pytorch_model bin 权重；不验证模型完整性。WSL 必须指定远端，远程执行要求仓库 commit 一致；`--timeout` 默认 60 秒。上传暂未提供。
+默认扫描 `/data{,1,2,3}` 及其中的 `weight/weights/model/models`，以及 `/mnt/share/weights`、`/mnt/share/weight`。候选目录需有 `config.json` 和 safetensors 或 pytorch_model bin 权重；不验证模型完整性。WSL 必须指定远端，远程执行要求仓库 commit 一致；`--timeout` 默认 60 秒。
 
 ## 拉取服务器模型（仅 WSL）
 
@@ -32,6 +32,15 @@ python3 ssh/container-dev/devtools/cli.py models fetch \
 ```
 
 复用 `models discovery` 的发现逻辑，列出模型后输入编号选择，`q` 取消；`--root` 可重复指定扫描目录。也可用 `--model` 指定远端绝对路径直接拉取，与 `--root` 互斥。下载到 `--output/远端模型目录名`。两端需 rsync，复用 ssh2 路由及 commit 校验；显示传输进度并保留部分文件供重跑使用。解引用符号链接，下载实际权重；同名文件可能更新，不删除本地额外文件。`--timeout` 仅限制模型发现，不限制大模型传输。
+
+## 上传模型（仅 WSL）
+
+```bash
+python3 ssh/container-dev/devtools/cli.py models upload \
+  --host suzhou-a3-130 --model ~/models/Qwen3-1.7B
+```
+
+按编号选择远端父目录，默认使用 discovery 的搜索根目录；`--root` 可重复指定候选位置。每项显示目录是否非空、是否软链接、jiangyinzuo 的读写及进入权限，以及目标模型目录状态。无权限项和软链接模型目标不可选择；已有目标需再次确认。上传使用 rsync，解引用本地链接，保留远端额外文件。上传文件设置为 0644、目录为 0755，不开放公共写权限；不更改父目录权限。所有人可达标记按父目录的传统 Unix 权限位判断，ACL/安全策略可能另有限制。
 
 ## 同步工具
 

@@ -24,7 +24,7 @@ DEFAULT_ROOTS = tuple(
     f"/data{suffix}/{name}".rstrip("/")
     for suffix in ("", "1", "2", "3")
     for name in ("", "weight", "weights", "model", "models")
-)
+) + ("/mnt/share/weights", "/mnt/share/weight")
 
 
 def _raise_walk_error(error: OSError) -> None:
@@ -116,7 +116,7 @@ def register(subparsers) -> None:
     parser = actions.add_parser("discovery", help="发现本地或远端模型候选目录")
     add_host_argument(parser)
     parser.add_argument(
-        "--root", action="append", help="搜索根目录；可重复，覆盖默认的 20 个目录"
+        "--root", action="append", help="搜索根目录；可重复，覆盖默认搜索目录"
     )
     parser.add_argument("--json", action="store_true", help="输出 JSON 路径数组")
     parser.add_argument("--timeout", type=float, default=60, help="远端调用超时秒数")
@@ -131,6 +131,14 @@ def register(subparsers) -> None:
     source.add_argument("--model", help="远端模型目录绝对路径；跳过发现和交互选择")
     fetch.add_argument("--timeout", type=float, default=60, help="远端模型发现超时秒数")
     fetch.set_defaults(handler=fetch_model)
+    upload = actions.add_parser("upload", help="选择服务器目录上传本地模型（仅 WSL）")
+    add_host_argument(upload, required=True)
+    upload.add_argument("--model", required=True, help="本地模型目录")
+    upload.add_argument("--root", action="append", help="候选远端父目录，可重复")
+    upload.add_argument(
+        "--timeout", type=float, default=60, help="远端路径探测超时秒数"
+    )
+    upload.set_defaults(handler=upload_model)
 
 
 def execute(args) -> int:
@@ -183,6 +191,8 @@ def fetch_model(args) -> int:
             "--protect-args",
             "--partial",
             "--info=progress2",
+            # WSL → Windows SSH 的非阻塞管道可能触发 write failed 11，损坏 rsync 协议流。
+            "--blocking-io",
             "-e",
             shlex.quote(str(SSH_DIR / "ssh2")),
             "--rsync-path",
@@ -193,3 +203,96 @@ def fetch_model(args) -> int:
         ],
         check=False,
     ).returncode
+
+
+def upload_model(args) -> int:
+    if not is_wsl() or not is_remote_host(args.host):
+        raise ValueError("models upload 必须从 WSL 指定远端 --host")
+    host_alias(args.host)
+    source = Path(args.model).expanduser().absolute()
+    if not source.is_dir() or not source.name:
+        raise ValueError("本地模型目录不存在或无效")
+    if not shutil.which("rsync"):
+        raise ValueError("请先安装 rsync")
+    roots = args.root if args.root is not None else DEFAULT_ROOTS
+    if any(not Path(root).is_absolute() for root in roots):
+        raise ValueError("--root 必须为远端绝对路径")
+    command = (
+        'python3 "$HOME"/ai-infra-dev/ssh/container-dev/devtools/model_paths.py '
+        + shlex.join([source.name, *roots])
+    )
+    result = subprocess.run(
+        [
+            str(SSH_DIR / "ssh2"),
+            "-T",
+            f"{REMOTE_USER}@{args.host}",
+            checked_command(args.host, command),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=args.timeout,
+    )
+    rows = json.loads(result.stdout)
+    for index, row in enumerate(rows, 1):
+        permissions = "/".join(
+            f"{label}={'是' if row[key] else '否'}"
+            for key, label in (("read", "读"), ("write", "写"), ("enter", "进入"))
+        )
+        print(
+            f"{index}) {row['path']} [{row['contents']}；软链接={'是' if row['symlink'] else '否'}；{REMOTE_USER}: {permissions}；可创建={'是' if row['usable'] else '否'}；所有人可达={'是' if row['public_access'] else '否'}]"
+        )
+        target = row["target"]
+        print(
+            f"   模型目标: {target['path']} [{target['contents']}；软链接={'是' if target['symlink'] else '否'}；可写={'是' if target['usable'] else '否'}]"
+        )
+    if not rows:
+        raise ValueError("没有候选上传目录")
+    while True:
+        choice = input("选择上传目录编号（q 取消）：").strip()
+        if choice.lower() == "q":
+            return 0
+        if choice.isdigit() and 1 <= int(choice) <= len(rows):
+            row = rows[int(choice) - 1]
+            if (
+                row["usable"]
+                and row["target"]["usable"]
+                and not row["target"]["symlink"]
+            ):
+                break
+            print("不可选择：无写入权限、目标非目录或目标是软链接")
+        else:
+            print("请输入有效编号")
+    target = row["target"]
+    if (
+        target["exists"]
+        and input("目标已存在，将更新同名文件及目录内权限，保留额外文件，继续？[y/N]：")
+        .strip()
+        .lower()
+        != "y"
+    ):
+        return 0
+    destination = target["path"]
+    # Keep parent directories unchanged. Uploaded content is public-read, not public-write.
+    remote = "mkdir -p -- " + shlex.quote(destination) + " && exec rsync"
+    result = subprocess.run(
+        [
+            "rsync",
+            "-rLt",
+            "--perms",
+            "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r",
+            "--protect-args",
+            "--partial",
+            "--blocking-io",
+            "--info=progress2",
+            "-e",
+            shlex.quote(str(SSH_DIR / "ssh2")),
+            "--rsync-path",
+            checked_command(args.host, remote),
+            "--",
+            str(source) + "/",
+            f"{REMOTE_USER}@{args.host}:{destination}/",
+        ],
+        check=False,
+    )
+    return result.returncode

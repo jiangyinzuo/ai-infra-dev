@@ -40,7 +40,27 @@ def groups(args) -> list:
         ("删除容器或清理映射", ["containers", "delete", *target]),
         ("下载容器镜像", ["containers", "download", *target]),
     ]
-    return [("Workflow", workflow), ("Container", container)]
+    model = [("发现模型", ["models", "discovery", *target])]
+    if wsl:
+        model.append(
+            (
+                "拉取服务器模型",
+                ["models", "fetch", *target, "--output", str(Path.home() / "models")],
+            )
+        )
+        model.append(
+            (
+                "上传模型",
+                [
+                    "models",
+                    "upload",
+                    *target,
+                    "--model",
+                    str(Path.home() / "models/<MODEL>"),
+                ],
+            )
+        )
+    return [("Workflow", workflow), ("Container", container), ("Model", model)]
 
 
 def suggestions(args) -> list:

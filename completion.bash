@@ -114,7 +114,7 @@ _devtools_cli_complete() {
                     binaries) _complete_values -h --help download extract sync ;;
                     containers) _complete_values -h --help create delete download ls ;;
                     git-repo) _complete_values -h --help update ;;
-                    models) _complete_values -h --help discovery fetch ;;
+                    models) _complete_values -h --help discovery fetch upload ;;
                 esac
                 return
             fi ;;
@@ -133,6 +133,7 @@ _devtools_cli_complete() {
         containers:ls) options+=(--json) ;;
         models:discovery) options+=(--root --json --timeout) ;;
         models:fetch) options+=(--root --model --output --timeout) ;;
+        models:upload) options+=(--root --model --timeout) ;;
     esac
     case $previous in
         --host)
