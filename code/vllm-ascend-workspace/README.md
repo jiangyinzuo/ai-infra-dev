@@ -22,14 +22,27 @@ python3 ~/ai-infra-dev/code/vllm-ascend-workspace/dev vllm-ascend install \
 
 ## 启动服务（容器内）
 
-```bash
-python3 dev vllm-ascend serve
-python3 dev vllm-ascend serve --model /mnt/share/weights/Qwen3-1.7B --devices 0
-python3 dev vllm-ascend serve stop
-# WSL 可追加 --host HOST --container NAME，通过交互终端在容器执行
+配置文件位于 `dev/serve_config/`，仅通过 Python import 加载，不支持 Bash。例如 `qwen3.5-0.8b.py`：
+
+```python
+from serve_config import ServeConfig
+
+config = ServeConfig(
+    device_count=1,
+    serve_command=["vllm", "serve", "{model}", "--tensor-parallel-size", "1"],
+)
 ```
 
-省略模型时复用 `models discovery` 搜索本机模型，使用 `~/plugged/fzf/bin/fzf` 实时模糊选择；缺少 fzf 时退回编号选择。启动前复用 npu-top 检查空闲设备，并选择可用设备；TP 数量等于所选设备数，不另加自定义服务参数。
+```bash
+python3 dev vllm-ascend serve --script dev/serve_config/qwen3.5-0.8b.py
+python3 dev vllm-ascend serve --script dev/serve_config/qwen3.5-0.8b.py --model /mnt/share/weights/Qwen3.5-0.8B --devices 0
+python3 dev vllm-ascend serve stop
+# WSL 可追加 --host HOST --container NAME；--script 是容器内路径
+```
+
+dev 将 `serve_command` 参数中的 `{model}` 替换为所选路径，设置 `ASCEND_RT_VISIBLE_DEVICES`，并检查所选设备数等于 `device_count`。命令直接执行，不经 shell，不额外添加 TP、端口或其他参数；工作目录为配置文件所在目录。启动前打印最终命令。配置导入会执行 Python 顶层代码，只加载可信文件；顶层只定义配置，不启动进程或占用 NPU。
+
+省略模型时复用 `models discovery` 搜索本机模型，使用 `~/plugged/fzf/bin/fzf` 实时模糊选择；缺少 fzf 时退回编号选择。启动前复用 npu-top 检查空闲设备，并选择可用设备。
 
 服务后台运行，日志路径在启动后打印；后台进程启动不等于 API 已就绪。再次启动时询问是否停止旧服务并重启，`serve stop` 只停止本工具记录的实例，绝不按进程名批量杀进程。状态和日志按用户及容器 hostname 保存在 `/tmp/vllm-ascend-dev-*`，容器重建后不保证保留。空闲检查只涵盖容器可见信息，不提供跨用户独占分配，检查与启动之间仍有竞争窗口。
 

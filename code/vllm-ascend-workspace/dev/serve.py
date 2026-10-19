@@ -9,6 +9,30 @@ import socket
 import subprocess
 import shlex
 import time
+import importlib.util
+from serve_config import ServeConfig
+
+
+def load_config(path):
+    if path.suffix != ".py":
+        raise ValueError("仅支持 Python ServeConfig 配置文件")
+    spec = importlib.util.spec_from_file_location("user_serve_config", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    config = getattr(module, "config", None)
+    if not isinstance(config, ServeConfig):
+        raise ValueError("配置文件必须定义 config = ServeConfig(...)")
+    if type(config.device_count) is not int or config.device_count < 1:
+        raise ValueError("device_count 必须为正整数")
+    if (
+        not isinstance(config.serve_command, list)
+        or not config.serve_command
+        or not all(
+            isinstance(argument, str) and argument for argument in config.serve_command
+        )
+    ):
+        raise ValueError("serve_command 必须为非空字符串参数列表")
+    return config
 
 
 def process_identity(pid):
@@ -50,6 +74,12 @@ def stop(state, timeout=30):
 
 
 def execute(args):
+    script = None
+    if args.serve_action != "stop":
+        script = Path(args.script).expanduser().resolve()
+        if not script.is_file():
+            raise ValueError("启动脚本不存在：" + str(script))
+        config = load_config(script)
     directory = state_directory()
     state_file = directory / "service.json"
     with (directory / "lock").open("a") as lock:
@@ -76,27 +106,31 @@ def execute(args):
 
         model = choose_model(args.model)
         devices = choose_devices(args.devices)
+        if len(devices.split(",")) != config.device_count:
+            raise ValueError(
+                f"配置要求 {config.device_count} 个 device，所选数量不匹配"
+            )
         command = [
-            "vllm",
-            "serve",
-            model,
-            "--tensor-parallel-size",
-            str(len(devices.split(","))),
+            argument.replace("{model}", model) for argument in config.serve_command
         ]
-        environment = dict(os.environ, ASCEND_RT_VISIBLE_DEVICES=devices)
+        environment = dict(
+            os.environ, MODEL_PATH=model, ASCEND_RT_VISIBLE_DEVICES=devices
+        )
         print(
-            "ASCEND_RT_VISIBLE_DEVICES="
-            + shlex.quote(devices)
-            + " "
-            + shlex.join(command),
+            "MODEL_PATH="
+            + shlex.quote(model)
+            + " ASCEND_RT_VISIBLE_DEVICES="
+            + shlex.quote(devices),
             flush=True,
         )
+        print("执行：" + shlex.join(command), flush=True)
         log = directory / (
             time.strftime("serve-%Y%m%d-%H%M%S-") + str(time.time_ns()) + ".log"
         )
         with log.open("ab") as output:
             process = subprocess.Popen(
                 command,
+                cwd=script.parent,
                 env=environment,
                 stdin=subprocess.DEVNULL,
                 stdout=output,
@@ -113,6 +147,7 @@ def execute(args):
                 "log": str(log),
                 "model": model,
                 "devices": devices,
+                "script": str(script),
             }
             temporary = state_file.with_suffix(".tmp")
             temporary.write_text(json.dumps(state))

@@ -12,6 +12,7 @@ import pytest
 @pytest.fixture
 def service(monkeypatch, tmp_path):
     path = Path(__file__).resolve().parents[1] / "serve.py"
+    monkeypatch.syspath_prepend(str(path.parent))
     spec = importlib.util.spec_from_file_location("serve_smoke", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -27,10 +28,14 @@ def service(monkeypatch, tmp_path):
     binary.write_text(
         "#!"
         + sys.executable
-        + '\nimport os,time\nprint("service-log " + os.environ["ASCEND_RT_VISIBLE_DEVICES"],flush=True)\ntime.sleep(120)\n'
+        + '\nimport os,sys,time\nassert sys.argv[1:] == ["serve", "/model", "--max-model-len", "1024"]\nprint("service-log " + os.environ["ASCEND_RT_VISIBLE_DEVICES"],flush=True)\ntime.sleep(120)\n'
     )
     binary.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
+    (tmp_path / "launch.py").write_text(
+        'from serve_config import ServeConfig\nconfig = ServeConfig(1, ["vllm", "serve", "{model}", "--max-model-len", "1024"])\n'
+    )
+    monkeypatch.chdir(tmp_path)
     yield module
     state = tmp_path / "service.json"
     if state.exists():
@@ -40,7 +45,9 @@ def service(monkeypatch, tmp_path):
 
 
 def options(action=None):
-    return SimpleNamespace(serve_action=action, model=None, devices=None, vllm_args=[])
+    return SimpleNamespace(
+        serve_action=action, model=None, devices=None, script="launch.py"
+    )
 
 
 def test_start_log_decline_restart_and_stop(service, monkeypatch, tmp_path):
@@ -87,3 +94,24 @@ def test_early_launch_failure_reports_log_and_clears_state(service, tmp_path):
         service.execute(options())
     assert not (tmp_path / "service.json").exists()
     assert any("startup-failure" in path.read_text() for path in tmp_path.glob("*.log"))
+
+
+def test_device_count_mismatch_never_launches(service, monkeypatch, tmp_path):
+    monkeypatch.setitem(
+        sys.modules,
+        "serve_resources",
+        SimpleNamespace(
+            choose_model=lambda value: "/model", choose_devices=lambda value: "0,1"
+        ),
+    )
+    with pytest.raises(ValueError, match="device"):
+        service.execute(options())
+    assert not (tmp_path / "service.json").exists()
+    assert not list(tmp_path.glob("*.log"))
+
+
+def test_bash_configuration_rejected(service, tmp_path):
+    path = tmp_path / "legacy.sh"
+    path.write_text("exec vllm serve /model\n")
+    with pytest.raises(ValueError, match="Python"):
+        service.load_config(path)

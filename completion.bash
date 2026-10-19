@@ -163,10 +163,11 @@ _build_complete() {
             --host) _ssh_usg_complete "$HOME/.ssh/config" ;;
             --container|--devices) return ;;
             --model) mapfile -t COMPREPLY < <(compgen -d -- "$current"); compopt -o filenames 2>/dev/null || true ;;
+            --script) mapfile -t COMPREPLY < <(compgen -f -- "$current"); compopt -o filenames 2>/dev/null || true ;;
             *)
                 if [[ $resource == vllm-ascend ]]; then
                     if [[ ${COMP_WORDS[start+1]:-} == serve ]]; then
-                        _complete_values -h --help stop --host --container --model --devices
+                        _complete_values -h --help stop --host --container --model --devices --script
                     else
                         _complete_values -h --help --host --container --compile-ops
                     fi

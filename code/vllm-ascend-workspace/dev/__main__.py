@@ -39,9 +39,15 @@ def main(argv=None):
             serve.add_argument("--container")
             serve.add_argument("--model", help="模型目录；省略时交互选择")
             serve.add_argument(
+                "--script",
+                help="定义 config = ServeConfig(...) 的 Python 配置文件（容器内路径）",
+            )
+            serve.add_argument(
                 "--devices", help="逗号分隔的空闲 NPU device IDs；省略时选择"
             )
     args = parser.parse_args(argv)
+    if args.action == "serve" and args.serve_action != "stop" and not args.script:
+        parser.error("启动服务必须指定 --script，命令及参数由用户维护")
     if is_wsl():
         if not args.host or not args.container:
             parser.error("WSL 调用必须同时指定 --host 和 --container")
@@ -55,7 +61,7 @@ def main(argv=None):
         if args.action == "serve":
             if args.serve_action:
                 command += " " + args.serve_action
-            for key in ("model", "devices"):
+            for key in ("model", "devices", "script"):
                 if getattr(args, key):
                     command += " " + shlex.join(["--" + key, getattr(args, key)])
             remote = shlex.join(
