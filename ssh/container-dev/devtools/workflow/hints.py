@@ -41,6 +41,7 @@ def groups(args) -> list:
         ("删除容器或清理映射", ["containers", "delete", *target]),
     ]
     images = [
+        ("查看镜像", ["images", "ls", *target]),
         (
             "下载容器镜像",
             ["images", "download", *target, "--archive", "<IMAGE_ARCHIVE>"],

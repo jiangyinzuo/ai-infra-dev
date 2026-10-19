@@ -113,7 +113,7 @@ _devtools_cli_complete() {
                 case $group in
                     binaries) _complete_values -h --help download extract sync ;;
                     containers) _complete_values -h --help create delete ls ;;
-                    images) _complete_values -h --help download upload ;;
+                    images) _complete_values -h --help download upload ls ;;
                     git-repo) _complete_values -h --help update ;;
                     models) _complete_values -h --help discovery fetch upload ;;
                 esac
@@ -131,7 +131,8 @@ _devtools_cli_complete() {
         binaries:sync) options+=(--apply --dry-run) ;;
         containers:create) options+=(--image --name --no-bindfs --share --test-home --npu-platform) ;;
         containers:delete) options+=(--name --keep-bindfs --remove-bindfs --cleanup-bindfs --yes) ;;
-        images:download|images:upload) options+=(--archive) ;;
+        images:download) options+=(--archive --from) ;;
+        images:upload) options+=(--archive) ;;
         containers:ls) options+=(--json) ;;
         models:discovery) options+=(--root --json --timeout) ;;
         models:fetch) options+=(--root --model --output --timeout) ;;
@@ -143,13 +144,14 @@ _devtools_cli_complete() {
             [[ localhost != "$current"* || " ${COMPREPLY[*]} " == *' localhost '* ]] || COMPREPLY+=(localhost)
             ;;
         --npu-platform) _complete_values a3 ;;
+        --from) _complete_values quay cmc.rnd cmc ;;
         --lock|--output|--repos|--share|--test-home|--root)
             mapfile -t COMPREPLY < <(compgen -f -- "$current")
             compopt -o filenames 2>/dev/null || true
             ;;
         --archive)
             local archive candidate value
-            for archive in "$_ssh_completion_dir"/container-dev/devtools/containers/vllm-ascend*; do
+            for archive in "$_ssh_completion_dir"/container-dev/devtools/containers/{vllm-ascend*,nightly-*,v[0-9]*,qwen*}; do
                 [[ -f $archive ]] || continue
                 candidate=${archive##*/}
                 if [[ $candidate == "$current"* || $archive == "$current"* ]]; then

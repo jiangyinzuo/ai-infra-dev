@@ -151,3 +151,24 @@ def test_remote_probe_loads_alternate_archive_and_verifies_tag(tmp_path):
     assert probe() == "image"
     state.unlink()
     assert probe() == "missing"
+
+
+def test_quay_nightly_url_and_local_date():
+    from datetime import date
+
+    name = "nightly-main-a3-openeuler.tar.gz"
+    url, saved = images.download_location(name, "quay")
+    assert (
+        url
+        == "https://cmc-lfg-artifactory.cmc.tools.huawei.com/artifactory/generic-8166/hw-cr/quay.io/ascend/vllm-ascend/"
+        + name
+    )
+    assert (
+        saved
+        == "nightly-main-a3-openeuler-" + date.today().strftime("%Y%m%d") + ".tar.gz"
+    )
+    assert (
+        images.image_from_archive(saved)
+        == "quay.io/ascend/vllm-ascend:nightly-main-a3-openeuler"
+    )
+    assert images.download_location(name, "cmc") == (url, saved)

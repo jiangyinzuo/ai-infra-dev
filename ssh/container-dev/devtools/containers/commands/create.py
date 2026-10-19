@@ -183,6 +183,9 @@ def docker_command(name: str, home: str) -> list[str]:
         "0:0",
         "--userns=host",
         "--network=host",
+        # 只需充足的共享内存，无跨容器共享 IPC 需求，因此不使用 --ipc=host。
+        # 匹配宿主机 /dev/shm 总容量，同时保留容器独立的 IPC namespace 和 /dev/shm；
+        # 此容量上限不预分配内存，也不保证实际可用内存，仍受 RAM/swap 和 cgroup 限制。
         "--shm-size",
         str(shm_size),
         "--hostname",
