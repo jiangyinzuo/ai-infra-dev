@@ -147,7 +147,24 @@ _devtools_cli_complete() {
             mapfile -t COMPREPLY < <(compgen -f -- "$current")
             compopt -o filenames 2>/dev/null || true
             ;;
-        --jobs|--image|--name|--archive|--timeout|--model) return ;;
+        --archive)
+            local archive candidate value
+            for archive in "$_ssh_completion_dir"/container-dev/devtools/containers/vllm-ascend*; do
+                [[ -f $archive ]] || continue
+                candidate=${archive##*/}
+                if [[ $candidate == "$current"* || $archive == "$current"* ]]; then
+                    if [[ $group:$action == images:upload ]]; then
+                        value=$archive
+                    elif [[ $group:$action == images:download ]]; then
+                        value=$candidate
+                    fi
+                    # Insert shell quoting ourselves; escape embedded single quotes.
+                    value=${value//\'/\'\\\'\'}
+                    COMPREPLY+=("'$value'")
+                fi
+            done
+            compopt -o noquote +o filenames 2>/dev/null || true ;;
+        --jobs|--image|--name|--timeout|--model) return ;;
         *) _complete_values "${options[@]}" ;;
     esac
 }

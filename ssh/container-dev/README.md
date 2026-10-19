@@ -94,7 +94,7 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py git-repo update
 ## 容器
 
 下载镜像归档后，用 `docker load -i <归档路径>` 导入。
-`images upload` 仅从 WSL 上传本地归档到远端 `~/ai-infra-dev/ssh/container-dev/devtools/containers/`，保留部分文件供重跑，不自动导入 Docker。
+`images upload` 从 WSL 上传并导入 Docker：远端已有精确镜像 tag 时跳过全部操作；已有归档则直接导入；否则上传到 `~/ai-infra-dev/ssh/container-dev/devtools/containers/` 后导入并核对 tag。文件名须为 `vllm-ascend:TAG.tar.gz` 或 `vllm-ascend_TAG.tar.gz`。传输中的部分文件单独保存在 `.rsync-partial/`，不会作为完整归档导入。
 
 ```bash
 # 指定完整归档文件名，原 HTTPS 地址自动生成；WSL 本地使用 localhost

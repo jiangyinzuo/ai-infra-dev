@@ -39,15 +39,17 @@ def groups(args) -> list:
         ("创建容器", ["containers", "create", *target]),
         ("查看容器和映射", ["containers", "ls", *target]),
         ("删除容器或清理映射", ["containers", "delete", *target]),
+    ]
+    images = [
         (
             "下载容器镜像",
             ["images", "download", *target, "--archive", "<IMAGE_ARCHIVE>"],
         ),
     ]
     if wsl:
-        container.append(
+        images.append(
             (
-                "上传镜像归档",
+                "上传并导入镜像",
                 ["images", "upload", *target, "--archive", "<LOCAL_ARCHIVE>"],
             )
         )
@@ -71,7 +73,12 @@ def groups(args) -> list:
                 ],
             )
         )
-    return [("Workflow", workflow), ("Container", container), ("Model", model)]
+    return [
+        ("Workflow", workflow),
+        ("Containers", container),
+        ("Images", images),
+        ("Model", model),
+    ]
 
 
 def suggestions(args) -> list:
