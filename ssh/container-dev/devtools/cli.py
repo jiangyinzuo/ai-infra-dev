@@ -14,7 +14,7 @@ import models
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from workflow import binaries, update_git_repo, sync_all, checkhealth
+    from workflow import binaries, update_git_repo, sync_all, checkhealth, images
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-hints", action="store_true", help="不显示后续操作提示")
@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync_all.register(commands)
     models.register(commands)
     checkhealth.register(commands)
+    images.register(commands)
     return parser
 
 

@@ -6,7 +6,7 @@ from ssh_common.config import REMOTE_USER
 import argparse
 import sys
 from contextlib import redirect_stdout
-from .commands import create, delete, download, ls
+from .commands import create, delete, ls
 from .core.remote import add_target_args
 from ssh_common.remote import add_host_argument, is_remote_host, is_wsl, run_remote_cli
 
@@ -46,11 +46,6 @@ def register(subparsers) -> None:
     )
     add_host_argument(remover)
     remover.set_defaults(handler=execute, container_handler=delete.execute)
-    fetcher = commands.add_parser("download", help="下载 NPU 容器镜像")
-    add_target_args(fetcher)
-    fetcher.add_argument("--date", default="20261014", help="日期 YYYYMMDD")
-    fetcher.add_argument("--version", default="26.2.0", help="镜像版本")
-    fetcher.set_defaults(handler=download.execute)
     listing = commands.add_parser(
         "ls", help=f"列出 {REMOTE_USER} 容器及 bindfs 映射，不作修改"
     )

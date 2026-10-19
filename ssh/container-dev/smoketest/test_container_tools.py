@@ -142,7 +142,9 @@ def setup(tmp_path, monkeypatch):
     root.mkdir(parents=True)
     monkeypatch.setattr(common, "ROOT", root)
     monkeypatch.setattr(common, "is_wsl", lambda: True)
-    monkeypatch.setattr(load("download"), "is_wsl", lambda: True)
+    from workflow import images
+
+    monkeypatch.setattr(images, "is_wsl", lambda: True)
     return root
 
 
@@ -258,11 +260,11 @@ def test_remote_dispatch_places_subcommand_before_options(
 
 
 def test_local_download_publishes_only_successful_archive(setup, monkeypatch):
-    module = load("download")
+    from workflow import images as module
+
     monkeypatch.setattr(module, "DATA_ROOT", setup)
     options = args("localhost", "a3")
-    options.date = "20261013"
-    options.version = "26.2.0"
+    options.archive = "vllm-ascend:dev-26.2.0.B109-day20261013-A3.tar.gz"
 
     def run(command, **kwargs):
         assert command[0] == "wget"

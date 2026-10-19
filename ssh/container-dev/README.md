@@ -5,7 +5,8 @@
 ```text
 git-repo update
 binaries download / extract / sync
-containers create / delete / download / ls
+containers create / delete / ls
+images download / upload
 models discovery
 ```
 
@@ -93,13 +94,15 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py git-repo update
 ## 容器
 
 下载镜像归档后，用 `docker load -i <归档路径>` 导入。
+`images upload` 仅从 WSL 上传本地归档到远端 `~/ai-infra-dev/ssh/container-dev/devtools/containers/`，保留部分文件供重跑，不自动导入 Docker。
 
 ```bash
-# WSL 本地下载需指定平台；远程下载可由机器信息选择平台
-./devtools/cli.py containers download --host localhost --npu-platform a3 --date 20261014 --version 26.2.0
-./devtools/cli.py containers download --host suzhou-a3-130
+# 指定完整归档文件名，原 HTTPS 地址自动生成；WSL 本地使用 localhost
+./devtools/cli.py images download --host localhost --archive 'vllm-ascend:dev-26.2.0.B109-day20261019-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz'
+./devtools/cli.py images download --host suzhou-a3-130 --archive 'vllm-ascend:dev-26.2.0.B109-day20261019-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz'
+./devtools/cli.py images upload --host suzhou-a3-130 --archive ./devtools/containers/镜像.tar.gz
 # 以下命令在服务器本地执行，也可在 WSL 加 --host 远程执行
-python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers download
+python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py images download --archive 'vllm-ascend:dev-26.2.0.B109-day20261019-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz'
 python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers create
 python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers create --image vllm-ascend:TAG --name jiangyinzuo-dev1
 python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers ls

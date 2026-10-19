@@ -39,8 +39,18 @@ def groups(args) -> list:
         ("创建容器", ["containers", "create", *target]),
         ("查看容器和映射", ["containers", "ls", *target]),
         ("删除容器或清理映射", ["containers", "delete", *target]),
-        ("下载容器镜像", ["containers", "download", *target]),
+        (
+            "下载容器镜像",
+            ["images", "download", *target, "--archive", "<IMAGE_ARCHIVE>"],
+        ),
     ]
+    if wsl:
+        container.append(
+            (
+                "上传镜像归档",
+                ["images", "upload", *target, "--archive", "<LOCAL_ARCHIVE>"],
+            )
+        )
     model = [("发现模型", ["models", "discovery", *target])]
     if wsl:
         model.append(

@@ -56,7 +56,8 @@ printf '%s\\n' "${{COMPREPLY[@]}}"
             {"--host", "--lock", "--output", "--repos", "--jobs"},
         ),
         (["binaries", "extract", "--"], {"--host", "--output", "--jobs"}),
-        (["containers", ""], {"create", "delete", "download", "ls"}),
+        (["containers", ""], {"create", "delete", "ls"}),
+        (["images", ""], {"download", "upload"}),
         (
             ["containers", "create", "--"],
             {
@@ -81,8 +82,8 @@ printf '%s\\n' "${{COMPREPLY[@]}}"
             },
         ),
         (
-            ["containers", "download", "--"],
-            {"--host", "--date", "--version", "--npu-platform"},
+            ["images", "download", "--"],
+            {"--host", "--archive"},
         ),
         (["containers", "ls", "--"], {"--host", "--json"}),
         (["git-repo", ""], {"update"}),
@@ -106,7 +107,7 @@ def test_commands_and_options(tmp_path, prefix, args, expected):
         ["git-repo", "update"],
         ["containers", "create"],
         ["containers", "delete"],
-        ["containers", "download"],
+        ["images", "download"],
         ["containers", "ls"],
     ],
 )
@@ -120,10 +121,7 @@ def test_hosts_and_repeatable_sync_host(tmp_path, args):
 
 def test_platform_and_localhost(tmp_path):
     assert complete(
-        tmp_path, ["devtools/cli.py", "containers", "download", "--npu-platform", ""]
-    ) == ["a3"]
-    assert complete(
-        tmp_path, ["devtools/cli.py", "containers", "download", "--host", "local"]
+        tmp_path, ["devtools/cli.py", "images", "download", "--host", "local"]
     ) == ["localhost"]
 
 

@@ -165,16 +165,12 @@ def test_smi_failure_does_not_use_sudo_or_fallback(resources, monkeypatch):
     assert commands == [["npu-smi", "info", "-m"]]
 
 
-def test_numbered_selection_and_confirmation(resources, monkeypatch):
+def test_numbered_selection_and_cancellation(resources, monkeypatch):
     monkeypatch.setattr(resources.sys, "stdin", SimpleNamespace(isatty=lambda: False))
-    answers = iter(["bad", "0", "2,4", "yes"])
+    answers = iter(["bad", "0", "2,4"])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     assert resources.choose_devices(None) == "3,7"
     monkeypatch.setattr("builtins.input", lambda prompt: "q")
-    with pytest.raises(EOFError):
-        resources.choose_devices(None)
-    answers = iter(["1", "n"])
-    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     with pytest.raises(EOFError):
         resources.choose_devices(None)
 

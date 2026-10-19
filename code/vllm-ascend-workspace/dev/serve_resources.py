@@ -228,14 +228,11 @@ def choose_devices(devices: str | None) -> str:
         ]
         selected = _select(choices, "Idle devices", multiple=True)
         chosen = [int(value.split(":", 1)[0]) for value in selected]
-        if input(
-            f"Use global runtime devices {','.join(map(str, chosen))}? [y/N]: "
-        ).strip().lower() not in {"y", "yes"}:
-            raise EOFError("Device selection cancelled")
     else:
         chosen = _ids(devices, "--devices")
     if any(device not in available for device in chosen):
         raise ValueError(
             "Selected devices are busy, unavailable, unknown, or outside ASCEND_RT_VISIBLE_DEVICES"
         )
+    print("已选择 NPU devices: " + ",".join(map(str, chosen)), file=sys.stderr)
     return ",".join(map(str, chosen))

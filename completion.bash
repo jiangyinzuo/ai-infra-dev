@@ -104,15 +104,16 @@ _devtools_cli_complete() {
         if [[ -z $group ]]; then group=$word; else action=$word; break; fi
     done
     if [[ -z $group ]]; then
-        _complete_values -h --help --no-hints git-repo binaries containers models sync-all checkhealth
+        _complete_values -h --help --no-hints git-repo binaries containers images models sync-all checkhealth
         return
     fi
     case $group in
-        binaries|containers|git-repo|models)
+        binaries|containers|images|git-repo|models)
             if [[ -z $action ]]; then
                 case $group in
                     binaries) _complete_values -h --help download extract sync ;;
-                    containers) _complete_values -h --help create delete download ls ;;
+                    containers) _complete_values -h --help create delete ls ;;
+                    images) _complete_values -h --help download upload ;;
                     git-repo) _complete_values -h --help update ;;
                     models) _complete_values -h --help discovery fetch upload ;;
                 esac
@@ -130,7 +131,7 @@ _devtools_cli_complete() {
         binaries:sync) options+=(--apply --dry-run) ;;
         containers:create) options+=(--image --name --no-bindfs --share --test-home --npu-platform) ;;
         containers:delete) options+=(--name --keep-bindfs --remove-bindfs --cleanup-bindfs --yes) ;;
-        containers:download) options+=(--npu-platform --date --version) ;;
+        images:download|images:upload) options+=(--archive) ;;
         containers:ls) options+=(--json) ;;
         models:discovery) options+=(--root --json --timeout) ;;
         models:fetch) options+=(--root --model --output --timeout) ;;
@@ -146,7 +147,7 @@ _devtools_cli_complete() {
             mapfile -t COMPREPLY < <(compgen -f -- "$current")
             compopt -o filenames 2>/dev/null || true
             ;;
-        --jobs|--image|--name|--date|--version|--timeout|--model) return ;;
+        --jobs|--image|--name|--archive|--timeout|--model) return ;;
         *) _complete_values "${options[@]}" ;;
     esac
 }
