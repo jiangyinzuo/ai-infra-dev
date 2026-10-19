@@ -96,7 +96,7 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py git-repo update
 下载镜像归档后，用 `docker load -i <归档路径>` 导入。
 `images upload` 从 WSL 上传并导入 Docker：远端已有精确镜像 tag 时跳过全部操作；已有归档则直接导入；否则上传到 `~/ai-infra-dev/ssh/container-dev/devtools/containers/` 后导入并核对 tag。文件名须为 `vllm-ascend:TAG.tar.gz` 或 `vllm-ascend_TAG.tar.gz`。传输中的部分文件单独保存在 `.rsync-partial/`，不会作为完整归档导入。
 
-`images ls --host HOST` 只列出 `vllm-ascend` 和 `quay.io/ascend/vllm-ascend` 两个 repository。下载默认 `--from cmc.rnd`（原 daily 地址）；`--from quay`（也接受 `cmc`）使用 CMC-LFG Quay 归档地址，仅传 tag 文件名：
+`images ls --host HOST` 只列出 `vllm-ascend` 和 `quay.io/ascend/vllm-ascend` 两个 repository。下载默认 `--from cmc.rnd`（原 daily 地址）；`--from quay` 使用 CMC-LFG Quay 归档地址，仅传 tag 文件名：
 
 ```bash
 ./devtools/cli.py images download --host localhost --from quay --archive nightly-main-a3-openeuler.tar.gz

@@ -171,4 +171,3 @@ def test_quay_nightly_url_and_local_date():
         images.image_from_archive(saved)
         == "quay.io/ascend/vllm-ascend:nightly-main-a3-openeuler"
     )
-    assert images.download_location(name, "cmc") == (url, saved)

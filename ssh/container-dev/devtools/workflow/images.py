@@ -46,9 +46,9 @@ def register(subparsers):
     fetcher.add_argument(
         "--from",
         dest="source",
-        choices=["quay", "cmc.rnd", "cmc"],
+        choices=["quay", "cmc.rnd"],
         default="cmc.rnd",
-        help="quay：CMC-LFG Quay 归档；cmc.rnd：原 daily 地址（默认）；cmc 为 quay 别名",
+        help="quay：CMC-LFG Quay 归档；cmc.rnd：原 daily 地址（默认）",
     )
     fetcher.set_defaults(handler=execute)
     uploader = actions.add_parser("upload", help="从 WSL 上传镜像归档并导入 Docker")
@@ -65,7 +65,7 @@ def register(subparsers):
 
 
 def download_location(filename, source="cmc.rnd"):
-    if source in ("quay", "cmc"):
+    if source == "quay":
         if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\.tar\.gz", filename):
             raise ValueError("Quay 归档名应为 TAG.tar.gz，不包含路径或 repository")
         url = (
@@ -105,7 +105,14 @@ def download(args):
     try:
         print(f"download {url} -> {archive}", flush=True)
         result = subprocess.run(
-            ["wget", "--no-check-certificate", "-O", name, url], check=False
+            [
+                "wget",
+                "--no-check-certificate",
+                "-O",
+                name,
+                url,
+            ],
+            check=False,
         )
         if result.returncode:
             return result.returncode
