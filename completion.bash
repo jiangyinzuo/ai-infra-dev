@@ -104,16 +104,17 @@ _devtools_cli_complete() {
         if [[ -z $group ]]; then group=$word; else action=$word; break; fi
     done
     if [[ -z $group ]]; then
-        _complete_values -h --help --no-hints git-repo binaries containers sync-all
+        _complete_values -h --help --no-hints git-repo binaries containers models sync-all
         return
     fi
     case $group in
-        binaries|containers|git-repo)
+        binaries|containers|git-repo|models)
             if [[ -z $action ]]; then
                 case $group in
                     binaries) _complete_values -h --help download extract sync ;;
                     containers) _complete_values -h --help create delete download ls ;;
                     git-repo) _complete_values -h --help update ;;
+                    models) _complete_values -h --help discovery fetch ;;
                 esac
                 return
             fi ;;
@@ -130,6 +131,8 @@ _devtools_cli_complete() {
         containers:delete) options+=(--name --keep-bindfs --remove-bindfs --cleanup-bindfs --yes) ;;
         containers:download) options+=(--npu-platform --date --version) ;;
         containers:ls) options+=(--json) ;;
+        models:discovery) options+=(--root --json --timeout) ;;
+        models:fetch) options+=(--root --model --output --timeout) ;;
     esac
     case $previous in
         --host)
@@ -137,11 +140,11 @@ _devtools_cli_complete() {
             [[ localhost != "$current"* || " ${COMPREPLY[*]} " == *' localhost '* ]] || COMPREPLY+=(localhost)
             ;;
         --npu-platform) _complete_values a3 ;;
-        --lock|--output|--repos|--share|--test-home)
+        --lock|--output|--repos|--share|--test-home|--root)
             mapfile -t COMPREPLY < <(compgen -f -- "$current")
             compopt -o filenames 2>/dev/null || true
             ;;
-        --jobs|--image|--name|--date|--version) return ;;
+        --jobs|--image|--name|--date|--version|--timeout|--model) return ;;
         *) _complete_values "${options[@]}" ;;
     esac
 }

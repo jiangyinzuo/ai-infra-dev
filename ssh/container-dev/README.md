@@ -6,9 +6,32 @@
 git-repo update
 binaries download / extract / sync
 containers create / delete / download / ls
+models discovery
 ```
 
 各操作均支持 `--host HOST`；服务器本地执行时省略。WSL 更新仓库或解压时必须指定远程主机。使用 `--help` 查看选项，入口处加 `--no-hints` 可关闭后续步骤提示。
+
+## 发现模型
+
+```bash
+./devtools/cli.py models discovery --host suzhou-a3-130 --json
+# 服务器本地可省略 --host；--root 可重复，覆盖默认搜索目录
+./devtools/cli.py models discovery --root /data/weights
+```
+
+默认扫描 `/data{,1,2,3}` 及其中的 `weight/weights/model/models`。候选目录需有 `config.json` 和 safetensors 或 pytorch_model bin 权重；不验证模型完整性。WSL 必须指定远端，远程执行要求仓库 commit 一致；`--timeout` 默认 60 秒。上传暂未提供。
+
+## 拉取服务器模型（仅 WSL）
+
+```bash
+python3 ssh/container-dev/devtools/cli.py models fetch \
+  --host suzhou-a3-130 --output ~/models
+# 已知远端路径：跳过发现和交互
+python3 ssh/container-dev/devtools/cli.py models fetch \
+  --host suzhou-a3-130 --model /data/models/Qwen3-1.7B --output ~/models
+```
+
+复用 `models discovery` 的发现逻辑，列出模型后输入编号选择，`q` 取消；`--root` 可重复指定扫描目录。也可用 `--model` 指定远端绝对路径直接拉取，与 `--root` 互斥。下载到 `--output/远端模型目录名`。两端需 rsync，复用 ssh2 路由及 commit 校验；显示传输进度并保留部分文件供重跑使用。解引用符号链接，下载实际权重；同名文件可能更新，不删除本地额外文件。`--timeout` 仅限制模型发现，不限制大模型传输。
 
 ## 同步工具
 

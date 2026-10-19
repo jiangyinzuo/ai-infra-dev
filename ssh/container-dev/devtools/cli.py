@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from containers import interface as containers
 from workflow import hints
+import models
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     update_git_repo.register(commands)
     containers.register(commands)
     sync_all.register(commands)
+    models.register(commands)
     return parser
 
 
