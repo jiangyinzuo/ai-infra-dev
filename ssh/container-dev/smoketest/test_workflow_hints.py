@@ -35,17 +35,22 @@ def test_server_does_not_suggest_wsl_only_fetch(monkeypatch):
 
 def test_dev_hints_only_for_containers_and_use_created_name(monkeypatch, capsys):
     monkeypatch.setattr(hints, "is_wsl", lambda: True)
+    dev = Path(__file__).resolve().parents[3] / "code/dev"
     hints.show(
         build_parser().parse_args(["models", "discovery", "--host", "suzhou-one"])
     )
-    assert "vLLM Ascend Dev" not in capsys.readouterr().err
+    assert f"python3 {dev}" not in capsys.readouterr().err
     hints.show(
         build_parser().parse_args(
             ["containers", "create", "--host", "suzhou-one", "--name", "my-container"]
         )
     )
     output = capsys.readouterr().err
-    assert "vLLM Ascend Dev" in output
+    assert f"python3 {dev} vllm install --host suzhou-one" in output
+    assert f"python3 {dev} vllm serve --script qwen3.5-0.8b.py" in output
+    assert f"python3 {dev} devtools install" in output
+    assert " vllm-ascend install" not in output
+    assert " vllm-ascend serve" not in output
     assert "--container my-container" in output
     assert "<CONTAINER>" not in output
     hints.show(

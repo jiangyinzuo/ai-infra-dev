@@ -113,9 +113,18 @@ def execute(args):
         if args.serve_action == "stop":
             print("当前没有本工具运行中的服务")
             return 0
-        from serve_resources import choose_model, choose_devices
+        from serve_resources import (
+            choose_model,
+            choose_devices,
+            device_visibility_variable,
+        )
 
-        model = choose_model(args.model)
+        model = (
+            config.model
+            if args.model is None and config.model is not None
+            else choose_model(args.model)
+        )
+        visibility = device_visibility_variable()
         devices = choose_devices(args.devices)
         if len(devices.split(",")) != config.device_count:
             raise ValueError(
@@ -126,15 +135,14 @@ def execute(args):
         ]
         # 不要为日志跟随添加 PYTHONUNBUFFERED=1：它会改变 vLLM 进程的输出缓冲，
         # 可能增加写系统调用和 I/O 开销、影响性能；宁可接受日志延迟，也要保留 vLLM 进程原有环境。
-        environment = dict(
-            os.environ,
-            MODEL_PATH=model,
-            ASCEND_RT_VISIBLE_DEVICES=devices,
-        )
+        environment = dict(os.environ, MODEL_PATH=model)
+        environment[visibility] = devices
         print(
             "MODEL_PATH="
             + shlex.quote(model)
-            + " ASCEND_RT_VISIBLE_DEVICES="
+            + " "
+            + visibility
+            + "="
             + shlex.quote(devices),
             flush=True,
         )
@@ -142,7 +150,7 @@ def execute(args):
         print(
             "运行时目录："
             + str(script.parent / "runtime")
-            + "（vllm-ascend 可在此自动生成配置、锁及报告；已加入 .gitignore）",
+            + "（配置可在此生成运行时文件；已加入 .gitignore）",
             flush=True,
         )
         log = directory / (
@@ -151,7 +159,8 @@ def execute(args):
         with log.open("ab") as output:
             # 将启动参数保存在日志中，进入 less 后也能查看；不改变服务进程的输出行为。
             header = (
-                "ASCEND_RT_VISIBLE_DEVICES="
+                visibility
+                + "="
                 + shlex.quote(devices)
                 + " "
                 + shlex.join(command)

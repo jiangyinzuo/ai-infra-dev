@@ -8,7 +8,7 @@ from types import SimpleNamespace
 def test_exit_pager_detaches_only_log_transport(monkeypatch, tmp_path, capsys):
     dev = Path(__file__).resolve().parents[1]
     monkeypatch.syspath_prepend(str(dev))
-    monkeypatch.syspath_prepend(str(dev.parents[2] / "ssh"))
+    monkeypatch.syspath_prepend(str(dev.parents[1] / "ssh"))
     import log_view
 
     ssh = tmp_path / "ssh2"

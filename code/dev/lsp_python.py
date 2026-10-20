@@ -4,8 +4,8 @@
 from pathlib import Path
 import sys
 
-WORKSPACE = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(WORKSPACE.parents[1] / "ssh"))
+WORKSPACE = Path(__file__).resolve().parents[1] / "vllm-ascend-workspace"
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ssh"))
 from ssh_common.container import is_container
 from ssh_common.remote import is_wsl
 

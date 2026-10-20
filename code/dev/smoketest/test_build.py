@@ -30,8 +30,8 @@ def builder(monkeypatch, tmp_path):
 def test_editable_install_runs_in_project_and_preserves_failure(
     builder, monkeypatch, tmp_path, compile_ops
 ):
-    project = tmp_path / "vllm-ascend"
-    project.mkdir()
+    project = tmp_path / "vllm-ascend-workspace/vllm-ascend"
+    project.mkdir(parents=True)
     (project / "pyproject.toml").touch()
     # This executable accepts only the promised installation contract. A wrong
     # directory, option or compiler environment produces a different exit code.
@@ -48,7 +48,7 @@ def test_editable_install_runs_in_project_and_preserves_failure(
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.setenv("COMPILE_CUSTOM_KERNELS", "opposite")
     monkeypatch.chdir(tmp_path.parent)
-    args = ["vllm-ascend", "install"]
+    args = ["vllm", "install"]
     if compile_ops:
         args.append("--compile-ops")
     assert builder.main(args) == 17
@@ -72,7 +72,7 @@ def test_devtools_install_does_not_require_source_checkout(
     assert builder.main(["devtools", "install"]) == 19
 
 
-@pytest.mark.parametrize("resource", ["vllm-ascend", "devtools"])
+@pytest.mark.parametrize("resource", ["vllm", "devtools"])
 def test_host_forbidden_before_install(builder, monkeypatch, resource):
     monkeypatch.setattr(builder, "is_container", lambda: False)
     with pytest.raises(ValueError):
@@ -87,9 +87,9 @@ def test_virtual_environment_forbidden(builder, monkeypatch, variable):
 
 
 def test_invalid_existing_project_not_overwritten(builder, tmp_path):
-    (tmp_path / "vllm-ascend").mkdir()
+    (tmp_path / "vllm-ascend-workspace/vllm-ascend").mkdir(parents=True)
     with pytest.raises(ValueError):
-        builder.main(["vllm-ascend", "install"])
+        builder.main(["vllm", "install"])
 
 
 def test_missing_checkout_clones_selected_branch_before_install(
@@ -125,8 +125,8 @@ def test_missing_checkout_clones_selected_branch_before_install(
     pip.write_text("#!/bin/sh\ntest -f setup.py || exit 82\nexit 17\n")
     pip.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
-    assert builder.main(["vllm-ascend", "install"]) == 17
-    checkout = tmp_path / "vllm-ascend"
+    assert builder.main(["vllm", "install"]) == 17
+    checkout = tmp_path / "vllm-ascend-workspace/vllm-ascend"
     assert (
         subprocess.check_output(
             ["git", "-C", str(checkout), "remote", "get-url", "origin"], text=True
@@ -179,7 +179,7 @@ def test_interactive_remote_uses_managed_user(
     monkeypatch.setattr(builder, "checked_command", lambda host, command: command)
     assert (
         builder.main(
-            ["vllm-ascend", *operation, "--host", "suzhou-one", "--container", "dev1"]
+            ["vllm", *operation, "--host", "suzhou-one", "--container", "dev1"]
         )
         == 0
     )
@@ -191,7 +191,7 @@ def test_csrc_build_cleanup_is_opt_in_and_precedes_pip(
 ):
     import os
 
-    project = tmp_path / "vllm-ascend"
+    project = tmp_path / "vllm-ascend-workspace/vllm-ascend"
     build = project / "csrc/build"
     build.mkdir(parents=True)
     (project / "setup.py").touch()
@@ -207,7 +207,7 @@ def test_csrc_build_cleanup_is_opt_in_and_precedes_pip(
     )
     pip.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
-    arguments = ["vllm-ascend", "install"] + (["--remove-csrc-build"] if remove else [])
+    arguments = ["vllm", "install"] + (["--remove-csrc-build"] if remove else [])
     assert builder.main(arguments) == 17
     assert build.exists() == (not remove)
     assert (cache / "keep").read_text() == "valid cache"
@@ -228,7 +228,7 @@ def test_remote_cleanup_flag_reaches_container(builder, monkeypatch):
     assert (
         builder.main(
             [
-                "vllm-ascend",
+                "vllm",
                 "install",
                 "--remove-csrc-build",
                 "--host",
@@ -239,3 +239,12 @@ def test_remote_cleanup_flag_reaches_container(builder, monkeypatch):
         )
         == 17
     )
+
+
+def test_host_venv_can_stop_managed_service(builder, monkeypatch, tmp_path):
+    import serve
+
+    monkeypatch.setattr(builder, "is_container", lambda: False)
+    monkeypatch.setenv("VIRTUAL_ENV", "/active-venv")
+    monkeypatch.setattr(serve, "state_directory", lambda: tmp_path)
+    assert builder.main(["vllm", "serve", "stop", "--no-hints"]) == 0

@@ -187,3 +187,16 @@ def test_source_twice_preserves_python_completion(tmp_path):
     assert complete(tmp_path, ["python3", "other.py", ""], setup=setup) == [
         "original-result"
     ]
+
+
+@pytest.mark.parametrize("entrypoint", ["dev", "dev/__main__.py"])
+def test_shared_dev_resource_completion(tmp_path, entrypoint):
+    prefix = ["python3", str(SSH.parent / "code" / entrypoint)]
+    resources = complete(tmp_path, [*prefix, ""])
+    assert "vllm" in resources
+    assert "devtools" in resources
+    assert "vllm-ascend" not in resources
+    assert "serve" in complete(tmp_path, [*prefix, "vllm", ""])
+    assert "--devices" in complete(tmp_path, [*prefix, "vllm", "serve", "--"])
+    assert "--compile-ops" in complete(tmp_path, [*prefix, "vllm", "install", "--"])
+    assert "serve" not in complete(tmp_path, [*prefix, "devtools", ""])

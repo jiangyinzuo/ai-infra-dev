@@ -173,9 +173,9 @@ _build_complete() {
     local resource=${COMP_WORDS[start]:-} previous=${COMP_WORDS[COMP_CWORD-1]}
     COMPREPLY=()
     if ((COMP_CWORD == start)); then
-        _complete_values -h --help vllm-ascend devtools
+        _complete_values -h --help vllm devtools
     elif ((COMP_CWORD == start + 1)); then
-        if [[ $resource == vllm-ascend ]]; then _complete_values -h --help install serve; else _complete_values -h --help install; fi
+        if [[ $resource == vllm ]]; then _complete_values -h --help install serve; else _complete_values -h --help install; fi
     else
         case $previous in
             --host) _ssh_usg_complete "$HOME/.ssh/config" ;;
@@ -192,7 +192,7 @@ _build_complete() {
                     [[ $name == "$current"* ]] && COMPREPLY+=("$name")
                 done ;;
             *)
-                if [[ $resource == vllm-ascend ]]; then
+                if [[ $resource == vllm ]]; then
                     if [[ ${COMP_WORDS[start+1]:-} == serve ]]; then
                         _complete_values -h --help stop --host --container --model --devices --script
                     else
@@ -243,7 +243,7 @@ _cli_python_complete() {
 }
 
 complete -F _cli_complete cli.py
-complete -F _build_complete "${_ssh_completion_dir%/ssh}/code/vllm-ascend-workspace/dev/__main__.py"
+complete -F _build_complete "${_ssh_completion_dir%/ssh}/code/dev/__main__.py"
 for _completion_cli in npu-top createuser container-dev/devtools; do
     complete -F _cli_complete "./$_completion_cli/cli.py" "$_completion_cli/cli.py" "$_ssh_completion_dir/$_completion_cli/cli.py"
 done

@@ -140,7 +140,7 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers delete --cle
 
 ## 补全与测试
 
-执行 `source ~/ai-infra-dev/completion.bash`，支持直接运行入口及 `python3` 调用的 CLI、workspace `dev/` 入口的命令、选项与主机名补全。
+执行 `source ~/ai-infra-dev/completion.bash`，支持直接运行入口及 `python3` 调用的 CLI、共享 `~/ai-infra-dev/code/dev` 入口的 `vllm` / `devtools` 命令、选项与主机名补全。服务入口为 `python3 ~/ai-infra-dev/code/dev vllm serve`；通用资源名不改变平台支持范围，工具仍执行 Ascend 安装与 NPU 选择，详见 [workspace 说明](../../code/vllm-ascend-workspace/README.md)。
 
 ```bash
 uv run --with pytest python -m pytest smoketest -q

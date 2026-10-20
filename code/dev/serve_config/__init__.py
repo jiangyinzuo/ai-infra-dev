@@ -7,3 +7,4 @@ from dataclasses import dataclass
 class ServeConfig:
     device_count: int
     serve_command: list[str]
+    model: str | None = None

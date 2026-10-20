@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""在容器中 editable 安装 vllm-ascend；也可从 WSL 驱动远程容器。"""
+"""在容器中管理 vLLM 服务、安装 Ascend 插件；也可从 WSL 驱动远程容器。"""
 
 import argparse
 import os
@@ -9,7 +9,7 @@ import shlex
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ssh"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ssh_common.remote import checked_command, host_alias, is_wsl, ssh_command
@@ -22,7 +22,7 @@ def main(argv=None):
         raise ValueError("dev 要求 Python >= 3.11")
     parser = argparse.ArgumentParser(description=__doc__)
     resources = parser.add_subparsers(dest="resource", required=True)
-    for resource in ("vllm-ascend", "devtools"):
+    for resource in ("vllm", "devtools"):
         group = resources.add_parser(resource)
         actions = group.add_subparsers(dest="action", required=True)
         install = actions.add_parser("install", help="安装 " + resource)
@@ -31,7 +31,7 @@ def main(argv=None):
         )
         install.add_argument("--container", help="远程容器名称或 ID")
         install.add_argument("--no-hints", action="store_true", help=argparse.SUPPRESS)
-        if resource == "vllm-ascend":
+        if resource == "vllm":
             install.add_argument(
                 "--compile-ops", action="store_true", help="编译算子（首次安装时使用）"
             )
@@ -44,13 +44,16 @@ def main(argv=None):
             serve.add_argument("serve_action", nargs="?", choices=["stop"])
             serve.add_argument("--host", type=host_alias)
             serve.add_argument("--container")
-            serve.add_argument("--model", help="模型目录；省略时交互选择")
+            serve.add_argument(
+                "--model", help="本地模型目录；省略时使用配置默认模型或交互选择"
+            )
             serve.add_argument(
                 "--script",
                 help="serve_config/ 下的 Python 配置文件名，例如 qwen3.5-0.8b.py",
             )
             serve.add_argument(
-                "--devices", help="逗号分隔的空闲 NPU device IDs；省略时选择"
+                "--devices",
+                help="GPU index/UUID 或 NPU 全局 IDs，逗号分隔；省略时选择空闲卡",
             )
             serve.add_argument(
                 "--no-hints", action="store_true", help=argparse.SUPPRESS
@@ -82,7 +85,7 @@ def execute(args, parser):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args.container):
             parser.error("--container 必须为容器名称或 ID")
         # 本项目容器共享宿主机 HOME；在容器内展开 HOME，且用 login shell 加载工具环境。
-        command = 'exec python3 "$HOME"/ai-infra-dev/code/vllm-ascend-workspace/dev'
+        command = 'exec python3 "$HOME"/ai-infra-dev/code/dev'
         command += " " + shlex.join([args.resource, args.action])
         command += " --no-hints"
         if getattr(args, "compile_ops", False):
@@ -95,7 +98,7 @@ def execute(args, parser):
             for key in ("model", "devices", "script"):
                 if getattr(args, key):
                     command += " " + shlex.join(["--" + key, getattr(args, key)])
-        if args.resource == "vllm-ascend":
+        if args.resource == "vllm":
             remote = shlex.join(
                 container_exec(
                     args.container, ["bash", "-lc", command], interactive=True
@@ -113,6 +116,10 @@ def execute(args, parser):
         return ssh_command(args.host, checked_command(args.host, remote))
     if args.host or args.container:
         parser.error("--host 和 --container 仅用于 WSL 远程调用")
+    if args.action == "serve":
+        import serve
+
+        return serve.execute(args)
     if not is_container():
         raise ValueError(
             "禁止在宿主机编译；请在容器内执行，或从 WSL 指定 --host 和 --container"
@@ -123,16 +130,12 @@ def execute(args, parser):
         or sys.prefix != sys.base_prefix
     ):
         raise ValueError("禁止在虚拟环境内构建；请使用容器自带的 pip")
-    if args.action == "serve":
-        import serve
-
-        return serve.execute(args)
     if args.resource == "devtools":
         requirements = Path(__file__).resolve().parent / "requirements-dev.txt"
         command = ["pip", "install", "-r", str(requirements)]
         print(shlex.join(command), flush=True)
         return subprocess.run(command, check=False).returncode
-    project = Path(__file__).resolve().parents[1] / "vllm-ascend"
+    project = Path(__file__).resolve().parents[1] / "vllm-ascend-workspace/vllm-ascend"
     if not project.exists() and not project.is_symlink():
         url = (
             input(

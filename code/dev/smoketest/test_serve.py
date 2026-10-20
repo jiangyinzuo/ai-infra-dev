@@ -21,7 +21,8 @@ def service(monkeypatch, tmp_path):
         sys.modules,
         "serve_resources",
         SimpleNamespace(
-            choose_model=lambda value: "/model", choose_devices=lambda value: "0"
+            choose_model=lambda value: "/model", choose_devices=lambda value: "0",
+            device_visibility_variable=lambda: "ASCEND_RT_VISIBLE_DEVICES",
         ),
     )
     binary = tmp_path / "vllm"
@@ -103,7 +104,8 @@ def test_device_count_mismatch_never_launches(service, monkeypatch, tmp_path):
         sys.modules,
         "serve_resources",
         SimpleNamespace(
-            choose_model=lambda value: "/model", choose_devices=lambda value: "0,1"
+            choose_model=lambda value: "/model", choose_devices=lambda value: "0,1",
+            device_visibility_variable=lambda: "ASCEND_RT_VISIBLE_DEVICES",
         ),
     )
     with pytest.raises(ValueError, match="device"):
@@ -117,3 +119,34 @@ def test_bash_configuration_rejected(service, tmp_path):
     path.write_text("exec vllm serve /model\n")
     with pytest.raises(ValueError, match="Python"):
         service.load_config(path)
+
+
+def test_gpu_launch_uses_config_model_and_cuda_visibility(service, monkeypatch, tmp_path):
+    monkeypatch.setitem(
+        sys.modules,
+        "serve_resources",
+        SimpleNamespace(
+            choose_model=lambda value: pytest.fail("default model prompted"),
+            choose_devices=lambda value: "GPU-selected",
+            device_visibility_variable=lambda: "CUDA_VISIBLE_DEVICES",
+        ),
+    )
+    (tmp_path / "serve_config/launch.py").write_text(
+        'from serve_config import ServeConfig\n'
+        'config = ServeConfig(1, ["vllm", "serve", "{model}"], model="deepseek-ai/DeepSeek-V3.2")\n'
+    )
+    (tmp_path / "vllm").write_text(
+        "#!" + sys.executable + "\n"
+        "import os,sys,time\n"
+        'assert sys.argv[1:] == ["serve", "deepseek-ai/DeepSeek-V3.2"]\n'
+        'assert os.environ["CUDA_VISIBLE_DEVICES"] == "GPU-selected"\n'
+        'assert "ASCEND_RT_VISIBLE_DEVICES" not in os.environ\n'
+        'print("gpu-ready", flush=True)\n'
+        'time.sleep(120)\n'
+    )
+    monkeypatch.delenv("ASCEND_RT_VISIBLE_DEVICES", raising=False)
+    assert service.execute(options()) == 0
+    state = json.loads((tmp_path / "service.json").read_text())
+    assert "gpu-ready" in Path(state["log"]).read_text()
+    service.execute(options("stop"))
+    os.waitpid(state["pid"], 0)

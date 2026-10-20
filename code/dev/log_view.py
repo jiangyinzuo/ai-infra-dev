@@ -16,7 +16,7 @@ def ssh_args(host, command):
 
 
 def attach(args):
-    query = 'exec python3 "$HOME"/ai-infra-dev/code/vllm-ascend-workspace/dev vllm-ascend serve --print-log --no-hints'
+    query = 'exec python3 "$HOME"/ai-infra-dev/code/dev vllm serve --print-log --no-hints'
     command = shlex.join(container_exec(args.container, ["bash", "-lc", query]))
     result = subprocess.run(
         ssh_args(args.host, checked_command(args.host, command)),
