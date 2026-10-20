@@ -9,6 +9,7 @@ import shlex
 import subprocess
 import shutil
 from typing import Iterable, Optional, Union
+from ssh_common.transfer import rsync_command
 
 from ssh_common.config import REMOTE_USER
 from ssh_common.remote import (
@@ -189,18 +190,19 @@ def fetch_model(args) -> int:
     # rsync -s protects remote spaces/metacharacters; -L materializes HF cache links.
     # Do not use --delete or --inplace: retain unrelated files and partial downloads.
     return subprocess.run(
-        [
-            "rsync",
-            "-aL",
-            "--protect-args",
-            "--partial",
-            "--info=progress2",
-            # WSL → Windows SSH 的非阻塞管道可能触发 write failed 11，损坏 rsync 协议流。
-            "--blocking-io",
-            "-e",
-            shlex.quote(str(SSH_DIR / "ssh2")),
-            "--rsync-path",
-            checked_command(args.host, "exec rsync"),
+        rsync_command(
+            args.host,
+            SSH_DIR / "ssh2",
+            "exec rsync",
+            [
+                "-aL",
+                "--protect-args",
+                "--partial",
+                "--info=progress2",
+                "--blocking-io",
+            ],
+        )
+        + [
             "--",
             f"{REMOTE_USER}@{args.host}:{source}/",
             str(destination) + "/",
@@ -280,19 +282,21 @@ def upload_model(args) -> int:
     # Keep parent directories unchanged. Uploaded content is public-read, not public-write.
     remote = "mkdir -p -- " + shlex.quote(destination) + " && exec rsync"
     result = subprocess.run(
-        [
-            "rsync",
-            "-rLt",
-            "--perms",
-            "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r",
-            "--protect-args",
-            "--partial",
-            "--blocking-io",
-            "--info=progress2",
-            "-e",
-            shlex.quote(str(SSH_DIR / "ssh2")),
-            "--rsync-path",
-            checked_command(args.host, remote),
+        rsync_command(
+            args.host,
+            SSH_DIR / "ssh2",
+            remote,
+            [
+                "-rLt",
+                "--perms",
+                "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r",
+                "--protect-args",
+                "--partial",
+                "--blocking-io",
+                "--info=progress2",
+            ],
+        )
+        + [
             "--",
             str(source) + "/",
             f"{REMOTE_USER}@{args.host}:{destination}/",

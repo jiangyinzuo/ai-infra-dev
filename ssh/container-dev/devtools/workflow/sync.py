@@ -16,6 +16,7 @@ from ssh_common.config import (
 from ssh_common.remote import add_host_argument, checked_command
 from ssh_common.inventory import read_machines, machine_record
 from ssh_common.terminal import green, run
+from ssh_common.transfer import rsync_command
 
 
 def register(subparsers):
@@ -68,15 +69,7 @@ def synchronize(plans, args):
         remote_command = "exec rsync"
         if args.apply:
             remote_command = f"mkdir -p -- {remote_path(destination)} && exec rsync"
-        command = [
-            "rsync",
-            "-av",
-            "--info=progress2",
-            "-e",
-            shlex.quote(ssh),
-            "--rsync-path",
-            checked_command(host, remote_command),
-        ]
+        command = rsync_command(host, ssh, remote_command, ["-av", "--info=progress2"])
         if not args.apply:
             command.append("--dry-run")
         command += [

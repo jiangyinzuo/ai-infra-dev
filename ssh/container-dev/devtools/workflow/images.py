@@ -23,6 +23,7 @@ from ssh_common.remote import (
     run_remote_cli,
     host_alias,
 )
+from ssh_common.transfer import rsync_command
 from workflow.image_store import ensure_image
 from workflow.sync import remote_path
 from workflow.paths import DATA_ROOT
@@ -223,18 +224,20 @@ def upload(args):
     )
     remote = 'cd "$HOME" && mkdir -p -- ' + remote_path(destination) + " && exec rsync"
     result = subprocess.run(
-        [
-            "rsync",
-            "-rt",
-            "--partial",
-            "--partial-dir=.rsync-partial",
-            "--protect-args",
-            "--blocking-io",
-            "--info=progress2",
-            "-e",
-            shlex.quote(str(SSH_DIR / "ssh2")),
-            "--rsync-path",
-            checked_command(args.host, remote),
+        rsync_command(
+            args.host,
+            SSH_DIR / "ssh2",
+            remote,
+            [
+                "-rt",
+                "--partial",
+                "--partial-dir=.rsync-partial",
+                "--protect-args",
+                "--blocking-io",
+                "--info=progress2",
+            ],
+        )
+        + [
             "--",
             str(archive),
             f"{REMOTE_USER}@{args.host}:{transfer_destination}",

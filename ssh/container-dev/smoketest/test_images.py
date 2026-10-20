@@ -39,6 +39,9 @@ def test_upload_real_rsync(monkeypatch, tmp_path, home_relative):
         else str(destination),
     )
     monkeypatch.setattr(images, "checked_command", lambda host, command: command)
+    from ssh_common import transfer
+
+    monkeypatch.setattr(transfer, "checked_command", lambda host, command: command)
     monkeypatch.setattr(images, "is_wsl", lambda: True)
     statuses = iter(["missing", "loaded"])
     monkeypatch.setattr(images, "remote_load", lambda host, image: next(statuses))

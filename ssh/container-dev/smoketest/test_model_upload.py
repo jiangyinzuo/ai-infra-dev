@@ -50,6 +50,9 @@ def test_upload_real_rsync_public_permissions(monkeypatch, tmp_path):
     monkeypatch.setattr(models, "SSH_DIR", tmp_path)
     monkeypatch.setattr(models, "is_wsl", lambda: True)
     monkeypatch.setattr(models, "checked_command", lambda host, command: command)
+    from ssh_common import transfer
+
+    monkeypatch.setattr(transfer, "checked_command", lambda host, command: command)
     original = subprocess.run
 
     def run(command, **kwargs):

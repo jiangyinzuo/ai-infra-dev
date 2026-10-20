@@ -38,6 +38,9 @@ def test_fetch_selected_model_with_real_rsync(monkeypatch, tmp_path):
     ssh.chmod(0o755)
     monkeypatch.setattr(models, "SSH_DIR", tmp_path)
     monkeypatch.setattr(models, "checked_command", lambda host, command: "rsync")
+    from ssh_common import transfer
+
+    monkeypatch.setattr(transfer, "checked_command", lambda host, command: "rsync")
     monkeypatch.setattr(models, "is_wsl", lambda: True)
     monkeypatch.setattr(
         models, "discover_models", lambda *a, **kw: ["/not-selected", str(source)]
