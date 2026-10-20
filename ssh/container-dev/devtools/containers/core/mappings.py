@@ -186,19 +186,11 @@ def repair_bindfs_limit(target: Path, source: Path) -> None:
     )
 
 
+from .bindfs_processes import scan_bindfs
+
+
 def bindfs_processes() -> dict:
-    result = {}
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            args = (entry / "cmdline").read_bytes().decode().rstrip("\0").split("\0")
-        except (OSError, UnicodeError):
-            continue
-        if len(args) >= 3 and Path(args[0]).name == "bindfs":
-            if (
-                "--create-for-user=" + str(os.getuid()) in args
-                and "--create-for-group=" + str(os.getgid()) in args
-            ):
-                result[args[-1]] = args[-2]
-    return result
+    return {
+        process["target"]: process["source"]
+        for process in scan_bindfs(os.getuid(), os.getgid())
+    }
