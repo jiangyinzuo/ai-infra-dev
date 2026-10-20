@@ -80,6 +80,8 @@ source ~/ai-infra-dev/completion.bash
 
 `ssh_common/config.py` 统一维护主机分组、Windows/WSL SSH 路由、配置路径、公钥、远端用户、平台和环境变量名单。组名加 `*` 匹配主机；所有组通过 `ssh2` 连接。
 
+SSH argv 统一由 `ssh_common.remote.ssh_arguments()` 构造，rsync 传输入口复用 `ssh_common.transfer.rsync_command()`；调用方仍决定传输权限、部分文件策略和进程执行方式。bindfs 查询与额度修复共用身份识别，提权修复保持严格读取及源/目标匹配。workspace dev 的 Docker exec 参数由 `dev/container_command.py` 统一构造，不改变服务环境或生命周期。
+
 ## 模型发现
 
 使用 `container-dev/devtools/cli.py models discovery --host HOST --json`，参见 [容器开发工具](container-dev/README.md)。

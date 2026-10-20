@@ -22,6 +22,7 @@ from ssh_common.remote import (
     is_remote_host,
     run_remote_cli,
     host_alias,
+    ssh_arguments,
 )
 from ssh_common.transfer import rsync_command
 from workflow.image_store import ensure_image
@@ -179,12 +180,7 @@ def remote_load(host, image):
         ]
     )
     with subprocess.Popen(
-        [
-            str(SSH_DIR / "ssh2"),
-            "-T",
-            f"{REMOTE_USER}@{host}",
-            checked_command(host, command),
-        ],
+        ssh_arguments(host, checked_command(host, command), tty=False, ssh_dir=SSH_DIR),
         stdout=subprocess.PIPE,
         text=True,
     ) as process:

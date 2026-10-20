@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "ssh"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ssh_common.remote import checked_command, host_alias, is_wsl, ssh_command
 from ssh_common.container import is_container
-from ssh_common.config import USER_IN_CONTAINER
+from container_command import container_exec
 
 
 def main(argv=None):
@@ -90,17 +90,9 @@ def execute(args, parser):
                     command += " " + shlex.join(["--" + key, getattr(args, key)])
         if args.resource == "vllm-ascend":
             remote = shlex.join(
-                [
-                    "docker",
-                    "exec",
-                    "--user",
-                    USER_IN_CONTAINER,
-                    "-it",
-                    args.container,
-                    "bash",
-                    "-lc",
-                    command,
-                ]
+                container_exec(
+                    args.container, ["bash", "-lc", command], interactive=True
+                )
             )
             result = ssh_command(
                 args.host, checked_command(args.host, remote), interactive=True
@@ -110,18 +102,7 @@ def execute(args, parser):
 
                 attach(args)
             return result
-        remote = shlex.join(
-            [
-                "docker",
-                "exec",
-                "--user",
-                USER_IN_CONTAINER,
-                args.container,
-                "bash",
-                "-lc",
-                command,
-            ]
-        )
+        remote = shlex.join(container_exec(args.container, ["bash", "-lc", command]))
         return ssh_command(args.host, checked_command(args.host, remote))
     if args.host or args.container:
         parser.error("--host 和 --container 仅用于 WSL 远程调用")

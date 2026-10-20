@@ -56,16 +56,20 @@ def checked_command(host: str, command: str) -> str:
     )
 
 
-def ssh_command(host: str, command: str, *, interactive: bool = False) -> int:
+def ssh_arguments(host: str, command: str, *, tty=None, ssh_dir=None) -> list:
     host_alias(host)
+    options = [] if tty is None else (["-t"] if tty else ["-T"])
+    return [
+        str((SSH_DIR if ssh_dir is None else ssh_dir) / "ssh2"),
+        *options,
+        f"{REMOTE_USER}@{host}",
+        command,
+    ]
+
+
+def ssh_command(host: str, command: str, *, interactive: bool = False) -> int:
     return subprocess.run(
-        [
-            str(SSH_DIR / "ssh2"),
-            *(["-t"] if interactive else []),
-            f"{REMOTE_USER}@{host}",
-            command,
-        ],
-        check=False,
+        ssh_arguments(host, command, tty=True if interactive else None), check=False
     ).returncode
 
 

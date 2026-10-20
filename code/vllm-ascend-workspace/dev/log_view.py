@@ -7,28 +7,17 @@ import signal
 import subprocess
 import sys
 
-from ssh_common.config import REMOTE_USER, USER_IN_CONTAINER
-from ssh_common.remote import SSH_DIR, checked_command
+from ssh_common.remote import SSH_DIR, checked_command, ssh_arguments
+from container_command import container_exec
 
 
 def ssh_args(host, command):
-    return [str(SSH_DIR / "ssh2"), "-T", f"{REMOTE_USER}@{host}", command]
+    return ssh_arguments(host, command, tty=False, ssh_dir=SSH_DIR)
 
 
 def attach(args):
     query = 'exec python3 "$HOME"/ai-infra-dev/code/vllm-ascend-workspace/dev vllm-ascend serve --print-log --no-hints'
-    command = shlex.join(
-        [
-            "docker",
-            "exec",
-            "--user",
-            USER_IN_CONTAINER,
-            args.container,
-            "bash",
-            "-lc",
-            query,
-        ]
-    )
+    command = shlex.join(container_exec(args.container, ["bash", "-lc", query]))
     result = subprocess.run(
         ssh_args(args.host, checked_command(args.host, command)),
         capture_output=True,
@@ -39,19 +28,7 @@ def attach(args):
     if not log:
         raise RuntimeError("未获得服务日志路径")
     command = shlex.join(
-        [
-            "docker",
-            "exec",
-            "--user",
-            USER_IN_CONTAINER,
-            args.container,
-            "tail",
-            "-n",
-            "100",
-            "-f",
-            "--",
-            log,
-        ]
+        container_exec(args.container, ["tail", "-n", "100", "-f", "--", log])
     )
     transport = ssh_args(args.host, command)
     reattach = shlex.join(transport) + " | less -R +F"

@@ -19,6 +19,7 @@ from ssh_common.remote import (
     host_alias,
     is_remote_host,
     is_wsl,
+    ssh_arguments,
 )
 
 DEFAULT_ROOTS = tuple(
@@ -59,12 +60,9 @@ def discover_models(
             return []
         command += " " + shlex.join([f"--root={root}" for root in search_roots])
         result = subprocess.run(
-            [
-                str(SSH_DIR / "ssh2"),
-                "-T",
-                f"{REMOTE_USER}@{host}",
-                checked_command(host, command),
-            ],
+            ssh_arguments(
+                host, checked_command(host, command), tty=False, ssh_dir=SSH_DIR
+            ),
             capture_output=True,
             text=True,
             check=True,
@@ -199,6 +197,7 @@ def fetch_model(args) -> int:
                 "--protect-args",
                 "--partial",
                 "--info=progress2",
+                # WSL → Windows SSH 的非阻塞管道可能触发 write failed 11，损坏 rsync 协议流。
                 "--blocking-io",
             ],
         )
@@ -228,12 +227,9 @@ def upload_model(args) -> int:
         + shlex.join([source.name, *roots])
     )
     result = subprocess.run(
-        [
-            str(SSH_DIR / "ssh2"),
-            "-T",
-            f"{REMOTE_USER}@{args.host}",
-            checked_command(args.host, command),
-        ],
+        ssh_arguments(
+            args.host, checked_command(args.host, command), tty=False, ssh_dir=SSH_DIR
+        ),
         capture_output=True,
         text=True,
         check=True,
