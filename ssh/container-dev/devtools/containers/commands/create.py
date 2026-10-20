@@ -159,9 +159,11 @@ def prepare(
                 "Source must be an existing writable directory: " + str(source)
             )
     # 自动共享目录通常属于管理员；容器 root/挂载 sudo 负责访问，不要求用户可写目录根。
+    # 不共享 /tmp：bindfs 删除仍打开的文件会留下 .fuse_hidden*，
+    # 导致 Triton TemporaryDirectory 清理报 ENOTEMPTY（issue #11）；保留容器原生临时目录。
     sources += [
         Path(path)
-        for path in ("/data", "/data1", "/data2", "/data3", "/mnt", "/tmp")
+        for path in ("/data", "/data1", "/data2", "/data3", "/mnt")
         if Path(path).is_dir() and Path(path) not in sources
     ]
     if args.name in existing_names:

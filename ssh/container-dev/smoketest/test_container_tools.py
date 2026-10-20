@@ -116,9 +116,29 @@ def test_create_prepare_uses_interactive_defaults(monkeypatch, tmp_path):
     assert args.name == "jiangyinzuo-bindfs-dev1"
     assert home == str(tmp_path)
     assert sources[0] == tmp_path
-    assert Path("/tmp") in sources and Path("/mnt") in sources
+    assert Path("/tmp") not in sources and Path("/mnt") in sources
     assert bindfs == "/usr/bin/bindfs"
     assert calls[-1] == ("sudo", "-n", "true")
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_default_shares_do_not_mount_container_tmp(monkeypatch, tmp_path, direct):
+    module = load("create")
+    monkeypatch.setattr(module, "require_host", lambda: None)
+    monkeypatch.setattr(module.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(module.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/bindfs")
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda *command, **kwargs: subprocess.CompletedProcess(command, 0, ""),
+    )
+    options = ["containers", "create", "--image", "image", "--name", "test-container"]
+    if direct:
+        options.append("--no-bindfs")
+    _, _, sources, _ = module.prepare(build_parser().parse_args(options))
+    assert Path("/tmp") not in sources
+    assert sources[0] == tmp_path
 
 
 def test_direct_create_needs_neither_bindfs_nor_sudo(monkeypatch, tmp_path):

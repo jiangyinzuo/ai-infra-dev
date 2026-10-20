@@ -119,6 +119,8 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers ls --json
 
 创建默认交互选择镜像和容器名，并通过 bindfs 共享 HOME；容器内 root 创建的文件归宿主机当前用户。`--share PATH` 添加共享目录，`--test-home PATH` 使用隔离目录，`--no-bindfs` 改为直接挂载（文件可能归 root 所有，避免 FUSE 开销）。
 
+默认不共享宿主机 `/tmp`，保留容器原生临时目录，避免 bindfs 的 `.fuse_hidden*` 行为导致 Triton JIT 临时目录清理失败（#11）。已有容器需重建才能移除原 `/tmp` 挂载；不会自动卸载共享映射或修改服务的 TMPDIR。重建前备份容器可写层及匿名 volume 中需要保留的数据。显式 `--share /tmp` 会重新引入这一风险。
+
 创建时的镜像选择与 `images ls` 共用 repository 过滤规则，同时包含 `vllm-ascend` 和 `quay.io/ascend/vllm-ascend`，按镜像创建时间从新到旧排列。
 
 新建或复用托管 bindfs 挂载时提高守护进程的 open-files 限制，防止并行编译受默认 1024 上限影响；不需要改变容器自身的限制。
