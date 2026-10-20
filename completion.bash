@@ -196,7 +196,7 @@ _build_complete() {
                     if [[ ${COMP_WORDS[start+1]:-} == serve ]]; then
                         _complete_values -h --help stop --host --container --model --devices --script
                     else
-                        _complete_values -h --help --host --container --compile-ops
+                        _complete_values -h --help --host --container --compile-ops --remove-csrc-build
                     fi
                 else
                     _complete_values -h --help --host --container

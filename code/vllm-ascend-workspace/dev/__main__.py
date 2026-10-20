@@ -35,6 +35,11 @@ def main(argv=None):
             install.add_argument(
                 "--compile-ops", action="store_true", help="编译算子（首次安装时使用）"
             )
+            install.add_argument(
+                "--remove-csrc-build",
+                action="store_true",
+                help="安装前删除 csrc/build，清除跨 Python/镜像复用的构建配置",
+            )
             serve = actions.add_parser("serve", help="后台启动服务或停止本工具的服务")
             serve.add_argument("serve_action", nargs="?", choices=["stop"])
             serve.add_argument("--host", type=host_alias)
@@ -82,6 +87,8 @@ def execute(args, parser):
         command += " --no-hints"
         if getattr(args, "compile_ops", False):
             command += " --compile-ops"
+        if getattr(args, "remove_csrc_build", False):
+            command += " --remove-csrc-build"
         if args.action == "serve":
             if args.serve_action:
                 command += " " + args.serve_action
@@ -153,6 +160,11 @@ def execute(args, parser):
         and not (project / "setup.py").is_file()
     ):
         raise ValueError("未找到 vllm-ascend 项目：" + str(project))
+    if args.remove_csrc_build:
+        # 不同镜像的 Python/ninja 路径可能不同；仅显式要求时清理共享源码的构建目录。
+        cleanup = ["rm", "-rf", "--", str(project / "csrc/build")]
+        print(shlex.join(cleanup), flush=True)
+        subprocess.run(cleanup, check=True)
     environment = dict(
         os.environ,
         VLLM_TARGET_DEVICE="empty",

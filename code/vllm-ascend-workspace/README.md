@@ -10,6 +10,8 @@ uv venv --python 3.12 --seed --managed-python --system-certs
 
 源码目录不存在时交互询问仓库 URL 和分支，默认 `git@github.com:vllm-project/vllm-ascend.git`、`main`，以 `--depth=1000` 克隆后继续安装。已有目录不覆盖、不自动切分支；远程安装需要交互终端。
 
+切换 Python 版本或镜像后，若共享的 `csrc/build` 缓存仍引用旧 Python/ninja 路径，可加 `--remove-csrc-build`。它默认关闭；启用后在 pip install 前删除当前项目的 `csrc/build`，保留 `csrc/build_cache`，会失去该目录的增量构建结果。共享源码的其他容器也会受此删除影响，勿与其他构建同时执行。
+
 ```bash
 # 容器内执行（自动定位 workspace 下的 vllm-ascend）
 python3 ~/ai-infra-dev/code/vllm-ascend-workspace/dev vllm-ascend install

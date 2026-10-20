@@ -183,3 +183,59 @@ def test_interactive_remote_uses_managed_user(
         )
         == 0
     )
+
+
+@pytest.mark.parametrize("remove", [False, True])
+def test_csrc_build_cleanup_is_opt_in_and_precedes_pip(
+    builder, monkeypatch, tmp_path, remove
+):
+    import os
+
+    project = tmp_path / "vllm-ascend"
+    build = project / "csrc/build"
+    build.mkdir(parents=True)
+    (project / "setup.py").touch()
+    (build / "CMakeCache.txt").write_text("/usr/local/python3.12.13/bin/ninja")
+    cache = project / "csrc/build_cache"
+    cache.mkdir()
+    (cache / "keep").write_text("valid cache")
+    pip = tmp_path / "pip"
+    pip.write_text(
+        "#!/bin/sh\n"
+        + ("test ! -e csrc/build" if remove else "test -f csrc/build/CMakeCache.txt")
+        + " || exit 81\nexit 17\n"
+    )
+    pip.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
+    arguments = ["vllm-ascend", "install"] + (["--remove-csrc-build"] if remove else [])
+    assert builder.main(arguments) == 17
+    assert build.exists() == (not remove)
+    assert (cache / "keep").read_text() == "valid cache"
+
+
+def test_remote_cleanup_flag_reaches_container(builder, monkeypatch):
+    import shlex
+
+    monkeypatch.setattr(builder, "is_wsl", lambda: True)
+    monkeypatch.setattr(builder, "checked_command", lambda host, command: command)
+
+    def ssh(host, command, **kwargs):
+        container = shlex.split(command)
+        assert "--remove-csrc-build" in shlex.split(container[-1])
+        return 17
+
+    monkeypatch.setattr(builder, "ssh_command", ssh)
+    assert (
+        builder.main(
+            [
+                "vllm-ascend",
+                "install",
+                "--remove-csrc-build",
+                "--host",
+                "suzhou-one",
+                "--container",
+                "dev1",
+            ]
+        )
+        == 17
+    )
