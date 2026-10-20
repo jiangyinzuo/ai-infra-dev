@@ -143,6 +143,15 @@ def execute(args):
             time.strftime("serve-%Y%m%d-%H%M%S-") + str(time.time_ns()) + ".log"
         )
         with log.open("ab") as output:
+            # 将启动参数保存在日志中，进入 less 后也能查看；不改变服务进程的输出行为。
+            header = (
+                "ASCEND_RT_VISIBLE_DEVICES="
+                + shlex.quote(devices)
+                + " "
+                + shlex.join(command)
+            )
+            output.write(("执行：" + header + "\n").encode("utf-8"))
+            output.flush()
             process = subprocess.Popen(
                 command,
                 cwd=script.parent,
