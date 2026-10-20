@@ -4,6 +4,8 @@ https://docs.vllm.ai/en/latest/contributing/index.html#documentation
 
 ### 创建venv并`pip install -e .`
 
+#### GPU环境
+
 setup.py 会去 https://wheels.vllm.ai/{commit}/{variant}/vllm/metadata.json 取预编译 wheel。
 如果当前commit还没产出wheel，安装可能报错。
 ```bash
@@ -34,6 +36,15 @@ python3 scripts/find_vllm_precompiled_commit.py --variant cu129 --format command
 ```
 
 可用参数：`--variant cu129|cu130|default`、`--arch x86_64|aarch64`、`--timeout 20`、`--format commit|env|command`。`default` 仅用于旧版使用无 variant 根索引的 `setup.py`；当前版本需要具体 CUDA variant。此脚本针对 CUDA wheel，不用于 Ascend/ROCm 安装。nightly 表示该 variant 当前已发布的构建，不保证是 GitHub `main` 的最新提交，也不保证与旧 checkout 的 C++/CUDA 接口兼容。
+
+#### 纯CPU环境
+
+仅用于python代码阅读，不编译C++
+```bash
+VLLM_USE_PRECOMPILED=1 uv pip install -e . --torch-backend cpu
+```
+
+如果要源码编译，需要`sudo apt-get install -y libnuma-dev`
 
 ## 部署与测试
 
