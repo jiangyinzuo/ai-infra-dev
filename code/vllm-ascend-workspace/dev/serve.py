@@ -139,6 +139,12 @@ def execute(args):
             flush=True,
         )
         print("执行：" + shlex.join(command), flush=True)
+        print(
+            "运行时目录："
+            + str(script.parent / "runtime")
+            + "（vllm-ascend 可在此自动生成配置、锁及报告；已加入 .gitignore）",
+            flush=True,
+        )
         log = directory / (
             time.strftime("serve-%Y%m%d-%H%M%S-") + str(time.time_ns()) + ".log"
         )
