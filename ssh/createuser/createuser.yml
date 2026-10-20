@@ -197,15 +197,6 @@
       when: item.name in ansible_facts.getent_passwd
       loop: "{{ managed_users }}"
 
-    - name: 删除已由 Python 代理替代的旧 Bash 包装脚本
-      ansible.builtin.file:
-        path: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh/github-proxy.sh"
-        state: absent
-      when: item.name in ansible_facts.getent_passwd
-      loop: "{{ managed_users }}"
-      loop_control:
-        label: "{{ item.name }}"
-
     - name: 在用户 shell 初始化末尾恢复会话代理
       ansible.builtin.blockinfile:
         path: "{{ ansible_facts.getent_passwd[item.name][4] }}/.bashrc"
@@ -219,6 +210,10 @@
       when: item.name in ansible_facts.getent_passwd
       loop: "{{ managed_users }}"
 
+    # GitHub SSH 统一由此 Host 配置和 Python 代理处理；ssh2 不再生成或透传
+    # GIT_SSH_COMMAND，新容器也不由工具注入它，避免维护两套代理路径。
+    # 已有会话/容器中的旧变量不会自动清除，需自行 unset 或重建；不修改用户原有变量。
+    # git-repo update --debug 的临时 Git SSH 调试设置保持不变。
     - name: 配置 GitHub SSH Host，保留其他配置
       ansible.builtin.blockinfile:
         path: "{{ ansible_facts.getent_passwd[item.name][4] }}/.ssh/config"
