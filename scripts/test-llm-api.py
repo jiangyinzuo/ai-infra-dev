@@ -88,7 +88,7 @@ def main():
         {
             "model": model,
             "messages": [{"role": "user", "content": "写一首关于人工智能的诗"}],
-            "max_tokens": 200,
+            "max_tokens": 20,
             "stream": args.stream,
         },
         stream=args.stream,
