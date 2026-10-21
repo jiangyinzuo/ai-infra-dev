@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """更新 vLLM/Ascend 主仓库并对齐开发 worktree（只依赖 Python 3 和 Git）。
 
-用法：python3 code/update-vllm.py，可从任意目录调用。
+用法：python3 code/vllm-ascend-workspace/update-vllm.py，可从任意目录调用。
 首次运行克隆 main，后续只做 fast-forward，不重置本地提交或覆盖本地修改。
 本脚本不安装依赖；失败可能保留已完成的更新，修复原因后可再次运行。
 """
@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Literal, overload
 
 
-CODE_DIR = Path(__file__).resolve().parent
-WORKSPACE = CODE_DIR / "vllm-ascend-workspace"
+WORKSPACE = Path(__file__).resolve().parent
+CODE_DIR = WORKSPACE.parent
 VLLM = CODE_DIR / "vllm"
 ASCEND = WORKSPACE / "vllm-ascend"
 WORKTREE = WORKSPACE / "vllm"
@@ -88,7 +88,7 @@ def update_main(repo: Path, url: str) -> None:
 
 def main() -> None:
     if len(sys.argv) != 1:
-        raise ValueError("用法：python3 code/update-vllm.py（不接受参数）")
+        raise ValueError("用法：python3 code/vllm-ascend-workspace/update-vllm.py（不接受参数）")
     # 先检查所有现有目录，避免明知另一目录有修改时仍更新第一个仓库。
     check_main_repo(VLLM, VLLM_URL)
     check_main_repo(ASCEND, ASCEND_URL)

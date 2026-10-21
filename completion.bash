@@ -185,6 +185,8 @@ _build_complete() {
                 local config name
                 local base=${_cli_completion_command:-${COMP_WORDS[0]}}
                 base=${base%/}
+                # COMP_WORDS 保留字面量 ~/；引号内不会自动展开，需显式解析。
+                [[ $base != '~/'* ]] || base=$HOME/${base:2}
                 [[ $base != */__main__.py ]] || base=${base%/__main__.py}
                 for config in "$base"/serve_config/*.py; do
                     [[ -f $config && ${config##*/} != __init__.py ]] || continue
