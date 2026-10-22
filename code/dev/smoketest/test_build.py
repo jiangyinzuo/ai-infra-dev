@@ -163,7 +163,7 @@ def test_unsupported_python_rejected(builder, monkeypatch):
         builder.main(["devtools", "install"])
 
 
-@pytest.mark.parametrize("operation", [["install"], ["serve", "stop"]])
+@pytest.mark.parametrize("operation", [["install"], ["serve", "stop"], ["serve", "status"]])
 def test_interactive_remote_uses_managed_user(
     builder, monkeypatch, tmp_path, operation
 ):

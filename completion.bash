@@ -199,7 +199,7 @@ _build_complete() {
                 done ;;
             *)
                 if [[ ( $resource == vllm || $resource == vllm-ascend ) && ${COMP_WORDS[start+1]:-} == serve ]]; then
-                    _complete_values -h --help stop --host --container --model --devices --script
+                    _complete_values -h --help stop status --host --container --model --devices --script
                 elif [[ $resource == vllm-ascend && ${COMP_WORDS[start+1]:-} == install ]]; then
                     _complete_values -h --help --host --container --compile-ops --remove-csrc-build
                 elif [[ $resource == devtools && ${COMP_WORDS[start+1]:-} == install ]]; then

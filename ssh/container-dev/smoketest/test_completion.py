@@ -206,6 +206,7 @@ def test_shared_dev_resource_completion(tmp_path, entrypoint):
         assert "--script" in options
         assert "--compile-ops" not in options
         assert "stop" in complete(tmp_path, [*prefix, resource, "serve", ""])
+        assert "status" in complete(tmp_path, [*prefix, resource, "serve", ""])
     options = complete(tmp_path, [*prefix, "vllm-ascend", "install", "--"])
     assert "--compile-ops" in options
     assert "--remove-csrc-build" in options

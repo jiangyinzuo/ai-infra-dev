@@ -172,3 +172,40 @@ def test_platform_stop_leaves_other_service_running(service, monkeypatch, tmp_pa
         for resource, state in states.items():
             service.execute(options("stop", resource=resource))
             os.waitpid(state["pid"], 0)
+
+
+def test_status_reports_lifecycle_without_mutating_state(service, tmp_path, capsys):
+    query = options("status")
+    query.script = None
+    assert service.execute(query) == 0
+    assert "当前没有" in capsys.readouterr().out
+    assert not (tmp_path / "service.json").exists()
+
+    service.execute(options())
+    state_file = tmp_path / "service.json"
+    original = state_file.read_text()
+    state = json.loads(original)
+    capsys.readouterr()
+    assert service.execute(query) == 0
+    output = capsys.readouterr().out
+    assert "运行中" in output
+    assert str(state["pid"]) in output
+    assert state["log"] in output
+    assert state_file.read_text() == original
+    assert service.running(state)
+
+    service.stop(state)
+    os.waitpid(state["pid"], 0)
+    assert service.execute(query) == 0
+    assert "已退出" in capsys.readouterr().out
+    assert state_file.read_text() == original
+
+
+def test_status_rejects_reused_pid_identity(service, tmp_path, capsys):
+    state = {"pid": os.getpid(), "identity": "wrong-start-time", "model": "/model", "devices": "0", "script": "launch.py", "log": "/tmp/log"}
+    state_file = tmp_path / "service.json"
+    state_file.write_text(json.dumps(state))
+    original = state_file.read_text()
+    assert service.execute(options("status")) == 0
+    assert "已退出" in capsys.readouterr().out
+    assert state_file.read_text() == original

@@ -43,7 +43,7 @@ def parse_args(argv=None):
                 )
         if resource != "devtools":
             serve = actions.add_parser("serve", help="后台启动 GPU 服务" if resource == "vllm" else "后台启动 NPU 服务")
-            serve.add_argument("serve_action", nargs="?", choices=["stop"])
+            serve.add_argument("serve_action", nargs="?", choices=["stop", "status"])
             serve.add_argument("--host", type=host_alias)
             serve.add_argument("--container")
             serve.add_argument(
@@ -93,7 +93,7 @@ def execute(args, parser):
 def validate_serve(args, parser):
     if (
         args.action == "serve"
-        and args.serve_action != "stop"
+        and args.serve_action is None
         and not args.script
         and not args.print_log
     ):
@@ -130,7 +130,7 @@ def execute_remote(args, parser):
     result = ssh_command(
         args.host, checked_command(args.host, remote), interactive=interactive
     )
-    if result == 0 and args.action == "serve" and args.serve_action != "stop":
+    if result == 0 and args.action == "serve" and args.serve_action is None:
         from log_view import attach
 
         attach(args)

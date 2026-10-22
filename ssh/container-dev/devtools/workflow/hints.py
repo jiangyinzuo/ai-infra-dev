@@ -140,6 +140,7 @@ def show_dev(args):
         ("安装 vllm-ascend", ["vllm-ascend", "install"]),
         ("编译算子并安装 vllm-ascend", ["vllm-ascend", "install", "--compile-ops"]),
         ("启动服务", [resource, "serve", "--script", config]),
+        ("服务状态", [resource, "serve", "status"]),
         ("停止服务", [resource, "serve", "stop"]),
     ]:
         line = shlex.join(["python3", str(dev), *arguments, *connection])

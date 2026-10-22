@@ -218,23 +218,46 @@ def start_service(args, script, config, directory):
     return 0
 
 
-def execute(args):
-    if getattr(args, "print_log", False):
-        state = json.loads((state_directory(args.resource) / "service.json").read_text())
-        print(state["log"])
+def service_status(directory):
+    state_file = directory / "service.json"
+    if not state_file.exists():
+        print("当前没有本工具运行中的服务")
         return 0
-    stopping = args.serve_action == "stop"
+    state = json.loads(state_file.read_text())
+    status = "运行中（不代表 API 已就绪）" if running(state) else "已退出（状态记录已过期）"
+    print(f"状态：{status}")
+    for label, key in (("PID", "pid"), ("模型", "model"), ("设备", "devices"), ("配置", "script"), ("日志", "log")):
+        print(f"{label}：{state[key]}")
+    return 0
+
+
+def execute(args):
+    action = "log" if getattr(args, "print_log", False) else args.serve_action
     launch = None
-    if not stopping:
-        # 先验证配置，再考虑停止旧服务，避免无效配置打断现有服务。
-        script = resolve_script(args.script)
-        config = load_config(script)
-        launch = (script, config)
+    match action:
+        case None:
+            # 先验证配置，再考虑停止旧服务，避免无效配置打断现有服务。
+            script = resolve_script(args.script)
+            launch = (script, load_config(script))
+        case "stop" | "status" | "log":
+            pass
+        case _:
+            raise ValueError("不支持的服务动作：" + str(action))
     directory = state_directory(args.resource)
     with (directory / "lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if not prepare_existing_service(directory / "service.json", stopping):
-            return 0
-        if launch is None:
-            return 0
-        return start_service(args, *launch, directory)
+        match action:
+            case "log":
+                state = json.loads((directory / "service.json").read_text())
+                print(state["log"])
+                return 0
+            case "status":
+                return service_status(directory)
+            case "stop":
+                prepare_existing_service(directory / "service.json", stopping=True)
+                return 0
+            case None:
+                if not prepare_existing_service(directory / "service.json", stopping=False):
+                    return 0
+                script, config = launch
+                return start_service(args, script, config, directory)

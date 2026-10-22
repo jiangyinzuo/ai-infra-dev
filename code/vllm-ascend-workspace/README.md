@@ -57,9 +57,11 @@ config = ServeConfig(
 # Ascend NPU
 python3 ~/ai-infra-dev/code/dev vllm-ascend serve --script qwen3.5-0.8b.py
 python3 ~/ai-infra-dev/code/dev vllm-ascend serve --script qwen3.5-0.8b.py --model /mnt/share/weights/Qwen3.5-0.8B --devices 0
+python3 ~/ai-infra-dev/code/dev vllm-ascend serve status
 python3 ~/ai-infra-dev/code/dev vllm-ascend serve stop
 # NVIDIA GPU（使用已安装 CUDA vLLM 的 Python 环境）
 python3 ~/ai-infra-dev/code/dev vllm serve --script qwen3.5-0.8b.py
+python3 ~/ai-infra-dev/code/dev vllm serve status
 python3 ~/ai-infra-dev/code/dev vllm serve stop
 # WSL 可追加 --host HOST --container NAME；--script 只传 code/dev/serve_config 下的文件名
 ```
@@ -69,6 +71,8 @@ python3 ~/ai-infra-dev/code/dev vllm serve stop
 显式 `--model` 仍只接受本地模型路径；未指定时先使用配置的 `model` 默认值，配置未提供默认值则复用 `models discovery` 搜索本机模型，使用 `~/plugged/fzf/bin/fzf` 实时模糊选择；缺少 fzf 时退回编号选择。NPU 延续 npu-top 空闲检查和全局逻辑 ID 选择。GPU 的空闲条件是 nvidia-smi 未报告 compute process 且 GPU utilization 为 0；非零显存占用不直接判忙，选择时显示显存用量，残留显示/驱动占用仍可能影响启动。`--devices` 接受 nvidia-smi 的编号或无歧义的 GPU UUID 前缀，最终用完整 UUID 设置 CUDA 可见性，不把 CUDA ordinal 当作 nvidia-smi 编号。继承的 `CUDA_VISIBLE_DEVICES` 会限制候选设备：UUID 可直接解析，数字掩码仅在已有 `CUDA_DEVICE_ORDER=PCI_BUS_ID` 时按 PCI 顺序解析，否则拒绝猜测；工具不修改设备排序环境。空掩码或 `-1` 表示无可用 GPU。MIG 或所选平台遥测不可用时拒绝启动，不悄悄切换另一平台。
 
 服务后台运行，日志路径在启动后打印；后台进程启动不等于 API 已就绪。GPU 与 NPU 的服务状态、日志独立，启动或停止其中一种不会管理另一种；各自再次启动时询问是否停止旧服务并重启。对应资源的 `serve stop` 只停止本工具记录的实例，绝不按进程名批量杀进程。状态和日志按用户、容器 hostname 及资源保存在 `/tmp`，容器重建后不保证保留。空闲检查只涵盖容器可见信息，不提供跨用户独占分配，检查与启动之间仍有竞争窗口。
+
+`serve status` 显示本工具记录的服务是否运行，以及 PID、模型、设备、配置和日志路径；不代表 API 已就绪，不清理过期记录。WSL 远程查询支持相同的 `--host`、`--container` 参数，不进入日志跟随。
 
 从 WSL 启动成功后，本地自动运行 `less -R +F` 跟随容器日志；需要本地安装 less 并使用交互终端。Ctrl-C 暂停实时跟随、进入浏览模式，`F` 恢复跟随；先 Ctrl-C 再按 `q` 退出查看。退出只断开日志流，不停止服务，并打印带实际 Host、容器及日志路径的重新查看命令。停止服务仍需执行 `serve stop`。不修改服务进程的输出缓冲行为，日志显示可能有延迟。
 
