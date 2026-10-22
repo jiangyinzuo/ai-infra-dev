@@ -109,10 +109,10 @@ def show(args) -> None:
                 )
     if getattr(args, "command", None) != "containers":
         return
-    show_dev(args)
+    show_dev(args, resource="vllm-ascend")
 
 
-def show_dev(args):
+def show_dev(args, *, resource=None):
     stream = sys.stderr
     host = getattr(args, "host", None)
     dev = Path(__file__).resolve().parents[4] / "code/dev"
@@ -131,14 +131,20 @@ def show_dev(args):
             name or "<CONTAINER>",
         ]
     config = "qwen3.5-0.8b.py"
-    resource = getattr(args, "resource", None)
+    resource = resource or getattr(args, "resource", None)
     resource = resource if resource in ("vllm", "vllm-ascend") else "vllm-ascend"
     title = "vLLM GPU Dev" if resource == "vllm" else "vLLM Ascend Dev"
     print("  " + color(title, "1;35", stream), file=stream)
+    install_commands = {
+        "vllm": [("安装 vllm", ["vllm", "install"])],
+        "vllm-ascend": [
+            ("安装 vllm-ascend", ["vllm-ascend", "install"]),
+            ("编译算子并安装 vllm-ascend", ["vllm-ascend", "install", "--compile-ops"]),
+        ],
+    }
     for label, arguments in [
         ("安装开发工具", ["devtools", "install"]),
-        ("安装 vllm-ascend", ["vllm-ascend", "install"]),
-        ("编译算子并安装 vllm-ascend", ["vllm-ascend", "install", "--compile-ops"]),
+        *install_commands[resource],
         ("启动服务", [resource, "serve", "--script", config]),
         ("服务状态", [resource, "serve", "status"]),
         ("停止服务", [resource, "serve", "stop"]),

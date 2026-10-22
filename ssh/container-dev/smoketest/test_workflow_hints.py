@@ -80,6 +80,23 @@ def test_dev_serve_hints_preserve_explicit_resource(monkeypatch, capsys):
         assert f"python3 {dev} {resource} serve stop" in output
         other = "vllm-ascend" if resource == "vllm" else "vllm"
         assert f"python3 {dev} {other} serve" not in output
-        assert " vllm install" not in output
+        assert f"python3 {dev} {resource} install" in output
+        assert f"python3 {dev} {other} install" not in output
+        assert ("--compile-ops" in output) == (resource == "vllm-ascend")
+        assert f"python3 {dev} {resource} serve status" in output
         assert "--host" not in output
         assert "--container" not in output
+
+
+def test_ssh_workflow_always_uses_ascend_dev_hints(monkeypatch, capsys):
+    monkeypatch.setattr(hints, "is_wsl", lambda: False)
+    args = build_parser().parse_args(["containers", "ls"])
+    args.resource = "vllm"
+    hints.show(args)
+    output = capsys.readouterr().err
+    assert "vLLM Ascend Dev" in output
+    assert " vllm-ascend install" in output
+    assert " vllm-ascend serve status" in output
+    assert "vLLM GPU Dev" not in output
+    assert " vllm install" not in output
+    assert " vllm serve" not in output

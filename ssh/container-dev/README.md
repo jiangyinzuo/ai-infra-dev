@@ -140,7 +140,7 @@ python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers delete --cle
 
 ## 补全与测试
 
-执行 `source ~/ai-infra-dev/completion.bash`，支持直接运行入口及 `python3` 调用的 CLI、共享 `~/ai-infra-dev/code/dev` 入口的 `vllm` / `vllm-ascend` / `devtools` 命令、选项与主机名补全。`python3 ~/ai-infra-dev/code/dev vllm serve` 使用 NVIDIA GPU；`vllm-ascend serve` 使用 NPU，`vllm-ascend install` 在容器内安装 Ascend 项目（可加 `--compile-ops`，或用 `--remove-csrc-build` 清理旧构建目录）。`vllm install` 在 GPU checkout 中查找已发布 CUDA wheel 后执行 `uv pip install -e .`。GPU 与 NPU 的服务状态和日志独立，分别用对应资源的 `serve stop` 停止；容器后续命令提示默认使用 Ascend。配置中的上游命令仍为 `vllm serve`，详见 [workspace 说明](../../code/vllm-ascend-workspace/README.md)。
+执行 `source ~/ai-infra-dev/completion.bash`，支持直接运行入口及 `python3` 调用的 CLI、共享 `~/ai-infra-dev/code/dev` 入口的 `vllm` / `vllm-ascend` / `devtools` 命令、选项与主机名补全。`python3 ~/ai-infra-dev/code/dev vllm serve` 使用 NVIDIA GPU；`vllm-ascend serve` 使用 NPU，`vllm-ascend install` 在容器内安装 Ascend 项目（可加 `--compile-ops`，或用 `--remove-csrc-build` 清理旧构建目录）。`vllm install` 在 GPU checkout 中查找已发布 CUDA wheel 后执行 `uv pip install -e .`。GPU 与 NPU 的服务状态和日志独立，分别用对应资源的 `serve stop` 停止；dev 后续命令只提示当前 GPU 或 Ascend 平台，SSH 容器工作流只提示 Ascend，不同时展示两套。配置中的上游命令仍为 `vllm serve`，详见 [workspace 说明](../../code/vllm-ascend-workspace/README.md)。
 
 ```bash
 uv run --with pytest python -m pytest smoketest -q
