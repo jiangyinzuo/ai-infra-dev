@@ -1,0 +1,8 @@
+# Keep vLLM source indexing and import resolution in the same project.
+required-version = ">=1.3.0"
+python-version = "3.12"
+python-interpreter-path = "vllm/.venv/bin/python"
+project-includes = ["vllm/**/*.py"]
+search-path = ["vllm"]
+# 父仓库忽略独立的 vLLM checkout，但它仍是需要索引的源码。
+use-ignore-files = false

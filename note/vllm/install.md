@@ -11,14 +11,14 @@ setup.py 会去 https://wheels.vllm.ai/{commit}/{variant}/vllm/metadata.json 取
 ```bash
 # 如果VLLM_USE_PRECOMPILED=0，会从头编译项目
 # 从此工作区的 vLLM 目录运行
-cd code/vllm
+cd code/vllm-workspace/vllm
 uv venv --python 3.12 --seed --managed-python
 # 企业内网可能需要用系统证书
 uv venv --python 3.12 --seed --managed-python --system-certs
 source .venv/bin/activate
 # 自动发现已发布的 CUDA wheel，失败时不会执行安装
 # env 输出同时固定 commit 和 CUDA variant，避免安装时选择不同索引
-if wheel_env=$(python3 ../../scripts/find_vllm_precompiled_commit.py --format env); then
+if wheel_env=$(python3 ../../../scripts/find_vllm_precompiled_commit.py --format env); then
     eval "$wheel_env"
     uv pip install -e .
 fi

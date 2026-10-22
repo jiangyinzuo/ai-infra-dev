@@ -7,7 +7,7 @@
 从仓库根目录执行，先用 `nvidia-smi` 确认所选 GPU 空闲：
 
 ```bash
-source code/vllm/.venv/bin/activate
+source code/vllm-workspace/vllm/.venv/bin/activate
 CUDA_VISIBLE_DEVICES=<空闲GPU的完整UUID> \
 python trace_python \
   --config trace_python/config/hisparse.py \

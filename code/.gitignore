@@ -1,3 +1,3 @@
-vllm/
+vllm-workspace/vllm/
 torch-npu/
 flashinfer/

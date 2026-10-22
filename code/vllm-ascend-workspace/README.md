@@ -6,7 +6,7 @@
 python3 ~/ai-infra-dev/code/vllm-ascend-workspace/update-vllm.py
 ```
 
-首次运行克隆 `code/vllm` 和本工作区下的 `vllm-ascend`，后续仅 fast-forward 更新两个仓库的 `main`。根据 `vllm-ascend/.github/vllm-main-verified.commit` 创建或对齐本工作区下的 `vllm` worktree，保持 detached HEAD；`code/vllm` 主仓库的位置不变。
+首次运行克隆 `code/vllm-workspace/vllm` 和本工作区下的 `vllm-ascend`，后续仅 fast-forward 更新两个仓库的 `main`。根据 `vllm-ascend/.github/vllm-main-verified.commit` 创建或对齐本工作区下的 `vllm` worktree，保持 detached HEAD；主仓库位于 `code/vllm-workspace/vllm`，Ascend worktree 仍位于 `code/vllm-ascend-workspace/vllm`。
 
 已有主仓库必须位于 `main` 且 origin 为官方 HTTPS URL（可用 Git `insteadOf` 重写为镜像）。所有受管理仓库和 worktree 必须无本地修改，包括未跟踪文件。失败可能保留已完成的更新，修复原因后可重新运行，不会重置本地提交或覆盖本地修改。
 
@@ -72,16 +72,16 @@ dev 将 `serve_command` 参数中的 `{model}` 替换为所选模型路径或配
 
 `deepseek-v3.2-hisparse.py` 是单卡学习配置：两张 SM120 16GiB 卡中只选择一张空闲卡，TP=1，不要求双卡通信。它使用 4 层、hidden size 256、8 个路由专家和 BF16 随机权重，保留 MLA 维度与 `index_topk=2048`，采用 `FLASHINFER_MLA_SPARSE_SM120`、`fp8_ds_mla` KV、64-token block、4096 行热缓冲和 1GiB 主机池。HiSparse 自动选择 Model Runner V2；起步使用 eager，不启用 speculative decoding，不设置服务的输出缓冲或其他运行时环境变量。
 
-在 `code/vllm` 中使用已经准备好的 CUDA 虚拟环境（以下 `--no-sync --offline` 只防止 uv 同步依赖，不阻止 Hugging Face 联网）：
+在 `code/vllm-workspace/vllm` 中使用已经准备好的 CUDA 虚拟环境（以下 `--no-sync --offline` 只防止 uv 同步依赖，不阻止 Hugging Face 联网）：
 
 ```bash
-cd ~/ai-infra-dev/code/vllm
-uv run --no-sync --offline python ../dev vllm serve --script deepseek-v3.2-hisparse.py
+cd ~/ai-infra-dev/code/vllm-workspace/vllm
+uv run --no-sync --offline python ../../dev vllm serve --script deepseek-v3.2-hisparse.py
 # 固定使用 nvidia-smi 编号 0；也可传完整 GPU UUID
-uv run --no-sync --offline python ../dev vllm serve --script deepseek-v3.2-hisparse.py --devices 0
+uv run --no-sync --offline python ../../dev vllm serve --script deepseek-v3.2-hisparse.py --devices 0
 # 完全离线时，目录需已包含 config.json、tokenizer 等元数据
-uv run --no-sync --offline python ../dev vllm serve --script deepseek-v3.2-hisparse.py --model /path/to/local/DeepSeek-V3.2 --devices 0
-uv run --no-sync --offline python ../dev vllm serve stop
+uv run --no-sync --offline python ../../dev vllm serve --script deepseek-v3.2-hisparse.py --model /path/to/local/DeepSeek-V3.2 --devices 0
+uv run --no-sync --offline python ../../dev vllm serve stop
 ```
 
 配置默认模型为 `deepseek-ai/DeepSeek-V3.2`。`--load-format dummy` 不下载完整模型权重，但仍需模型配置、tokenizer 等元数据，首次启动可能访问 Hugging Face；随机权重输出没有语言质量意义，仅适合观察调度、KV 分配/寻址、host mirror、spill 和 restore。

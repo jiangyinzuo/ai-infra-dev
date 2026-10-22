@@ -1,8 +1,8 @@
 [MAIN]
 # source-roots 只决定包名，不会把 editable 源码加入检查器的 sys.path。
 init-hook =
-    import sys; from pathlib import Path; from pylint.config import find_default_config_files; root = next(Path(p).resolve().parent for p in find_default_config_files() if Path(p).name == '.pylintrc'); sys.path[:0] = [str(root), str(root / 'code/vllm')]
+    import sys; from pathlib import Path; from pylint.config import find_default_config_files; root = next(Path(p).resolve().parent for p in find_default_config_files() if Path(p).name == '.pylintrc'); sys.path[:0] = [str(root), str(root / 'code/vllm-workspace/vllm')]
 source-roots =
     .,
     scripts,
-    code/vllm
+    code/vllm-workspace/vllm

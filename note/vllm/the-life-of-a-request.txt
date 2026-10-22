@@ -3,7 +3,8 @@ vim:set ft=vllmclass:
 DeepSeek-V3.2缩小版 + HiSparse 0.32.1rc1.dev158+g4964e4482.precompiled 2026-10-21
 
 Engine层：LLMEngine、EngineCore、InprocClient
-    用户通过python库直接调用推理，从 from vllm.v1.engine.llm_engine import LLMEngine 开始
+    用户通过python库直接调用推理，在本脚本中，从 from vllm.v1.engine.llm_engine import LLMEngine 开始。
+    InprocClient: 进程内客户端，访问 EngineCore。是class EngineCoreClient(ABC)的子类。
 
 Scheduler层：Scheduler
 KV cache管理层：KVCacheManager、KVCacheCoordinator、SingleTypeKVCacheManager、BlockPool

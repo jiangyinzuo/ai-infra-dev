@@ -15,7 +15,7 @@ from typing import Literal, overload
 
 WORKSPACE = Path(__file__).resolve().parent
 CODE_DIR = WORKSPACE.parent
-VLLM = CODE_DIR / "vllm"
+VLLM = CODE_DIR / "vllm-workspace/vllm"
 ASCEND = WORKSPACE / "vllm-ascend"
 WORKTREE = WORKSPACE / "vllm"
 VLLM_URL = "https://github.com/vllm-project/vllm.git"

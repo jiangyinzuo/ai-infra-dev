@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import cast
 from trace_python import Target, TraceConfig
 
-ROOT = Path(__file__).resolve().parents[2] / "code/vllm"
+ROOT = Path(__file__).resolve().parents[2] / "code/vllm-workspace/vllm"
 REQUEST = ("request.request_id", "request.num_computed_tokens", "request.num_tokens",
            "request.num_prompt_tokens", "request.num_output_tokens")
 
 
 def run(start):
-    sys.path.insert(0, str(ROOT.parent / "dev"))
+    sys.path.insert(0, str(ROOT.parents[1] / "dev"))
     # 必须等追踪器设置 config.env 后再导入 vLLM，避免提前缓存多进程配置。
     # pylint: disable=import-outside-toplevel
     from vllm import SamplingParams
@@ -22,7 +22,7 @@ def run(start):
     from vllm.v1.engine.llm_engine import LLMEngine
     # pylint: enable=import-outside-toplevel
 
-    serve = runpy.run_path(str(ROOT.parent / "dev/serve_config/deepseek-v3.2-hisparse.py"))["config"]
+    serve = runpy.run_path(str(ROOT.parents[1] / "dev/serve_config/deepseek-v3.2-hisparse.py"))["config"]
     parser = EngineArgs.add_cli_args(FlexibleArgumentParser())
     # 上游 parse_args 的推断类型包含 None；这里使用 argparse 的 Namespace 返回约定。
     parsed = cast(Namespace, parser.parse_args([
