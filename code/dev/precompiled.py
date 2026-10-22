@@ -1,23 +1,12 @@
-#!/usr/bin/env python3
-"""Find a published vLLM CUDA wheel commit without downloading the wheel.
+"""Find a published CUDA wheel; availability does not guarantee checkout ABI compatibility."""
 
-Examples:
-    python3 scripts/find_vllm_precompiled_commit.py
-    python3 scripts/find_vllm_precompiled_commit.py --variant cu129 --format command
-
-Only stdout contains the requested output; diagnostics go to stderr.
-Availability does not guarantee ABI compatibility with your source checkout.
-"""
-
-import argparse
 import json
 import os
 import platform
 import re
-import shlex
 import subprocess
 import sys
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
@@ -123,43 +112,18 @@ def discover(variant, arch, timeout):
     raise ValueError(f"nightly 中没有通过 commit 索引及下载检查的 {variant}/{arch} wheel")
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--variant",
-        help="例如 cu129、cu130；default 表示旧版无 variant 的根索引。默认自动检测",
-    )
-    parser.add_argument("--arch", default=platform.machine(), help="默认当前机器架构")
-    parser.add_argument("--timeout", type=float, default=20, help="每个 HTTP 请求超时秒数")
-    parser.add_argument("--format", choices=("commit", "env", "command"), default="commit")
-    args = parser.parse_args()
-    try:
-        if args.timeout <= 0:
-            raise ValueError("--timeout 必须大于 0")
-        variant = args.variant or detect_variant()
-        if not re.fullmatch(r"cu[0-9]+|default", variant):
-            raise ValueError("--variant 必须是 cu 加版本号（如 cu129），或 default")
-        commit, wheel_url = discover(variant, args.arch, args.timeout)
-        print(f"已验证 {variant}/{args.arch}：{wheel_url}", file=sys.stderr)
-        assignments = {
-            "VLLM_USE_PRECOMPILED": "1",
-            "VLLM_PRECOMPILED_WHEEL_COMMIT": commit,
-        }
-        if variant != "default":
-            assignments["VLLM_PRECOMPILED_WHEEL_VARIANT"] = variant
-        if args.format == "commit":
-            print(commit)
-        elif args.format == "env":
-            for key, value in assignments.items():
-                print(f"export {key}={shlex.quote(value)}")
-        else:
-            env = " ".join(f"{key}={shlex.quote(value)}" for key, value in assignments.items())
-            print(f"{env} uv pip install -e .")
-    except (OSError, URLError, ValueError) as exc:
-        print(f"发现失败：{exc}", file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+def find_vllm_precompiled_commit() -> dict[str, str]:
+    """Return the verified wheel environment; fail before installation on discovery errors."""
+    variant = detect_variant()
+    if not re.fullmatch(r"cu[0-9]+|default", variant):
+        raise ValueError("VLLM_PRECOMPILED_WHEEL_VARIANT 必须为 cu 加版本号或 default")
+    arch = platform.machine()
+    commit, wheel_url = discover(variant, arch, 20)
+    print(f"已验证 {variant}/{arch}：{wheel_url}", file=sys.stderr)
+    environment = {
+        "VLLM_USE_PRECOMPILED": "1",
+        "VLLM_PRECOMPILED_WHEEL_COMMIT": commit,
+    }
+    if variant != "default":
+        environment["VLLM_PRECOMPILED_WHEEL_VARIANT"] = variant
+    return environment

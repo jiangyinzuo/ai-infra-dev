@@ -16,13 +16,13 @@ def service(monkeypatch, tmp_path):
     spec = importlib.util.spec_from_file_location("serve_smoke", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    monkeypatch.setattr(module, "state_directory", lambda: tmp_path)
+    monkeypatch.setattr(module, "state_directory", lambda resource: tmp_path)
     monkeypatch.setitem(
         sys.modules,
         "serve_resources",
         SimpleNamespace(
-            choose_model=lambda value: "/model", choose_devices=lambda value: "0",
-            device_visibility_variable=lambda: "ASCEND_RT_VISIBLE_DEVICES",
+            choose_model=lambda value: "/model", choose_devices=lambda value, resource: "0",
+            device_visibility_variable=lambda resource: "ASCEND_RT_VISIBLE_DEVICES",
         ),
     )
     binary = tmp_path / "vllm"
@@ -47,9 +47,9 @@ def service(monkeypatch, tmp_path):
             os.killpg(row["pid"], signal.SIGTERM)
 
 
-def options(action=None):
+def options(action=None, resource="vllm-ascend"):
     return SimpleNamespace(
-        serve_action=action, model=None, devices=None, script="launch.py"
+        resource=resource, serve_action=action, model=None, devices=None, script="launch.py"
     )
 
 
@@ -104,8 +104,8 @@ def test_device_count_mismatch_never_launches(service, monkeypatch, tmp_path):
         sys.modules,
         "serve_resources",
         SimpleNamespace(
-            choose_model=lambda value: "/model", choose_devices=lambda value: "0,1",
-            device_visibility_variable=lambda: "ASCEND_RT_VISIBLE_DEVICES",
+            choose_model=lambda value: "/model", choose_devices=lambda value, resource: "0,1",
+            device_visibility_variable=lambda resource: "ASCEND_RT_VISIBLE_DEVICES",
         ),
     )
     with pytest.raises(ValueError, match="device"):
@@ -127,8 +127,8 @@ def test_gpu_launch_uses_config_model_and_cuda_visibility(service, monkeypatch, 
         "serve_resources",
         SimpleNamespace(
             choose_model=lambda value: pytest.fail("default model prompted"),
-            choose_devices=lambda value: "GPU-selected",
-            device_visibility_variable=lambda: "CUDA_VISIBLE_DEVICES",
+            choose_devices=lambda value, resource: "GPU-selected",
+            device_visibility_variable=lambda resource: "CUDA_VISIBLE_DEVICES",
         ),
     )
     (tmp_path / "serve_config/launch.py").write_text(
@@ -145,8 +145,30 @@ def test_gpu_launch_uses_config_model_and_cuda_visibility(service, monkeypatch, 
         'time.sleep(120)\n'
     )
     monkeypatch.delenv("ASCEND_RT_VISIBLE_DEVICES", raising=False)
-    assert service.execute(options()) == 0
+    assert service.execute(options(resource="vllm")) == 0
     state = json.loads((tmp_path / "service.json").read_text())
     assert "gpu-ready" in Path(state["log"]).read_text()
-    service.execute(options("stop"))
+    service.execute(options("stop", resource="vllm"))
     os.waitpid(state["pid"], 0)
+
+
+def test_platform_stop_leaves_other_service_running(service, monkeypatch, tmp_path):
+    def directory(resource):
+        path = tmp_path / "states" / resource
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    monkeypatch.setattr(service, "state_directory", directory)
+    states = {}
+    try:
+        for resource in ("vllm", "vllm-ascend"):
+            service.execute(options(resource=resource))
+            states[resource] = json.loads((directory(resource) / "service.json").read_text())
+        service.execute(options("stop", resource="vllm"))
+        assert not service.running(states["vllm"])
+        assert service.running(states["vllm-ascend"])
+        assert states["vllm"]["log"] != states["vllm-ascend"]["log"]
+    finally:
+        for resource, state in states.items():
+            service.execute(options("stop", resource=resource))
+            os.waitpid(state["pid"], 0)

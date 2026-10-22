@@ -36,7 +36,6 @@ def resources(monkeypatch):
     monkeypatch.delenv("ASCEND_RT_VISIBLE_DEVICES", raising=False)
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
     monkeypatch.delenv("CUDA_DEVICE_ORDER", raising=False)
-    monkeypatch.setattr(module.shutil, "which", lambda name: "/bin/npu-smi" if name == "npu-smi" else None)
     monkeypatch.setattr(
         module, "_run_smi", lambda *args: MAPPING if args else metrics()
     )
@@ -78,9 +77,9 @@ def test_discovery_uses_existing_one_level_scanner(resources, tmp_path, monkeypa
 
 
 def test_a3_mapping_never_equates_card_and_runtime_ids(resources):
-    assert resources.choose_devices("3,6") == "3,6"
+    assert resources.choose_devices("3,6", "vllm-ascend") == "3,6"
     with pytest.raises(ValueError):
-        resources.choose_devices("8")
+        resources.choose_devices("8", "vllm-ascend")
 
 
 def test_busy_sibling_blocks_whole_card(resources, monkeypatch):
@@ -88,27 +87,27 @@ def test_busy_sibling_blocks_whole_card(resources, monkeypatch):
         resources, "_run_smi", lambda *args: MAPPING if args else metrics(busy=True)
     )
     with pytest.raises(ValueError, match="busy"):
-        resources.choose_devices("2")
-    assert resources.choose_devices("6,7") == "6,7"
+        resources.choose_devices("2", "vllm-ascend")
+    assert resources.choose_devices("6,7", "vllm-ascend") == "6,7"
 
 
 def test_visibility_mask_preserves_global_ids(resources, monkeypatch):
     monkeypatch.setenv("ASCEND_RT_VISIBLE_DEVICES", "7,3")
-    assert resources.choose_devices("3,7") == "3,7"
+    assert resources.choose_devices("3,7", "vllm-ascend") == "3,7"
     with pytest.raises(ValueError):
-        resources.choose_devices("0")
+        resources.choose_devices("0", "vllm-ascend")
     monkeypatch.setenv("ASCEND_RT_VISIBLE_DEVICES", "99")
     with pytest.raises(RuntimeError, match="cannot be mapped"):
-        resources.choose_devices("99")
+        resources.choose_devices("99", "vllm-ascend")
 
 
 @pytest.mark.parametrize("value", ["", "-1", "1,", "2,2", "0-3", "x"])
 def test_invalid_device_and_visibility_lists(resources, monkeypatch, value):
     with pytest.raises(ValueError):
-        resources.choose_devices(value)
+        resources.choose_devices(value, "vllm-ascend")
     monkeypatch.setenv("ASCEND_RT_VISIBLE_DEVICES", value)
     with pytest.raises(ValueError):
-        resources.choose_devices("2")
+        resources.choose_devices("2", "vllm-ascend")
 
 
 def test_missing_process_visibility_is_not_idle(resources, monkeypatch):
@@ -118,7 +117,7 @@ def test_missing_process_visibility_is_not_idle(resources, monkeypatch):
         lambda *args: MAPPING if args else metrics(processes=False),
     )
     with pytest.raises(ValueError, match="busy"):
-        resources.choose_devices("2")
+        resources.choose_devices("2", "vllm-ascend")
 
 
 @pytest.mark.parametrize(
@@ -146,7 +145,7 @@ def test_missing_chip_metrics_rejected(resources, monkeypatch):
         ),
     )
     with pytest.raises(RuntimeError, match="every mapped"):
-        resources.choose_devices("2")
+        resources.choose_devices("2", "vllm-ascend")
 
 
 def test_smi_failure_does_not_use_sudo_or_fallback(resources, monkeypatch):
@@ -163,7 +162,7 @@ def test_smi_failure_does_not_use_sudo_or_fallback(resources, monkeypatch):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     with pytest.raises(RuntimeError, match="Cannot obtain"):
-        module.choose_devices("2")
+        module.choose_devices("2", "vllm-ascend")
     assert all(command[0] == "npu-smi" for command in commands)
     assert len(commands) == 1
 
@@ -172,10 +171,10 @@ def test_numbered_selection_and_cancellation(resources, monkeypatch):
     monkeypatch.setattr(resources.sys, "stdin", SimpleNamespace(isatty=lambda: False))
     answers = iter(["bad", "0", "2,4"])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
-    assert resources.choose_devices(None) == "3,7"
+    assert resources.choose_devices(None, "vllm-ascend") == "3,7"
     monkeypatch.setattr("builtins.input", lambda prompt: "q")
     with pytest.raises(EOFError):
-        resources.choose_devices(None)
+        resources.choose_devices(None, "vllm-ascend")
 
 
 def test_fzf_uses_hardcoded_home_path(resources, monkeypatch, tmp_path):
@@ -218,7 +217,6 @@ def gpu_metrics(utilization=0):
 
 @pytest.fixture
 def gpu_resources(resources, monkeypatch):
-    monkeypatch.setattr(resources.shutil, "which", lambda name: "/bin/nvidia-smi" if name == "nvidia-smi" else None)
 
     def run(command, **kwargs):
         assert command[0] == "nvidia-smi", "GPU selection must not invoke npu-smi"
@@ -233,8 +231,7 @@ def gpu_resources(resources, monkeypatch):
 
 
 def test_gpu_selects_full_uuids_with_residual_memory(gpu_resources):
-    assert gpu_resources.device_visibility_variable() == "CUDA_VISIBLE_DEVICES"
-    assert gpu_resources.choose_devices("7,2") == f"{GPU_B},{GPU_A}"
+    assert gpu_resources.choose_devices("7,2", "vllm") == f"{GPU_B},{GPU_A}"
 
 
 def test_gpu_compute_process_blocks_selection(gpu_resources, monkeypatch):
@@ -243,8 +240,8 @@ def test_gpu_compute_process_blocks_selection(gpu_resources, monkeypatch):
         lambda query: gpu_metrics() if query.startswith("--query-gpu=") else GPU_A + "\n",
     )
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices("2")
-    assert gpu_resources.choose_devices("7") == GPU_B
+        gpu_resources.choose_devices("2", "vllm")
+    assert gpu_resources.choose_devices("7", "vllm") == GPU_B
 
 
 def test_gpu_utilization_blocks_without_processes(gpu_resources, monkeypatch):
@@ -253,47 +250,47 @@ def test_gpu_utilization_blocks_without_processes(gpu_resources, monkeypatch):
         lambda query: gpu_metrics(1) if query.startswith("--query-gpu=") else "",
     )
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices("2")
-    assert gpu_resources.choose_devices("7") == GPU_B
+        gpu_resources.choose_devices("2", "vllm")
+    assert gpu_resources.choose_devices("7", "vllm") == GPU_B
 
 
 def test_gpu_uuid_visibility_and_selection_order(gpu_resources, monkeypatch):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", f"{GPU_B},GPU-aaaaaaaa")
     monkeypatch.setattr(gpu_resources.sys, "stdin", SimpleNamespace(isatty=lambda: False))
     monkeypatch.setattr("builtins.input", lambda prompt: "1,2")
-    assert gpu_resources.choose_devices(None) == f"{GPU_B},{GPU_A}"
+    assert gpu_resources.choose_devices(None, "vllm") == f"{GPU_B},{GPU_A}"
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", GPU_B)
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices("2")
+        gpu_resources.choose_devices("2", "vllm")
 
 
 def test_gpu_numeric_mask_uses_pci_ordinals_not_smi_indices(gpu_resources, monkeypatch):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1,0")
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices("7")
+        gpu_resources.choose_devices("7", "vllm")
     monkeypatch.setenv("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
     monkeypatch.setattr(gpu_resources.sys, "stdin", SimpleNamespace(isatty=lambda: False))
     monkeypatch.setattr("builtins.input", lambda prompt: "1,2")
-    assert gpu_resources.choose_devices(None) == f"{GPU_A},{GPU_B}"
+    assert gpu_resources.choose_devices(None, "vllm") == f"{GPU_A},{GPU_B}"
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
-    assert gpu_resources.choose_devices("7") == GPU_B
+    assert gpu_resources.choose_devices("7", "vllm") == GPU_B
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices("2")
+        gpu_resources.choose_devices("2", "vllm")
 
 
 @pytest.mark.parametrize("mask", ["", "-1"])
 def test_gpu_disabled_visibility(gpu_resources, monkeypatch, mask):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", mask)
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices("2")
+        gpu_resources.choose_devices("2", "vllm")
     with pytest.raises(RuntimeError):
-        gpu_resources.choose_devices(None)
+        gpu_resources.choose_devices(None, "vllm")
 
 
 @pytest.mark.parametrize("value", ["99", "GPU-unknown", "GPU-", "2,2", "2,GPU-aaaaaaaa", "MIG-123", "2,", "-1"])
 def test_gpu_invalid_requests(gpu_resources, value):
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices(value)
+        gpu_resources.choose_devices(value, "vllm")
 
 
 def test_gpu_ambiguous_uuid_prefix_rejected(gpu_resources, monkeypatch):
@@ -303,10 +300,10 @@ def test_gpu_ambiguous_uuid_prefix_rejected(gpu_resources, monkeypatch):
         lambda query: gpu_metrics().replace(GPU_B, other) if query.startswith("--query-gpu=") else "",
     )
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices("GPU-aaaaaaaa")
+        gpu_resources.choose_devices("GPU-aaaaaaaa", "vllm")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-aaaaaaaa")
     with pytest.raises(ValueError):
-        gpu_resources.choose_devices("2")
+        gpu_resources.choose_devices("2", "vllm")
 
 
 @pytest.mark.parametrize(
@@ -329,7 +326,7 @@ def test_gpu_bad_telemetry_fails_closed(gpu_resources, monkeypatch, telemetry):
         lambda query: telemetry if query.startswith("--query-gpu=") else "",
     )
     with pytest.raises(RuntimeError):
-        gpu_resources.choose_devices("2")
+        gpu_resources.choose_devices("2", "vllm")
 
 
 @pytest.mark.parametrize("processes", ["N/A\n", "GPU-unknown\n", "MIG-123\n", "\n", f"{GPU_A}, unexpected\n"])
@@ -339,7 +336,7 @@ def test_gpu_bad_process_telemetry_fails_closed(gpu_resources, monkeypatch, proc
         lambda query: gpu_metrics() if query.startswith("--query-gpu=") else processes,
     )
     with pytest.raises(RuntimeError):
-        gpu_resources.choose_devices("2")
+        gpu_resources.choose_devices("2", "vllm")
 
 
 @pytest.mark.parametrize("fail_process_query", [False, True])
@@ -354,14 +351,14 @@ def test_nvidia_failure_never_falls_back(gpu_resources, monkeypatch, fail_proces
 
     monkeypatch.setattr(gpu_resources.subprocess, "run", fail)
     with pytest.raises(RuntimeError):
-        gpu_resources.choose_devices("2")
+        gpu_resources.choose_devices("2", "vllm")
     assert len(commands) == (2 if fail_process_query else 1)
     assert all(command[0] == "nvidia-smi" for command in commands)
 
 
-@pytest.mark.parametrize("tools", [set(), {"nvidia-smi", "npu-smi"}])
-def test_missing_or_ambiguous_platform_rejected(resources, monkeypatch, tools):
-    monkeypatch.setattr(resources.shutil, "which", lambda name: "/bin/" + name if name in tools else None)
-    monkeypatch.setattr(resources.subprocess, "run", lambda *a, **kw: pytest.fail("ambiguous platform queried"))
-    with pytest.raises(RuntimeError):
-        resources.choose_devices("2")
+@pytest.mark.parametrize("resource,devices,expected", [
+    ("vllm", "2", GPU_A),
+    ("vllm-ascend", "3,6", "3,6"),
+])
+def test_explicit_platform_with_both_telemetries(gpu_resources, resource, devices, expected):
+    assert gpu_resources.choose_devices(devices, resource) == expected

@@ -41,5 +41,5 @@ def test_exit_pager_detaches_only_log_transport(monkeypatch, tmp_path, capsys):
     )
     monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
     monkeypatch.setenv("PAGER_CAPTURE", str(tmp_path / "captured"))
-    log_view.attach(SimpleNamespace(host="suzhou-one", container="dev1"))
+    log_view.attach(SimpleNamespace(resource="vllm-ascend", host="suzhou-one", container="dev1"))
     assert (tmp_path / "captured").read_text() == "live service log"

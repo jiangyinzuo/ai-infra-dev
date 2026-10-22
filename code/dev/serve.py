@@ -46,8 +46,8 @@ def process_identity(pid):
         return None
 
 
-def state_directory():
-    path = Path("/tmp") / f"vllm-ascend-dev-{os.getuid()}-{socket.gethostname()}"
+def state_directory(resource):
+    path = Path("/tmp") / f"{resource}-dev-{os.getuid()}-{socket.gethostname()}"
     path.mkdir(mode=0o700, exist_ok=True)
     if path.is_symlink() or path.stat().st_uid != os.getuid():
         raise ValueError("服务状态目录不属于当前用户")
@@ -73,134 +73,168 @@ def stop(state, timeout=30):
         raise RuntimeError("服务在 30 秒内未停止；未强制 SIGKILL，请检查日志")
 
 
+def resolve_script(script_name):
+    name = Path(script_name)
+    if (
+        name.name != script_name
+        or name.suffix != ".py"
+        or name.name == "__init__.py"
+    ):
+        raise ValueError("--script 仅接受 serve_config 下的 Python 配置文件名")
+    script = Path(__file__).resolve().parent / "serve_config" / name
+    if not script.is_file():
+        raise ValueError("启动脚本不存在：" + str(script))
+    return script
+
+
+def prepare_existing_service(state_file, stopping):
+    """Return whether a new service may start; caller must hold the lifecycle lock."""
+    state = json.loads(state_file.read_text()) if state_file.exists() else None
+    if state and running(state):
+        if not stopping:
+            answer = input(
+                f"服务已启动 PID={state['pid']}，是否 stop 并重新启动？[y/N]："
+            )
+            if answer.strip().lower() != "y":
+                return False
+        stop(state)
+        state_file.unlink(missing_ok=True)
+        print("服务已停止")
+        return not stopping
+    if state:
+        state_file.unlink()
+    if stopping:
+        print("当前没有本工具运行中的服务")
+        return False
+    return True
+
+
+def select_resources(args, config):
+    from serve_resources import (
+        choose_model,
+        choose_devices,
+        device_visibility_variable,
+    )
+
+    model = (
+        config.model
+        if args.model is None and config.model is not None
+        else choose_model(args.model)
+    )
+    visibility = device_visibility_variable(args.resource)
+    devices = choose_devices(args.devices, args.resource)
+    if len(devices.split(",")) != config.device_count:
+        raise ValueError(
+            f"配置要求 {config.device_count} 个 device，所选数量不匹配"
+        )
+    return model, visibility, devices
+
+
+def spawn_service(command, script, environment, log, visibility, devices):
+    with log.open("ab") as output:
+        # 将启动参数保存在日志中，进入 less 后也能查看；不改变服务进程的输出行为。
+        header = (
+            visibility
+            + "="
+            + shlex.quote(devices)
+            + " "
+            + shlex.join(command)
+        )
+        output.write(("执行：" + header + "\n").encode("utf-8"))
+        output.flush()
+        process = subprocess.Popen(
+            command,
+            cwd=script.parent,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    return process
+
+
+def record_service(process, state_file, log, model, devices, script):
+    try:
+        identity = process_identity(process.pid)
+        if identity is None:
+            raise RuntimeError("服务进程已退出，请检查日志：" + str(log))
+        state = {
+            "pid": process.pid,
+            "identity": identity,
+            "log": str(log),
+            "model": model,
+            "devices": devices,
+            "script": str(script),
+        }
+        temporary = state_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps(state))
+        temporary.replace(state_file)
+    except BaseException:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+        raise
+
+
+def start_service(args, script, config, directory):
+    state_file = directory / "service.json"
+    model, visibility, devices = select_resources(args, config)
+    command = [
+        argument.replace("{model}", model) for argument in config.serve_command
+    ]
+    # 不要为日志跟随添加 PYTHONUNBUFFERED=1：它会改变 vLLM 进程的输出缓冲，
+    # 可能增加写系统调用和 I/O 开销、影响性能；宁可接受日志延迟，也要保留 vLLM 进程原有环境。
+    environment = dict(os.environ, MODEL_PATH=model)
+    environment[visibility] = devices
+    print(
+        "MODEL_PATH="
+        + shlex.quote(model)
+        + " "
+        + visibility
+        + "="
+        + shlex.quote(devices),
+        flush=True,
+    )
+    print("执行：" + shlex.join(command), flush=True)
+    print(
+        "运行时目录："
+        + str(script.parent / "runtime")
+        + "（配置可在此生成运行时文件；已加入 .gitignore）",
+        flush=True,
+    )
+    log = directory / (
+        time.strftime("serve-%Y%m%d-%H%M%S-") + str(time.time_ns()) + ".log"
+    )
+    process = spawn_service(command, script, environment, log, visibility, devices)
+    record_service(process, state_file, log, model, devices, script)
+    time.sleep(0.5)
+    if process.poll() is not None:
+        state_file.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"服务启动失败，退出码 {process.returncode}；日志：{log}"
+        )
+    print(f"后台进程已启动 PID={process.pid}，设备={devices}（不代表 API 已就绪）")
+    print(f"日志：{log}\n查看：tail -f {log}")
+    return 0
+
+
 def execute(args):
     if getattr(args, "print_log", False):
-        state = json.loads((state_directory() / "service.json").read_text())
+        state = json.loads((state_directory(args.resource) / "service.json").read_text())
         print(state["log"])
         return 0
-    script = None
-    if args.serve_action != "stop":
-        name = Path(args.script)
-        if (
-            name.name != args.script
-            or name.suffix != ".py"
-            or name.name == "__init__.py"
-        ):
-            raise ValueError("--script 仅接受 serve_config 下的 Python 配置文件名")
-        script = Path(__file__).resolve().parent / "serve_config" / name
-        if not script.is_file():
-            raise ValueError("启动脚本不存在：" + str(script))
+    stopping = args.serve_action == "stop"
+    launch = None
+    if not stopping:
+        # 先验证配置，再考虑停止旧服务，避免无效配置打断现有服务。
+        script = resolve_script(args.script)
         config = load_config(script)
-    directory = state_directory()
-    state_file = directory / "service.json"
+        launch = (script, config)
+    directory = state_directory(args.resource)
     with (directory / "lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        state = json.loads(state_file.read_text()) if state_file.exists() else None
-        if state and running(state):
-            if args.serve_action != "stop":
-                answer = input(
-                    f"服务已启动 PID={state['pid']}，是否 stop 并重新启动？[y/N]："
-                )
-                if answer.strip().lower() != "y":
-                    return 0
-            stop(state)
-            state_file.unlink(missing_ok=True)
-            print("服务已停止")
-            if args.serve_action == "stop":
-                return 0
-        elif state:
-            state_file.unlink()
-        if args.serve_action == "stop":
-            print("当前没有本工具运行中的服务")
+        if not prepare_existing_service(directory / "service.json", stopping):
             return 0
-        from serve_resources import (
-            choose_model,
-            choose_devices,
-            device_visibility_variable,
-        )
-
-        model = (
-            config.model
-            if args.model is None and config.model is not None
-            else choose_model(args.model)
-        )
-        visibility = device_visibility_variable()
-        devices = choose_devices(args.devices)
-        if len(devices.split(",")) != config.device_count:
-            raise ValueError(
-                f"配置要求 {config.device_count} 个 device，所选数量不匹配"
-            )
-        command = [
-            argument.replace("{model}", model) for argument in config.serve_command
-        ]
-        # 不要为日志跟随添加 PYTHONUNBUFFERED=1：它会改变 vLLM 进程的输出缓冲，
-        # 可能增加写系统调用和 I/O 开销、影响性能；宁可接受日志延迟，也要保留 vLLM 进程原有环境。
-        environment = dict(os.environ, MODEL_PATH=model)
-        environment[visibility] = devices
-        print(
-            "MODEL_PATH="
-            + shlex.quote(model)
-            + " "
-            + visibility
-            + "="
-            + shlex.quote(devices),
-            flush=True,
-        )
-        print("执行：" + shlex.join(command), flush=True)
-        print(
-            "运行时目录："
-            + str(script.parent / "runtime")
-            + "（配置可在此生成运行时文件；已加入 .gitignore）",
-            flush=True,
-        )
-        log = directory / (
-            time.strftime("serve-%Y%m%d-%H%M%S-") + str(time.time_ns()) + ".log"
-        )
-        with log.open("ab") as output:
-            # 将启动参数保存在日志中，进入 less 后也能查看；不改变服务进程的输出行为。
-            header = (
-                visibility
-                + "="
-                + shlex.quote(devices)
-                + " "
-                + shlex.join(command)
-            )
-            output.write(("执行：" + header + "\n").encode("utf-8"))
-            output.flush()
-            process = subprocess.Popen(
-                command,
-                cwd=script.parent,
-                env=environment,
-                stdin=subprocess.DEVNULL,
-                stdout=output,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-        try:
-            identity = process_identity(process.pid)
-            if identity is None:
-                raise RuntimeError("服务进程已退出，请检查日志：" + str(log))
-            state = {
-                "pid": process.pid,
-                "identity": identity,
-                "log": str(log),
-                "model": model,
-                "devices": devices,
-                "script": str(script),
-            }
-            temporary = state_file.with_suffix(".tmp")
-            temporary.write_text(json.dumps(state))
-            temporary.replace(state_file)
-        except BaseException:
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGTERM)
-            raise
-        time.sleep(0.5)
-        if process.poll() is not None:
-            state_file.unlink(missing_ok=True)
-            raise RuntimeError(
-                f"服务启动失败，退出码 {process.returncode}；日志：{log}"
-            )
-        print(f"后台进程已启动 PID={process.pid}，设备={devices}（不代表 API 已就绪）")
-        print(f"日志：{log}\n查看：tail -f {log}")
-        return 0
+        if launch is None:
+            return 0
+        return start_service(args, *launch, directory)

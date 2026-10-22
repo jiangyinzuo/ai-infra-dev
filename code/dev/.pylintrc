@@ -1,0 +1,7 @@
+[MAIN]
+py-version = 3.11
+# 与启动器的共享模块路径保持一致，不依赖运行 pylint 时的工作目录。
+init-hook =
+    import sys; from pathlib import Path; from pylint.config import find_default_config_files; root = next(Path(p).resolve().parent for p in find_default_config_files() if Path(p).name == '.pylintrc'); sys.path[:0] = [str(root), str(root / '../../ssh'), str(root / '../../ssh/container-dev/devtools')]
+source-roots =
+    .

@@ -20,7 +20,7 @@ uv venv --python 3.12 --seed --managed-python --system-certs
 
 共享入口 `~/ai-infra-dev/code/dev` 要求 Python >=3.11，使用容器自带的 `pip`，不创建虚拟环境、不预先卸载。默认不编译算子；首次安装需加 `--compile-ops`。
 
-`vllm install` 仍只面向 Ascend，安装 `code/vllm-ascend-workspace/vllm-ascend`，仅允许容器内执行；不提供 CUDA 安装或构建流程。`vllm serve` 可在容器、宿主机或已准备好的虚拟环境运行，按实际平台选择 NPU 或 NVIDIA GPU。实际执行的服务命令由配置中的 `serve_command` 指定，工具不会替你安装 vLLM 或运行时依赖。
+`vllm-ascend install` 只面向 Ascend，安装 `code/vllm-ascend-workspace/vllm-ascend`，仅允许容器内执行。`vllm install` 在 GPU checkout 中查找并验证已发布的 CUDA wheel，然后执行 `uv pip install -e .`，使用当前 uv 环境；查找失败不安装。`vllm serve` 使用 NVIDIA GPU，`vllm-ascend serve` 使用 NPU；两者均可在容器、宿主机或已准备好的虚拟环境运行。服务启动命令不会自动安装运行时依赖；预编译 wheel 可下载不代表与当前源码 ABI 兼容。
 
 源码目录不存在时交互询问仓库 URL 和分支，默认 `git@github.com:vllm-project/vllm-ascend.git`、`main`，以 `--depth=1000` 克隆后继续安装。已有目录不覆盖、不自动切分支；远程安装需要交互终端。
 
@@ -28,11 +28,11 @@ uv venv --python 3.12 --seed --managed-python --system-certs
 
 ```bash
 # 容器内执行（自动定位 workspace 下的 vllm-ascend）
-python3 ~/ai-infra-dev/code/dev vllm install
-python3 ~/ai-infra-dev/code/dev vllm install --compile-ops
+python3 ~/ai-infra-dev/code/dev vllm-ascend install
+python3 ~/ai-infra-dev/code/dev vllm-ascend install --compile-ops
 
 # WSL 控制远程容器
-python3 ~/ai-infra-dev/code/dev vllm install \
+python3 ~/ai-infra-dev/code/dev vllm-ascend install \
   --host suzhou-a3-130 --container jiangyinzuo-bindfs-dev1 --compile-ops
 ```
 
@@ -54,17 +54,21 @@ config = ServeConfig(
 ```
 
 ```bash
+# Ascend NPU
+python3 ~/ai-infra-dev/code/dev vllm-ascend serve --script qwen3.5-0.8b.py
+python3 ~/ai-infra-dev/code/dev vllm-ascend serve --script qwen3.5-0.8b.py --model /mnt/share/weights/Qwen3.5-0.8B --devices 0
+python3 ~/ai-infra-dev/code/dev vllm-ascend serve stop
+# NVIDIA GPU（使用已安装 CUDA vLLM 的 Python 环境）
 python3 ~/ai-infra-dev/code/dev vllm serve --script qwen3.5-0.8b.py
-python3 ~/ai-infra-dev/code/dev vllm serve --script qwen3.5-0.8b.py --model /mnt/share/weights/Qwen3.5-0.8B --devices 0
 python3 ~/ai-infra-dev/code/dev vllm serve stop
 # WSL 可追加 --host HOST --container NAME；--script 只传 code/dev/serve_config 下的文件名
 ```
 
-dev 将 `serve_command` 参数中的 `{model}` 替换为所选模型路径或配置提供的默认模型 ID，按平台设置 `ASCEND_RT_VISIBLE_DEVICES` 或 `CUDA_VISIBLE_DEVICES`，并检查所选设备数等于 `device_count`。命令直接执行，不经 shell，不额外添加 TP、端口或其他参数；工作目录为配置文件所在目录。启动前打印最终命令。配置导入会执行 Python 顶层代码，只加载可信文件；顶层只定义配置，不启动进程或占用设备。
+配置中的 `serve_command` 使用上游命令 `vllm serve`，不随 dev 资源名改成 `vllm-ascend`。dev 将参数中的 `{model}` 替换为所选模型路径或配置提供的默认模型 ID；`vllm-ascend serve` 设置 `ASCEND_RT_VISIBLE_DEVICES`，`vllm serve` 设置 `CUDA_VISIBLE_DEVICES`，并检查所选设备数等于 `device_count`，不会自动切换平台。命令直接执行，不经 shell，不额外添加 TP、端口或其他参数；工作目录为配置文件所在目录。启动前打印最终命令。配置导入会执行 Python 顶层代码，只加载可信文件；顶层只定义配置，不启动进程或占用设备。
 
-显式 `--model` 仍只接受本地模型路径；未指定时先使用配置的 `model` 默认值，配置未提供默认值则复用 `models discovery` 搜索本机模型，使用 `~/plugged/fzf/bin/fzf` 实时模糊选择；缺少 fzf 时退回编号选择。NPU 延续 npu-top 空闲检查和全局逻辑 ID 选择。GPU 的空闲条件是 nvidia-smi 未报告 compute process 且 GPU utilization 为 0；非零显存占用不直接判忙，选择时显示显存用量，残留显示/驱动占用仍可能影响启动。`--devices` 接受 nvidia-smi 的编号或无歧义的 GPU UUID 前缀，最终用完整 UUID 设置 CUDA 可见性，不把 CUDA ordinal 当作 nvidia-smi 编号。继承的 `CUDA_VISIBLE_DEVICES` 会限制候选设备：UUID 可直接解析，数字掩码仅在已有 `CUDA_DEVICE_ORDER=PCI_BUS_ID` 时按 PCI 顺序解析，否则拒绝猜测；工具不修改设备排序环境。空掩码或 `-1` 表示无可用 GPU。MIG、遥测不可用或同时发现 NVIDIA/Ascend 管理命令的平台歧义均拒绝启动，不悄悄切换另一平台。
+显式 `--model` 仍只接受本地模型路径；未指定时先使用配置的 `model` 默认值，配置未提供默认值则复用 `models discovery` 搜索本机模型，使用 `~/plugged/fzf/bin/fzf` 实时模糊选择；缺少 fzf 时退回编号选择。NPU 延续 npu-top 空闲检查和全局逻辑 ID 选择。GPU 的空闲条件是 nvidia-smi 未报告 compute process 且 GPU utilization 为 0；非零显存占用不直接判忙，选择时显示显存用量，残留显示/驱动占用仍可能影响启动。`--devices` 接受 nvidia-smi 的编号或无歧义的 GPU UUID 前缀，最终用完整 UUID 设置 CUDA 可见性，不把 CUDA ordinal 当作 nvidia-smi 编号。继承的 `CUDA_VISIBLE_DEVICES` 会限制候选设备：UUID 可直接解析，数字掩码仅在已有 `CUDA_DEVICE_ORDER=PCI_BUS_ID` 时按 PCI 顺序解析，否则拒绝猜测；工具不修改设备排序环境。空掩码或 `-1` 表示无可用 GPU。MIG 或所选平台遥测不可用时拒绝启动，不悄悄切换另一平台。
 
-服务后台运行，日志路径在启动后打印；后台进程启动不等于 API 已就绪。再次启动时询问是否停止旧服务并重启，`serve stop` 只停止本工具记录的实例，绝不按进程名批量杀进程。状态和日志按用户及容器 hostname 保存在 `/tmp/vllm-ascend-dev-*`，容器重建后不保证保留。空闲检查只涵盖容器可见信息，不提供跨用户独占分配，检查与启动之间仍有竞争窗口。
+服务后台运行，日志路径在启动后打印；后台进程启动不等于 API 已就绪。GPU 与 NPU 的服务状态、日志独立，启动或停止其中一种不会管理另一种；各自再次启动时询问是否停止旧服务并重启。对应资源的 `serve stop` 只停止本工具记录的实例，绝不按进程名批量杀进程。状态和日志按用户、容器 hostname 及资源保存在 `/tmp`，容器重建后不保证保留。空闲检查只涵盖容器可见信息，不提供跨用户独占分配，检查与启动之间仍有竞争窗口。
 
 从 WSL 启动成功后，本地自动运行 `less -R +F` 跟随容器日志；需要本地安装 less 并使用交互终端。Ctrl-C 暂停实时跟随、进入浏览模式，`F` 恢复跟随；先 Ctrl-C 再按 `q` 退出查看。退出只断开日志流，不停止服务，并打印带实际 Host、容器及日志路径的重新查看命令。停止服务仍需执行 `serve stop`。不修改服务进程的输出缓冲行为，日志显示可能有延迟。
 

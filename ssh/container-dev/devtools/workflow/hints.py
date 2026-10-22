@@ -131,13 +131,16 @@ def show_dev(args):
             name or "<CONTAINER>",
         ]
     config = "qwen3.5-0.8b.py"
-    print("  " + color("vLLM Ascend Dev", "1;35", stream), file=stream)
+    resource = getattr(args, "resource", None)
+    resource = resource if resource in ("vllm", "vllm-ascend") else "vllm-ascend"
+    title = "vLLM GPU Dev" if resource == "vllm" else "vLLM Ascend Dev"
+    print("  " + color(title, "1;35", stream), file=stream)
     for label, arguments in [
         ("安装开发工具", ["devtools", "install"]),
-        ("安装 vllm-ascend", ["vllm", "install"]),
-        ("编译算子并安装 vllm-ascend", ["vllm", "install", "--compile-ops"]),
-        ("启动服务", ["vllm", "serve", "--script", config]),
-        ("停止服务", ["vllm", "serve", "stop"]),
+        ("安装 vllm-ascend", ["vllm-ascend", "install"]),
+        ("编译算子并安装 vllm-ascend", ["vllm-ascend", "install", "--compile-ops"]),
+        ("启动服务", [resource, "serve", "--script", config]),
+        ("停止服务", [resource, "serve", "stop"]),
     ]:
         line = shlex.join(["python3", str(dev), *arguments, *connection])
         print("    {}  {}".format(color(label, "36", stream), line), file=stream)

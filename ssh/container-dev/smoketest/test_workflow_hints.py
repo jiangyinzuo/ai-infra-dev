@@ -46,11 +46,13 @@ def test_dev_hints_only_for_containers_and_use_created_name(monkeypatch, capsys)
         )
     )
     output = capsys.readouterr().err
-    assert f"python3 {dev} vllm install --host suzhou-one" in output
-    assert f"python3 {dev} vllm serve --script qwen3.5-0.8b.py" in output
+    assert f"python3 {dev} vllm-ascend install --host suzhou-one" in output
+    assert f"python3 {dev} vllm-ascend install --compile-ops" in output
+    assert f"python3 {dev} vllm-ascend serve --script qwen3.5-0.8b.py" in output
+    assert f"python3 {dev} vllm-ascend serve stop" in output
     assert f"python3 {dev} devtools install" in output
-    assert " vllm-ascend install" not in output
-    assert " vllm-ascend serve" not in output
+    assert " vllm install" not in output
+    assert " vllm serve" not in output
     assert "--container my-container" in output
     assert "<CONTAINER>" not in output
     hints.show(
@@ -66,3 +68,18 @@ def test_dev_hints_only_for_containers_and_use_created_name(monkeypatch, capsys)
         )
     )
     assert "--container deleted-container" not in capsys.readouterr().err
+
+
+def test_dev_serve_hints_preserve_explicit_resource(monkeypatch, capsys):
+    monkeypatch.setattr(hints, "is_wsl", lambda: False)
+    dev = Path(__file__).resolve().parents[3] / "code/dev"
+    for resource in ("vllm", "vllm-ascend"):
+        hints.show_dev(SimpleNamespace(resource=resource, host="localhost"))
+        output = capsys.readouterr().err
+        assert f"python3 {dev} {resource} serve --script qwen3.5-0.8b.py" in output
+        assert f"python3 {dev} {resource} serve stop" in output
+        other = "vllm-ascend" if resource == "vllm" else "vllm"
+        assert f"python3 {dev} {other} serve" not in output
+        assert " vllm install" not in output
+        assert "--host" not in output
+        assert "--container" not in output

@@ -195,8 +195,19 @@ def test_shared_dev_resource_completion(tmp_path, entrypoint):
     resources = complete(tmp_path, [*prefix, ""])
     assert "vllm" in resources
     assert "devtools" in resources
-    assert "vllm-ascend" not in resources
+    assert "vllm-ascend" in resources
     assert "serve" in complete(tmp_path, [*prefix, "vllm", ""])
-    assert "--devices" in complete(tmp_path, [*prefix, "vllm", "serve", "--"])
-    assert "--compile-ops" in complete(tmp_path, [*prefix, "vllm", "install", "--"])
+    assert "install" in complete(tmp_path, [*prefix, "vllm", ""])
+    assert "install" in complete(tmp_path, [*prefix, "vllm-ascend", ""])
+    for resource in ("vllm", "vllm-ascend"):
+        assert "serve" in complete(tmp_path, [*prefix, resource, ""])
+        options = complete(tmp_path, [*prefix, resource, "serve", "--"])
+        assert "--devices" in options
+        assert "--script" in options
+        assert "--compile-ops" not in options
+        assert "stop" in complete(tmp_path, [*prefix, resource, "serve", ""])
+    options = complete(tmp_path, [*prefix, "vllm-ascend", "install", "--"])
+    assert "--compile-ops" in options
+    assert "--remove-csrc-build" in options
+    assert not any(complete(tmp_path, [*prefix, "vllm", "install", "--"]))
     assert "serve" not in complete(tmp_path, [*prefix, "devtools", ""])

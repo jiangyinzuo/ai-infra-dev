@@ -173,9 +173,13 @@ _build_complete() {
     local resource=${COMP_WORDS[start]:-} previous=${COMP_WORDS[COMP_CWORD-1]}
     COMPREPLY=()
     if ((COMP_CWORD == start)); then
-        _complete_values -h --help vllm devtools
+        _complete_values -h --help vllm vllm-ascend devtools
     elif ((COMP_CWORD == start + 1)); then
-        if [[ $resource == vllm ]]; then _complete_values -h --help install serve; else _complete_values -h --help install; fi
+        case $resource in
+            vllm) _complete_values -h --help install serve ;;
+            vllm-ascend) _complete_values -h --help install serve ;;
+            devtools) _complete_values -h --help install ;;
+        esac
     else
         case $previous in
             --host) _ssh_usg_complete "$HOME/.ssh/config" ;;
@@ -194,13 +198,11 @@ _build_complete() {
                     [[ $name == "$current"* ]] && COMPREPLY+=("$name")
                 done ;;
             *)
-                if [[ $resource == vllm ]]; then
-                    if [[ ${COMP_WORDS[start+1]:-} == serve ]]; then
-                        _complete_values -h --help stop --host --container --model --devices --script
-                    else
-                        _complete_values -h --help --host --container --compile-ops --remove-csrc-build
-                    fi
-                else
+                if [[ ( $resource == vllm || $resource == vllm-ascend ) && ${COMP_WORDS[start+1]:-} == serve ]]; then
+                    _complete_values -h --help stop --host --container --model --devices --script
+                elif [[ $resource == vllm-ascend && ${COMP_WORDS[start+1]:-} == install ]]; then
+                    _complete_values -h --help --host --container --compile-ops --remove-csrc-build
+                elif [[ $resource == devtools && ${COMP_WORDS[start+1]:-} == install ]]; then
                     _complete_values -h --help --host --container
                 fi ;;
         esac

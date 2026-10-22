@@ -48,7 +48,7 @@ def test_editable_install_runs_in_project_and_preserves_failure(
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.setenv("COMPILE_CUSTOM_KERNELS", "opposite")
     monkeypatch.chdir(tmp_path.parent)
-    args = ["vllm", "install"]
+    args = ["vllm-ascend", "install"]
     if compile_ops:
         args.append("--compile-ops")
     assert builder.main(args) == 17
@@ -72,7 +72,7 @@ def test_devtools_install_does_not_require_source_checkout(
     assert builder.main(["devtools", "install"]) == 19
 
 
-@pytest.mark.parametrize("resource", ["vllm", "devtools"])
+@pytest.mark.parametrize("resource", ["vllm-ascend", "devtools"])
 def test_host_forbidden_before_install(builder, monkeypatch, resource):
     monkeypatch.setattr(builder, "is_container", lambda: False)
     with pytest.raises(ValueError):
@@ -89,7 +89,7 @@ def test_virtual_environment_forbidden(builder, monkeypatch, variable):
 def test_invalid_existing_project_not_overwritten(builder, tmp_path):
     (tmp_path / "vllm-ascend-workspace/vllm-ascend").mkdir(parents=True)
     with pytest.raises(ValueError):
-        builder.main(["vllm", "install"])
+        builder.main(["vllm-ascend", "install"])
 
 
 def test_missing_checkout_clones_selected_branch_before_install(
@@ -125,7 +125,7 @@ def test_missing_checkout_clones_selected_branch_before_install(
     pip.write_text("#!/bin/sh\ntest -f setup.py || exit 82\nexit 17\n")
     pip.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
-    assert builder.main(["vllm", "install"]) == 17
+    assert builder.main(["vllm-ascend", "install"]) == 17
     checkout = tmp_path / "vllm-ascend-workspace/vllm-ascend"
     assert (
         subprocess.check_output(
@@ -179,7 +179,7 @@ def test_interactive_remote_uses_managed_user(
     monkeypatch.setattr(builder, "checked_command", lambda host, command: command)
     assert (
         builder.main(
-            ["vllm", *operation, "--host", "suzhou-one", "--container", "dev1"]
+            ["vllm-ascend", *operation, "--host", "suzhou-one", "--container", "dev1"]
         )
         == 0
     )
@@ -207,7 +207,7 @@ def test_csrc_build_cleanup_is_opt_in_and_precedes_pip(
     )
     pip.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
-    arguments = ["vllm", "install"] + (["--remove-csrc-build"] if remove else [])
+    arguments = ["vllm-ascend", "install"] + (["--remove-csrc-build"] if remove else [])
     assert builder.main(arguments) == 17
     assert build.exists() == (not remove)
     assert (cache / "keep").read_text() == "valid cache"
@@ -228,7 +228,7 @@ def test_remote_cleanup_flag_reaches_container(builder, monkeypatch):
     assert (
         builder.main(
             [
-                "vllm",
+                "vllm-ascend",
                 "install",
                 "--remove-csrc-build",
                 "--host",
@@ -242,9 +242,51 @@ def test_remote_cleanup_flag_reaches_container(builder, monkeypatch):
 
 
 def test_host_venv_can_stop_managed_service(builder, monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
     import serve
 
     monkeypatch.setattr(builder, "is_container", lambda: False)
     monkeypatch.setenv("VIRTUAL_ENV", "/active-venv")
-    monkeypatch.setattr(serve, "state_directory", lambda: tmp_path)
+    monkeypatch.setattr(serve, "state_directory", lambda resource: tmp_path)
     assert builder.main(["vllm", "serve", "stop", "--no-hints"]) == 0
+
+
+@pytest.mark.parametrize("discovery_fails", [False, True])
+def test_gpu_install_pins_wheel_or_skips_install(builder, monkeypatch, tmp_path, discovery_fails):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    import os
+    import precompiled
+
+    project = tmp_path / "vllm-workspace/vllm"
+    project.mkdir(parents=True)
+    (project / "pyproject.toml").touch()
+    marker = tmp_path / "installed"
+    uv = tmp_path / "uv"
+    uv.write_text(
+        "#!/bin/sh\n"
+        'test "$*" = "pip install -e ." || exit 81\n'
+        'test -f pyproject.toml || exit 82\n'
+        'test "$VLLM_USE_PRECOMPILED" = 1 || exit 83\n'
+        'test "$VLLM_PRECOMPILED_WHEEL_COMMIT" = verified || exit 84\n'
+        'test "$VLLM_PRECOMPILED_WHEEL_VARIANT" = cu130 || exit 85\n'
+        f'touch "{marker}"\nexit 17\n'
+    )
+    uv.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path) + ":" + os.environ["PATH"])
+    monkeypatch.setenv("VLLM_PRECOMPILED_WHEEL_COMMIT", "stale")
+    monkeypatch.setenv("VIRTUAL_ENV", "/active-venv")
+    monkeypatch.setattr(builder, "is_container", lambda: False)
+
+    def discover():
+        if discovery_fails:
+            raise ValueError("wheel unavailable")
+        return {"VLLM_USE_PRECOMPILED": "1", "VLLM_PRECOMPILED_WHEEL_COMMIT": "verified", "VLLM_PRECOMPILED_WHEEL_VARIANT": "cu130"}
+
+    monkeypatch.setattr(precompiled, "find_vllm_precompiled_commit", discover)
+    if discovery_fails:
+        with pytest.raises(ValueError, match="wheel unavailable"):
+            builder.main(["vllm", "install"])
+        assert not marker.exists()
+    else:
+        assert builder.main(["vllm", "install"]) == 17
+        assert marker.exists()

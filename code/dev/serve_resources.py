@@ -9,7 +9,7 @@ MIG is unsupported.
 Occupancy is a snapshot, not a reservation; process visibility can be container-limited.
 GPU idle means no compute processes and zero utilization, not zero used memory:
 display/driver allocations can remain and reduce the memory available to vLLM.
-Unknown devices, ambiguous platforms and incomplete telemetry are errors.
+Unknown devices and incomplete telemetry are errors; the CLI resource selects the platform.
 """
 
 import csv
@@ -17,7 +17,6 @@ import importlib.util
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 from typing import NamedTuple
@@ -244,23 +243,9 @@ def _choose_npu_devices(devices: str | None) -> str:
     return ",".join(map(str, chosen))
 
 
-def device_visibility_variable() -> str:
-    """Detect one installed accelerator CLI without importing torch or probing peers.
-
-    Having both CLIs is ambiguous; failure of the selected CLI is never grounds
-    for trying the other platform, since that could launch on unintended devices.
-    """
-    nvidia = shutil.which("nvidia-smi") is not None
-    ascend = shutil.which("npu-smi") is not None
-    if nvidia and ascend:
-        raise RuntimeError(
-            "Both nvidia-smi and npu-smi are available; accelerator platform is ambiguous"
-        )
-    if nvidia:
-        return "CUDA_VISIBLE_DEVICES"
-    if ascend:
-        return "ASCEND_RT_VISIBLE_DEVICES"
-    raise RuntimeError("No supported accelerator CLI found (nvidia-smi or npu-smi)")
+def device_visibility_variable(resource: str) -> str:
+    """Use the requested platform, never infer it from installed tools."""
+    return {"vllm": "CUDA_VISIBLE_DEVICES", "vllm-ascend": "ASCEND_RT_VISIBLE_DEVICES"}[resource]
 
 
 def _run_nvidia_smi(query: str) -> str:
@@ -433,8 +418,8 @@ def _choose_gpu_devices(devices: str | None) -> str:
     return ",".join(chosen)
 
 
-def choose_devices(devices: str | None) -> str:
-    """Select idle visible devices; return full GPU UUIDs or global Ascend IDs."""
-    if device_visibility_variable() == "CUDA_VISIBLE_DEVICES":
+def choose_devices(devices: str | None, resource: str) -> str:
+    """Select idle visible devices only on the explicitly requested platform."""
+    if device_visibility_variable(resource) == "CUDA_VISIBLE_DEVICES":
         return _choose_gpu_devices(devices)
     return _choose_npu_devices(devices)
