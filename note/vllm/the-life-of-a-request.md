@@ -1,21 +1,75 @@
-vim:set ft=vllmclass:
+<!-- vllmclass -->
 
 DeepSeek-V3.2缩小版 + HiSparse 0.32.1rc1.dev158+g4964e4482.precompiled 2026-10-21
 
-Engine层：LLMEngine、EngineCore、InprocClient
+## Engine层：LLMEngine、EngineCore、InprocClient
     用户通过python库直接调用推理，在本脚本中，从 from vllm.v1.engine.llm_engine import LLMEngine 开始。
     InprocClient: 进程内客户端，访问 EngineCore。是class EngineCoreClient(ABC)的子类。
 
-Scheduler层：Scheduler
-KV cache管理层：KVCacheManager、KVCacheCoordinator、SingleTypeKVCacheManager、BlockPool
-Executor层：UniProcExecutor、WorkerWrapperBase、Worker、GPUModelRunner
-模型：DeepseekV32Model、DeepseekV32DecoderLayer、DeepseekV32Attention
-HiSparse
-  - 调度侧：HiSparseCoordinator、HiSparseSourceManager、HiSparseHotManager、HiSparseResidentManager
-  - Connector：HiSparseConnector、HiSparseConnectorScheduler、HiSparseConnectorWorker
-  - Runtime：HiSparseRuntime、HiSparseCacheHandle、HiSparseIndexGroup
-输出：OutputProcessor、RequestOutput
+```vllmclass
+class AsyncLLM(EngineClient):
+        self.engine_core = EngineCoreClient.make_async_mp_client(...)
+class LLMEngine:
+        self.engine_core: InprocClient = EngineCoreClient.make_client(...)
+    # VllmConfig: 进程级全局配置
+    @classmethod
+    def from_vllm_config(
+        cls,
+        vllm_config: VllmConfig,
+        usage_context: UsageContext = UsageContext.ENGINE_CONTEXT,
+        stat_loggers: list[StatLoggerFactory] | None = None,
+        disable_log_stats: bool = False,
+    ) -> "LLMEngine":
 
+class InprocClient(EngineCoreClient):
+        self.engine_core = EngineCore(...)
+```
+
+## Scheduler层：Scheduler
+
+```vllmclass
+class EngineCore:
+        self.scheduler: SchedulerInterface = Scheduler(...)
+
+    def step_with_batch_queue(
+        self,
+    ) -> tuple[dict[int, EngineCoreOutputs] | None, bool]:
+            scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
+
+# /home/server/ai-infra-dev/code/vllm-workspace/vllm/vllm/v1/core/sched/scheduler.py:85
+# vllm.v1.core.sched.scheduler.Scheduler
+class Scheduler(SchedulerInterface):
+```
+
+### Scheduler.schedule
+
+`Scheduler.schedule`：
+- 在本轮 token 计算预算和 KV cache 容量等约束下，决定哪些请求向前推进、各推进多少 token，为这些计算准备好 KV block，再生成交给模型执行器的 SchedulerOutput。
+- 构造下一轮动态 batch 的执行计划，并同步更新调度侧状态。
+
+prefill、decode、chunked prefill都可以放进同一个补齐计算进度的统一模型。
+
+vllm/vllm:vllm/v1/core/sched/output.py:231-232
+```
+@dataclass
+class SchedulerOutput:
+```
+
+## KV cache管理层：KVCacheManager、KVCacheCoordinator、SingleTypeKVCacheManager、BlockPool
+
+## Executor层：UniProcExecutor、WorkerWrapperBase、Worker、GPUModelRunner
+
+## 模型：DeepseekV32Model、DeepseekV32DecoderLayer、DeepseekV32Attention
+
+## HiSparse
+
+- 调度侧：HiSparseCoordinator、HiSparseSourceManager、HiSparseHotManager、HiSparseResidentManager
+- Connector：HiSparseConnector、HiSparseConnectorScheduler、HiSparseConnectorWorker
+- Runtime：HiSparseRuntime、HiSparseCacheHandle、HiSparseIndexGroup
+
+## 输出：OutputProcessor、RequestOutput
+
+```
 调用路径树（已保存事件的路径并集；按首次出现排列）
 samples=经过节点的已保存栈数，不是函数调用次数；events=事件序号范围，不表示连续命中。
 🎯[n]=该路径首次作为采集终点的事件序号；caller=调用者源码行号。循环折叠，递归按深度保留。
@@ -119,3 +173,4 @@ status=ok events=64
        1  vllm/v1/core/sched/scheduler.py:Scheduler._free_request
        1  vllm/v1/core/kv_cache_manager.py:KVCacheManager.free
        5  vllm/v1/hisparse/coordinator.py:HiSparseCoordinator.free
+```
