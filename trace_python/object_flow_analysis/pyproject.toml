@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "object-flow-analysis"
+version = "0.1.0"
+description = "Evidence-based runtime Python object-flow observation"
+requires-python = ">=3.12,<3.15"
+dependencies = ["bytecode>=0.19.1,<0.20"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["trace_python.object_flow_analysis", "trace_python.object_flow_analysis.examples"]
+package-dir = {"trace_python.object_flow_analysis" = "."}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -4,9 +4,9 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import cast
-from trace_python import Target, TraceConfig
+from trace_python.call_stack_analysis import Target, TraceConfig
 
-ROOT = Path(__file__).resolve().parents[2] / "code/vllm-workspace/vllm"
+ROOT = Path(__file__).resolve().parents[3] / "code/vllm-workspace/vllm"
 REQUEST = ("request.request_id", "request.num_computed_tokens", "request.num_tokens",
            "request.num_prompt_tokens", "request.num_output_tokens")
 

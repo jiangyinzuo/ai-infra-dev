@@ -77,10 +77,10 @@ status=ok events=64
 
 └─_run_module_as_main (<frozen runpy>) samples=64 events=1..64
   └─_run_code (<frozen runpy>) [caller:198] samples=64 events=1..64
-    └─<module> (/home/server/ai-infra-dev/trace_python/__main__.py) [caller:88] samples=64 events=1..64
-      └─main (/home/server/ai-infra-dev/trace_python/__main__.py) [caller:327] samples=64 events=1..64
-        └─run_trace (/home/server/ai-infra-dev/trace_python/__main__.py) [caller:323] samples=64 events=1..64
-          └─run (/home/server/ai-infra-dev/trace_python/config/hisparse.py) [caller:299] samples=64 events=1..64
+    └─<module> (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:88] samples=64 events=1..64
+      └─main (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:327] samples=64 events=1..64
+        └─run_trace (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:323] samples=64 events=1..64
+          └─run (/home/server/ai-infra-dev/trace_python/call_stack_analysis/config/hisparse.py) [caller:299] samples=64 events=1..64
             ├─LLMEngine.add_request 🎯[1] (vllm/v1/engine/llm_engine.py) [caller:35] samples=2 events=1..2
             │ └─InprocClient.add_request (vllm/v1/engine/core_client.py) [caller:299] samples=1 events=2..2
             │   └─EngineCore.add_request (vllm/v1/engine/core.py) [caller:406] samples=1 events=2..2

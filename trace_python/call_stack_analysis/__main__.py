@@ -18,12 +18,12 @@ from pathlib import Path
 from types import CodeType, FrameType
 from typing import Any, TextIO
 
-# 目录入口由 Python 直接执行时，sys.path[0] 是包目录而不是其父目录。
+# 目录入口由 Python 直接执行时，sys.path[0] 是工具目录；加入仓库根目录以加载完整包名。
 if not __package__:
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from trace_python import Target, TraceConfig
-from trace_python.call_tree import CallTree
+from trace_python.call_stack_analysis import Target, TraceConfig
+from trace_python.call_stack_analysis.call_tree import CallTree
 
 
 def snapshot(value: Any, depth: int = 0) -> Any:
