@@ -7,7 +7,7 @@ name = "object-flow-analysis"
 version = "0.1.0"
 description = "Evidence-based runtime Python object-flow observation"
 requires-python = ">=3.12,<3.15"
-dependencies = ["bytecode>=0.19.1,<0.20"]
+dependencies = ["bytecode>=0.19.1,<0.20", "PyYAML>=6.0.2,<7"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

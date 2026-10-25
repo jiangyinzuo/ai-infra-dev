@@ -138,6 +138,10 @@ def test_cli_outputs_real_events_and_call_tree(tmp_path):
     records = [json.loads(line) for line in output.read_text().splitlines()]
     assert any(record.get("kind") == "capture" for record in records)
     assert any(record.get("kind") == "observed_write" for record in records)
-    tree = Path(str(output) + ".tree.txt").read_text()
+    tree = output.with_suffix(".tree.txt").read_text()
     assert "inspect_mapping" in tree
     assert "历史载体" in tree
+    structured = json.loads(output.with_suffix(".tree.json").read_text())
+    assert structured["summary"]["captures"] == records[-1]["captures"]
+    assert any(label.startswith("run (") for label in structured["tree"])
+    assert not Path(str(output) + ".tree.txt").exists()

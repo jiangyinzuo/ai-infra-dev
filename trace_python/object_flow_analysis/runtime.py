@@ -11,6 +11,7 @@ from typing import Any
 from .monitoring import CallMonitor
 from .operations import OperationObserver
 from .protocol import Site
+from .print_object import snapshot
 
 _SKIP_FLAGS = inspect.CO_GENERATOR | inspect.CO_COROUTINE | inspect.CO_ASYNC_GENERATOR
 
@@ -63,7 +64,9 @@ class Runtime:
         capture_id = len(self.captures) + 1
         node['capture_ids'].append(capture_id)
         self.captures.append({'capture_id': capture_id, 'object_id': node['object_id']})
-        self._emit('capture', value, site, capture_id=capture_id)
+        captured_value = snapshot(value)
+        node.setdefault('captured_value', captured_value)
+        self._emit('capture', value, site, capture_id=capture_id, captured_value=captured_value)
 
     def wants_call(self, function: object) -> bool:
         return self.operations.wants_call(function)

@@ -30,7 +30,7 @@ class CallMonitor:
         self._native_calls: set[tuple[int, int]] = set()
         self._local_codes: dict[int, CodeType] = {}
         self._internal_files = {str(Path(__file__).with_name(name))
-                                for name in ('runtime.py', 'monitoring.py', 'operations.py')}
+                                for name in ('runtime.py', 'monitoring.py', 'operations.py', 'print_object.py')}
 
     def project(self, code: CodeType) -> bool:
         known = self._code_project.get(id(code))

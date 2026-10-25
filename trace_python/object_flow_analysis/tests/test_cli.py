@@ -29,4 +29,4 @@ config = FlowConfig(Path(__file__).parent / "project", Origin("subject_failure.p
     records = [json.loads(line) for line in output.read_text().splitlines()]
     assert any(record.get("kind") == "capture" for record in records)
     assert records[-1]["error"] == {"type": "ValueError", "message": "scene failed"}
-    assert Path(str(output) + ".tree.txt").is_file()
+    assert output.with_suffix(".tree.txt").is_file()

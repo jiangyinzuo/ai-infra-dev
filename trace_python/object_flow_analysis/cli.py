@@ -15,7 +15,8 @@ from . import FlowConfig
 from .backend import unsupported
 from .loading import instrument_imports
 from .runtime import Runtime
-from .tree import render_tree
+from .tree import json_tree, render_tree
+from .yaml_tree import yaml_tree
 
 
 @contextmanager
@@ -101,10 +102,15 @@ def execute(config: FlowConfig, output: Path) -> int:
         for record in runtime.records:
             machine.write(json.dumps({"type": "event", **record}, ensure_ascii=False) + "\n")
         machine.write(json.dumps(summary, ensure_ascii=False) + "\n")
-    tree = Path(str(output) + ".tree.txt")
+    tree = output.with_suffix(".tree.txt")
     tree.write_text(render_tree(runtime.records, summary), encoding="utf-8")
+    structured_tree = output.with_suffix(".tree.json")
+    structured_tree.write_text(json.dumps(json_tree(runtime.records, summary), ensure_ascii=False,
+                                          allow_nan=False, indent=2) + "\n", encoding="utf-8")
+    yaml_output = output.with_suffix(".tree.yaml")
+    yaml_output.write_text(yaml_tree(runtime.records, summary), encoding="utf-8")
     print(f"events={len(runtime.records)} incomplete={summary.get('incomplete', False)}")
-    print(f"事件：{output}\n调用树：{tree}")
+    print(f"事件：{output}\n调用树：{tree}\nJSON 调用树：{structured_tree}\nYAML 调用树：{yaml_output}")
     if error is not None:
         raise error
     return 0 if captures else 2

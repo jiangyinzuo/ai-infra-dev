@@ -12,12 +12,18 @@ uv pip install --python trace_python/object_flow_analysis/.venv/bin/python -e '.
 trace_python/object_flow_analysis/.venv/bin/python -m trace_python.object_flow_analysis \
   --config trace_python/object_flow_analysis/examples/config.py \
   --output /tmp/object-flow.jsonl
-less -S /tmp/object-flow.jsonl.tree.txt
+less -S /tmp/object-flow.tree.txt
+vat /tmp/object-flow.tree.json
+nvim /tmp/object-flow.tree.yaml
 ```
 
 需要普通带 GIL 的 CPython 3.12–3.14。目标场景依赖必须安装在同一个解释器环境中。工具不选择 GPU、不修改模型参数。仅运行可信配置。
 
-输出 JSONL 和 `.tree.txt` 均覆盖写入。目标输出（包括 fd 1）转到 stderr；场景抛异常仍输出已有事件，再以非零退出。没有捕获起点时退出码为 2。JSONL 最后一条为摘要，包含对象、捕获编号、资源停止原因和未覆盖指令位置。
+输出文件均覆盖写入：`--output /tmp/object-flow.jsonl` 保存原始事件，另生成 `/tmp/object-flow.tree.txt` 和 `/tmp/object-flow.tree.json`（替换输出路径的扩展名）。JSON 树是带缩进的完整嵌套对象，包含 `tree`、`summary` 和计数说明，与调用栈工具使用相同的标签作键结构，vat 按 JSON 模式自由展开。目标输出（包括 fd 1）转到 stderr；场景抛异常仍输出已有事件，再以非零退出。没有捕获起点时退出码为 2。原始事件 JSONL 最后一条为摘要。
+
+另生成 `.tree.yaml`，适合 Neovim 阅读：函数、文件、行号、事件计数和对象编号为独立字段，`source: |-` 保留多行源码和相对缩进。可用 `:setlocal foldmethod=indent` 按层次折叠；JSON 和文本树仍保留。YAML 序列化使用 PyYAML，随工具依赖一起安装。
+
+起点事件附带 `captured_value`，文本树末尾按 O 编号列出目标对象首次捕获时的内容；vat 可在 `summary.objects[].captured_value` 展开。同一对象每次起点捕获的内容分别保存在原始事件中。默认最多展开 2 层、每层 8 项、64 个值节点，字符串最多 160 字符；循环和截断显式标记。不调用用户 repr、property 或自定义迭代器，只读取精确内置容器和普通实例字典；其他对象只显示类型。内容可能含请求数据，分享结果前注意脱敏。已有旧事件不包含内容，需要重新采集，不能从旧日志恢复当时对象。
 
 容器观察默认开启；命令行追加 `--no-observe-containers` 可关闭，`--observe-containers` 显式开启。也可在 FlowConfig 设置 `observe_containers=False`，命令行优先。关闭后只保留起点、变量绑定和同步函数参数／返回，不插入容器与实例字段读写、构造、复制或内置方法代理探针，也不会发现历史载体和副本。之后在绑定或函数边界实际出现原目标时仍可识别。此模式仍有绑定探针和监控开销，不等于零插桩。
 
@@ -31,7 +37,8 @@ uv pip install --python "$VIRTUAL_ENV/bin/python" 'bytecode==0.19.1'
 CUDA_VISIBLE_DEVICES=<空闲GPU的UUID> python -m trace_python.object_flow_analysis \
   --config trace_python/object_flow_analysis/examples/vllm_hisparse.py \
   --output /tmp/vllm-object-flow.jsonl
-less -S /tmp/vllm-object-flow.jsonl.tree.txt
+less -S /tmp/vllm-object-flow.tree.txt
+vat /tmp/vllm-object-flow.tree.json
 ```
 
 该场景使用已有缩减随机权重配置，不下载完整模型权重；模型元数据和 CUDA 内核仍须可用。FlashInfer 缓存不可复用时可能触发编译。仅转换 scheduler、KV cache manager 与 scheduler output；真实请求已验证产生 8 个 token 和 91 个对象流事件，不代表全项目覆盖或 torch.compile 兼容。

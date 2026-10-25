@@ -17,6 +17,10 @@
 
 多行赋值、表达式与 return 通过 AST 只定位语句范围，再截取原文件源码，保留换行、注释、引号和语句内部相对缩进；去掉语句首行的外层缩进，由树前缀定位。事件编号、位置与统计放在语句首行，后续源码行保留树线。源码只在渲染时按文件解析，不增加采集开销；位置字段置于事件类型与 objects 之前。
 
+文本和 JSON 树共享路径构建、源码聚合与排序函数。`.tree.json` 带缩进保存完整 `{tree, summary, sample_semantics}`，函数／语句标签作为嵌套对象键、叶子为 `{}`；键中的源码换行由 JSON 转义保留。使用 .json 扩展名让 vat 选择嵌套 JSON 查看模式，原始事件仍用 JSONL。输出路径用 with_suffix 替换扩展名。
+
+`yaml_tree.py` 使用 PyYAML SafeDumper 输出结构化节点列表，共用树构建、聚合和排序。函数节点包括 function/file/caller_line/samples/children，语句节点包括 source/file/line/events/objects/event_range；多行字符串使用 literal block，不用长标签作键，不生成 anchor/alias。输出 `.tree.yaml`，不改变采集过程与原始事件协议。
+
 普通 CALL 保留原指令；运行时只对精确内置容器构造和已知方法选择代理。这样别名调用 locals/eval、零参数 super 不被统一调用包装破坏。方法加载仍会通过属性 helper，栈反射可见额外帧，不承诺任意反射程序透明。
 
 Python 3.13/3.14 的调用布局由运行解释器编译的微型模板取得；融合局部指令拆为等价单指令。3.14 的 CALL_FUNCTION_EX 空 kwargs 使用 NULL，进入 Python 参数元组前必须转成空 dict。3.12+ 内联推导式恢复局部槽位也可能携带 NULL，因此对应局部绑定不插观察，保留原 STORE。
