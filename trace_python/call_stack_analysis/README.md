@@ -17,8 +17,8 @@ python trace_python/call_stack_analysis \
 
 示例运行 dummy 模型，输入 2304 token、最多输出 8 token。启动可能需要模型元数据和 CUDA 编译工具；请激活虚拟环境，确保 ninja 等工具在 PATH 中。工具不自动选卡。
 
-HiSparse 配置还采集稀疏 MLA 元数据构建、SM120 `forward_mqa` 与
-`_run_mqa_kernel` 的 Python 调用入口，便于查看 Attention 后端路径；不追踪 CUDA kernel 内部。
+HiSparse 配置从引擎创建前启动采集，包含后端实现初始化、预热和请求执行，命中计数不能只解释为请求调用。
+另外采集稀疏 MLA 元数据构建、SM120 `forward_mqa` 与 `_run_mqa_kernel` 的 Python 调用入口；不追踪 CUDA kernel 内部。
 
 也支持 `python -m trace_python.call_stack_analysis`。从其他目录调用时，使用工具目录和配置文件的绝对路径。
 
@@ -32,6 +32,14 @@ HiSparse 配置还采集稀疏 MLA 元数据构建、SM120 `forward_mqa` 与
 | `hisparse.txt` | 逐事件查看参数和完整调用栈 |
 | `hisparse.tree.json` | vat-viewer 折叠查看调用树 |
 | `hisparse.tree.txt` | 紧凑文本调用树 |
+
+文本树头部记录本次 Python 执行命令和启动目录；JSON 树的 `summary` 与 JSONL 的
+`run`/`summary` 记录包含 `argv`、`command`、`cwd`。命令保留 Python 启动参数与 shell 引用，
+不包含 shell 重定向或 `CUDA_VISIBLE_DEVICES=...` 等 shell 环境前缀。
+
+`.txt` 摘要与 `.tree.txt` 头部用时分秒显示运行时长；JSON/JSONL 的
+`summary.elapsed_seconds` 保留数值秒。计时覆盖配置场景执行（含初始化、预热与请求），
+不包含 Python 启动、配置加载或最终文件汇总写入，不用于衡量未插桩程序性能。
 
 ```bash
 vat /tmp/hisparse.tree.json

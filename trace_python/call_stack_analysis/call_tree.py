@@ -3,6 +3,21 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, TextIO
 
+def format_duration(seconds: float) -> str:
+    """先舍入到毫秒再拆单位，避免出现 60.000 秒的进位显示。"""
+    milliseconds = round(seconds * 1000)
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    whole_seconds, fraction = divmod(remainder, 1000)
+    parts = []
+    if hours:
+        parts.append(f"{hours}小时")
+    if minutes or hours:
+        parts.append(f"{minutes}分")
+    parts.append(f"{whole_seconds}.{fraction:03d}秒")
+    return " ".join(parts)
+
+
 
 @dataclass
 class Node:
@@ -62,6 +77,9 @@ class CallTree:
     def write_text(self, output: TextIO, summary: dict[str, Any]) -> None:
         print("调用路径树（已保存事件的路径并集；按首次出现排列）", file=output)
         print(f"trace_started_at={summary['started_at']}", file=output)
+        print(f"trace_command={summary.get('command', '')}", file=output)
+        print(f"trace_cwd={summary.get('cwd', '')}", file=output)
+        print(f"运行时长：{format_duration(summary['elapsed_seconds'])}", file=output)
         print("samples=经过节点的已保存栈数，不是函数调用次数；events=事件序号范围，不表示连续命中。", file=output)
         print("🎯[n]=该路径首次作为采集终点的事件序号；caller=调用者源码行号。循环折叠，递归按深度保留。", file=output)
         print(f"status={summary['status']} events={summary['events']}\n", file=output)

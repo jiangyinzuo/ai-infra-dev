@@ -30,8 +30,9 @@ def run(start):
         "--distributed-executor-backend", "uni",
     ]))
     args = EngineArgs.from_cli_args(parsed)
-    engine = LLMEngine.from_engine_args(args)
+    # 初始化与预热也属于本次观察范围，必须在创建引擎前启动采集。
     start()
+    engine = LLMEngine.from_engine_args(args)
     engine.add_request("learn-hisparse", {"prompt_token_ids": [100] * 2304},
                        SamplingParams(temperature=0, max_tokens=8, ignore_eos=True))
     # LLMEngine可以同时处理多个请求，只要还有unfinished requests，就继续处理。
@@ -60,15 +61,18 @@ config = TraceConfig(
         Target("vllm/v1/worker/gpu/model_runner.py", "GPUModelRunner.execute_model",
                ("dummy_run", "scheduler_output.num_scheduled_tokens")),
         # 从元数据准备追到 SM120 执行与 kernel 调用入口；只记录张量描述，不读取 GPU 数据。
+        Target("vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py",
+               "FlashInferMLASparseSM120Impl.__init__",
+               ("self", "num_heads", "head_size", "kv_cache_dtype", "indexer", "mla_args"), 16),
         Target("vllm/model_executor/layers/attention/sparse_mla_attention.py",
                "SparseMLACommonMetadataBuilder.build",
-               ("common_prefix_len", "common_attn_metadata.num_actual_tokens"), 4),
+               ("common_prefix_len", "common_attn_metadata.num_actual_tokens"), 16),
         Target("vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py",
                "FlashInferMLASparseSM120Impl.forward_mqa",
-               ("q", "attn_metadata.num_decode_tokens", "self.num_heads"), 6),
+               ("q", "attn_metadata.num_decode_tokens", "self.num_heads"), 64),
         Target("vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py",
                "FlashInferMLASparseSM120Impl._run_mqa_kernel",
-               ("q", "kv_cache", "topk_indices_physical"), 6),
+               ("q", "kv_cache", "topk_indices_physical"), 64),
         Target("vllm/v1/hisparse/coordinator.py", "HiSparseCoordinator.plan_prefix_materialization",
                ("request_id", "num_computed_tokens")),
         Target("vllm/v1/hisparse/coordinator.py", "HiSparseCoordinator._plan_page_transfer",

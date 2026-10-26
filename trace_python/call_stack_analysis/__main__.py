@@ -8,6 +8,7 @@ import contextlib
 import importlib.util
 import json
 import os
+import shlex
 import sys
 import time
 import traceback
@@ -23,7 +24,7 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from trace_python.call_stack_analysis import Target, TraceConfig
-from trace_python.call_stack_analysis.call_tree import CallTree
+from trace_python.call_stack_analysis.call_tree import CallTree, format_duration
 
 
 def snapshot(value: Any, depth: int = 0) -> Any:
@@ -142,6 +143,7 @@ class Writer:
                 f"\n结束：{record['status']}；记录 {record['events']} 个事件",
                 file=self.human,
             )
+            print(f"运行时长：{format_duration(record['elapsed_seconds'])}", file=self.human)
             for name, count in record["counts"].items():
                 print(f"  {count:6d}  {name}", file=self.human)
             if record.get("error"):
@@ -285,6 +287,12 @@ def execution_context(config: TraceConfig, tracer: Tracer) -> Iterator[None]:
 def run_trace(config: TraceConfig, writer: Writer, config_path: Path) -> int:
     tracer = Tracer(config, writer)
     started_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    # orig_argv 保留 -m、解释器选项及原始相对路径；必须在切换目标 cwd 前记录。
+    invocation = {
+        "argv": list(sys.orig_argv),
+        "command": shlex.join(sys.orig_argv),
+        "cwd": str(Path.cwd()),
+    }
     writer.emit(
         {
             "type": "run",
@@ -292,6 +300,7 @@ def run_trace(config: TraceConfig, writer: Writer, config_path: Path) -> int:
             "config": str(config_path),
             "root": str(config.root),
             "python": sys.executable,
+            **invocation,
             "scope": "current-thread Python calls; no CUDA kernel tracing",
         }
     )
@@ -309,6 +318,7 @@ def run_trace(config: TraceConfig, writer: Writer, config_path: Path) -> int:
             {
                 "type": "summary",
                 "started_at": started_at,
+                **invocation,
                 "status": status,
                 "error": error,
                 "events": tracer.sequence,
