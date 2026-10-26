@@ -1,16 +1,7 @@
-## 更新源码与对齐版本
+源码更新与版本对齐见 [code/README.md](../README.md)。
 
-从任意目录执行（只依赖 Python 3 和 Git，不安装依赖）：
+## 本地 PC 初始化 uv 环境
 
-```bash
-python3 ~/ai-infra-dev/code/vllm-ascend-workspace/update-vllm.py
-```
-
-首次运行克隆 `code/vllm-workspace/vllm` 和本工作区下的 `vllm-ascend`，后续仅 fast-forward 更新两个仓库的 `main`。根据 `vllm-ascend/.github/vllm-main-verified.commit` 创建或对齐本工作区下的 `vllm` worktree，保持 detached HEAD；主仓库位于 `code/vllm-workspace/vllm`，Ascend worktree 仍位于 `code/vllm-ascend-workspace/vllm`。
-
-已有主仓库必须位于 `main` 且 origin 为官方 HTTPS URL（可用 Git `insteadOf` 重写为镜像）。所有受管理仓库和 worktree 必须无本地修改，包括未跟踪文件。失败可能保留已完成的更新，修复原因后可重新运行，不会重置本地提交或覆盖本地修改。
-
-本地PC（无昇腾卡）初始化uv环境
 ```bash
 uv venv --python 3.12 --seed --managed-python --system-certs
 ./uv-pip-install-for-lsp.sh

@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """更新 vLLM/Ascend 主仓库并对齐开发 worktree（只依赖 Python 3 和 Git）。
 
-用法：python3 code/vllm-ascend-workspace/update-vllm.py，可从任意目录调用。
+用法：python3 code/update-vllm-and-vllm-ascend-repo.py，可从任意目录调用。
 首次运行克隆 main，后续只做 fast-forward，不重置本地提交或覆盖本地修改。
 本脚本不安装依赖；失败可能保留已完成的更新，修复原因后可再次运行。
 """
 
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 from typing import Literal, overload
 
 
-WORKSPACE = Path(__file__).resolve().parent
-CODE_DIR = WORKSPACE.parent
+CODE_DIR = Path(__file__).resolve().parent
+WORKSPACE = CODE_DIR / "vllm-ascend-workspace"
 VLLM = CODE_DIR / "vllm-workspace/vllm"
 ASCEND = WORKSPACE / "vllm-ascend"
 WORKTREE = WORKSPACE / "vllm"
@@ -36,8 +37,10 @@ def git(repo: Path | None, *args: str, capture: bool = False) -> str | None:
     command = ["git"]
     if repo is not None:
         command += ["-C", str(repo)]
+    command += list(args)
+    print(f"{shlex.join(command)}", flush=True)
     result = subprocess.run(
-        command + list(args), check=True, text=True,
+        command, check=True, text=True,
         stdout=subprocess.PIPE if capture else None,
     )
     return result.stdout.strip() if capture else None
@@ -88,7 +91,7 @@ def update_main(repo: Path, url: str) -> None:
 
 def main() -> None:
     if len(sys.argv) != 1:
-        raise ValueError("用法：python3 code/vllm-ascend-workspace/update-vllm.py（不接受参数）")
+        raise ValueError("用法：python3 code/update-vllm-and-vllm-ascend-repo.py（不接受参数）")
     # 先检查所有现有目录，避免明知另一目录有修改时仍更新第一个仓库。
     check_main_repo(VLLM, VLLM_URL)
     check_main_repo(ASCEND, ASCEND_URL)
@@ -102,8 +105,10 @@ def main() -> None:
     if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
         raise ValueError(f"验证版本必须是完整的 40 位 Git SHA：{COMMIT_FILE}")
     commit = commit.lower()
+    command = ["git", "-C", str(VLLM), "cat-file", "-e", f"{commit}^{{commit}}"]
+    print(f"$ {shlex.join(command)}", flush=True)
     probe = subprocess.run(
-        ["git", "-C", str(VLLM), "cat-file", "-e", f"{commit}^{{commit}}"],
+        command,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     if probe.returncode:

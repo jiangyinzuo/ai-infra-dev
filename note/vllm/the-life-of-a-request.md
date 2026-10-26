@@ -1,4 +1,5 @@
 <!-- vllmclass -->
+:vim:foldlevel=7:
 
 DeepSeek-V3.2缩小版 + HiSparse 0.32.1rc1.dev158+g4964e4482.precompiled 2026-10-21
 
@@ -55,11 +56,17 @@ vllm/vllm:vllm/v1/core/sched/output.py:231-232
 class SchedulerOutput:
 ```
 
-## KV cache管理层：KVCacheManager、KVCacheCoordinator、SingleTypeKVCacheManager、BlockPool
+## KV Cache管理层：KVCacheManager、KVCacheCoordinator、SingleTypeKVCacheManager、BlockPool
 
-## Executor层：UniProcExecutor、WorkerWrapperBase、Worker、GPUModelRunner
+## Executor层：UniProcExecutor、WorkerWrapperBase、Worker
 
-## 模型：DeepseekV32Model、DeepseekV32DecoderLayer、DeepseekV32Attention
+## ModelRunner层：GPUModelRunner、NPUModelRunner
+
+NPUModelRunner在vllm-ascend仓
+
+### 模型：Module、DeepseekV32Model、DeepseekV32DecoderLayer、DeepseekV32Attention
+
+## Attention后端
 
 ## HiSparse
 

@@ -17,6 +17,9 @@ python trace_python/call_stack_analysis \
 
 示例运行 dummy 模型，输入 2304 token、最多输出 8 token。启动可能需要模型元数据和 CUDA 编译工具；请激活虚拟环境，确保 ninja 等工具在 PATH 中。工具不自动选卡。
 
+HiSparse 配置还采集稀疏 MLA 元数据构建、SM120 `forward_mqa` 与
+`_run_mqa_kernel` 的 Python 调用入口，便于查看 Attention 后端路径；不追踪 CUDA kernel 内部。
+
 也支持 `python -m trace_python.call_stack_analysis`。从其他目录调用时，使用工具目录和配置文件的绝对路径。
 
 ## 查看结果
