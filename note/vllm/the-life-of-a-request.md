@@ -66,7 +66,7 @@ NPUModelRunner在vllm-ascend仓
 
 ### 模型：Module、DeepseekV32Model、DeepseekV32DecoderLayer、DeepseekV32Attention
 
-## Attention后端
+## Attention后端: AttentionImplBase基类、FlashInferMLASparseSM120Impl
 
 ## HiSparse
 
@@ -79,89 +79,179 @@ NPUModelRunner在vllm-ascend仓
 ## 调用路径树
 ```vllmclass
 调用路径树（已保存事件的路径并集；按首次出现排列）
+trace_started_at=2026-10-26T06:15:22+00:00
+trace_command=python trace_python/call_stack_analysis --config trace_python/call_stack_analysis/config/hisparse.py --output-prefix /tmp/hisparse-20261026
+trace_cwd=/home/server/ai-infra-dev
+运行时长：51.955秒
 samples=经过节点的已保存栈数，不是函数调用次数；events=事件序号范围，不表示连续命中。
 🎯[n]=该路径首次作为采集终点的事件序号；caller=调用者源码行号。循环折叠，递归按深度保留。
-status=ok events=64
+status=ok events=185
 
-└─_run_module_as_main (<frozen runpy>) samples=64 events=1..64
-  └─_run_code (<frozen runpy>) [caller:198] samples=64 events=1..64
-    └─<module> (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:88] samples=64 events=1..64
-      └─main (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:327] samples=64 events=1..64
-        └─run_trace (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:323] samples=64 events=1..64
-          └─run (/home/server/ai-infra-dev/trace_python/call_stack_analysis/config/hisparse.py) [caller:299] samples=64 events=1..64
-            ├─LLMEngine.add_request 🎯[1] (vllm/v1/engine/llm_engine.py) [caller:35] samples=2 events=1..2
-            │ └─InprocClient.add_request (vllm/v1/engine/core_client.py) [caller:299] samples=1 events=2..2
-            │   └─EngineCore.add_request (vllm/v1/engine/core.py) [caller:406] samples=1 events=2..2
-            │     └─Scheduler.add_request 🎯[2] (vllm/v1/core/sched/scheduler.py) [caller:531] samples=1 events=2..2
-            └─LLMEngine.step (vllm/v1/engine/llm_engine.py) [caller:38] samples=62 events=3..64
-              ├─InprocClient.get_output (vllm/v1/engine/core_client.py) [caller:327] samples=60 events=3..64
-              │ └─EngineCore.step_with_batch_queue (vllm/v1/engine/core.py) [caller:397] samples=60 events=3..64
-              │   ├─Scheduler.schedule 🎯[3] (vllm/v1/core/sched/scheduler.py) [caller:708] samples=34 events=3..59
-              │   │ ├─Scheduler._get_local_prefix_cache_hit (vllm/v1/core/sched/scheduler.py) [caller:1022] samples=1 events=4..4
-              │   │ │ └─KVCacheManager.get_computed_blocks 🎯[4] (vllm/v1/core/kv_cache_manager.py) [caller:596] samples=1 events=4..4
-              │   │ ├─KVCacheManager.allocate_slots 🎯[5] (vllm/v1/core/kv_cache_manager.py) [caller:1313] samples=3 events=5..7
-              │   │ │ └─KVCacheCoordinator.allocate_new_blocks (vllm/v1/core/kv_cache_coordinator.py) [caller:595] samples=2 events=6..7
-              │   │ │   └─KVCacheCoordinator.allocate_new_blocks.<locals>.<genexpr> (vllm/v1/core/kv_cache_coordinator.py) [caller:335] samples=2 events=6..7
-              │   │ │     └─SingleTypeKVCacheManager.allocate_new_blocks (vllm/v1/core/single_type_kv_cache_manager.py) [caller:336] samples=2 events=6..7
-              │   │ │       └─BlockPool.get_new_blocks 🎯[6] (vllm/v1/core/block_pool.py) [caller:406] samples=2 events=6..7
-              │   │ ├─Scheduler._build_kv_connector_meta (vllm/v1/core/sched/scheduler.py) [caller:1609] samples=6 events=8..18
-              │   │ │ └─HiSparseConnector.build_connector_meta (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/connector.py) [caller:1641] samples=6 events=8..18
-              │   │ │   └─HiSparseConnectorScheduler.build_connector_meta (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/connector.py) [caller:395] samples=6 events=8..18
-              │   │ │     ├─HiSparseCoordinator.advance_scheduled (vllm/v1/hisparse/coordinator.py) [caller:152] samples=4 events=8..17
-              │   │ │     │ └─HiSparseCoordinator.plan_prefix_materialization 🎯[8] (vllm/v1/hisparse/coordinator.py) [caller:454] samples=4 events=8..17
-              │   │ │     │   └─HiSparseCoordinator._plan_page_transfer 🎯[9] (vllm/v1/hisparse/coordinator.py) [caller:486] samples=2 events=9..10
-              │   │ │     └─HiSparseCoordinator.build_row_mirrors 🎯[11] (vllm/v1/hisparse/coordinator.py) [caller:179] samples=2 events=11..18
-              │   │ └─KVCacheManager.allocate_slots 🎯[16] (vllm/v1/core/kv_cache_manager.py) [caller:833] samples=11 events=16..57
-              │   ├─UniProcExecutor.execute_model (vllm/v1/executor/uniproc_executor.py) [caller:710] samples=10 events=12..39
-              │   │ └─UniProcExecutor.collective_rpc (vllm/v1/executor/uniproc_executor.py) [caller:122] samples=10 events=12..39
-              │   │   └─run_method (vllm/v1/serial_utils.py) [caller:109] samples=10 events=12..39
-              │   │     └─WorkerWrapperBase.execute_model (vllm/v1/worker/worker_base.py) [caller:508] samples=10 events=12..39
-              │   │       └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:383] samples=10 events=12..39
-              │   │         └─Worker.execute_model (vllm/v1/worker/gpu_worker.py) [caller:124] samples=10 events=12..39
-              │   │           └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:1339] samples=10 events=12..39
-              │   │             └─GPUModelRunner.execute_model 🎯[12] (vllm/v1/worker/gpu/model_runner.py) [caller:124] samples=10 events=12..39
-              │   │               ├─ActiveKVConnector.finish_forward (vllm/v1/worker/gpu/kv_connector.py) [caller:2072] samples=2 events=13..20
-              │   │               │ └─HiSparseConnector.finish_forward (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/connector.py) [caller:131] samples=2 events=13..20
-              │   │               │   └─HiSparseConnectorWorker.finish_forward (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:287] samples=2 events=13..20
-              │   │               │     └─HiSparseConnectorWorker._finish_mirror_phase (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:920] samples=2 events=13..20
-              │   │               │       └─HiSparseConnectorWorker._enqueue_host_mirror (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:914] samples=2 events=13..20
-              │   │               │         └─HiSparseConnectorWorker._enqueue_row_dma (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:897] samples=2 events=13..20
-              │   │               │           └─HiSparseConnectorWorker._submit_dma_descriptors 🎯[13] (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:711] samples=2 events=13..20
-              │   │               └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:2070] samples=6 events=34..39
-              │   │                 └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=6 events=34..39
-              │   │                   └─DeepseekV2ForCausalLM.forward (vllm/model_executor/models/deepseek_v2.py) [caller:1794] samples=6 events=34..39
-              │   │                     └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1972] samples=6 events=34..39
-              │   │                       └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=6 events=34..39
-              │   │                         └─DeepseekV32Model.forward (vllm/models/deepseek_v32/nvidia/model.py) [caller:1794] samples=6 events=34..39
-              │   │                           └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:293] samples=6 events=34..39
-              │   │                             └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=6 events=34..39
-              │   │                               └─DeepseekV32DecoderLayer.forward (vllm/models/deepseek_v32/nvidia/model.py) [caller:1794] samples=6 events=34..39
-              │   │                                 └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:151] samples=6 events=34..39
-              │   │                                   └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=6 events=34..39
-              │   │                                     └─DeepseekV32Attention.forward (vllm/models/deepseek_v32/attention.py) [caller:1794] samples=6 events=34..39
-              │   │                                       └─eager_break_during_capture.<locals>.wrapper (vllm/compilation/breakable_cudagraph.py) [caller:449] samples=6 events=34..39
-              │   │                                         └─DeepseekV32Attention._sparse_indexer_and_attn (vllm/models/deepseek_v32/attention.py) [caller:105] samples=6 events=34..39
-              │   │                                           └─FlashInferMLASparseSM120Impl.forward_mqa (vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py) [caller:594] samples=6 events=34..39
-              │   │                                             └─HiSparseMLAIndexGroup.convert_logical_to_physical_topk (vllm/v1/attention/backends/mla/index_group.py) [caller:132] samples=6 events=34..39
-              │   │                                               └─HiSparseCacheHandle.swap_in (vllm/v1/hisparse/runtime.py) [caller:256] samples=6 events=34..39
-              │   │                                                 └─HiSparseRuntime.swap_in 🎯[34] (vllm/v1/hisparse/runtime.py) [caller:1288] samples=6 events=34..39
-              │   │                                                   └─HiSparseRuntime._resolve_and_stage_group (vllm/v1/hisparse/runtime.py) [caller:1112] samples=4 events=35..39
-              │   │                                                     ├─HiSparseRuntime._resolve_residency 🎯[35] (vllm/v1/hisparse/runtime.py) [caller:1052] samples=2 events=35..38
-              │   │                                                     └─HiSparseRuntime._swap_rows 🎯[36] (vllm/v1/hisparse/runtime.py) [caller:1067] samples=2 events=36..39
-              │   └─Scheduler.update_from_output 🎯[21] (vllm/v1/core/sched/scheduler.py) [caller:766] samples=16 events=21..64
-              │     └─Scheduler._free_request 🎯[61] (vllm/v1/core/sched/scheduler.py) [caller:2316] samples=4 events=61..64
-              │       └─Scheduler._free_blocks (vllm/v1/core/sched/scheduler.py) [caller:2833] samples=3 events=62..64
-              │         └─Scheduler._free_request_blocks (vllm/v1/core/sched/scheduler.py) [caller:2839] samples=3 events=62..64
-              │           └─KVCacheManager.free 🎯[62] (vllm/v1/core/kv_cache_manager.py) [caller:2862] samples=3 events=62..64
-              │             └─KVCacheCoordinator.free (vllm/v1/core/kv_cache_coordinator.py) [caller:629] samples=2 events=63..64
-              │               └─SingleTypeKVCacheManager.free (vllm/v1/core/single_type_kv_cache_manager.py) [caller:408] samples=2 events=63..64
-              │                 ├─HiSparseSourceManager.pop_blocks_for_free (vllm/v1/core/single_type_kv_cache_manager.py) [caller:598] samples=1 events=63..63
-              │                 │ └─HiSparseCoordinator.free 🎯[63] (vllm/v1/hisparse/coordinator.py) [caller:2341] samples=1 events=63..63
-              │                 └─HiSparseResidentManager.pop_blocks_for_free (vllm/v1/core/single_type_kv_cache_manager.py) [caller:598] samples=1 events=64..64
-              │                   └─HiSparseCoordinator.free 🎯[64] (vllm/v1/hisparse/coordinator.py) [caller:2546] samples=1 events=64..64
-              └─OutputProcessor.process_outputs 🎯[14] (vllm/v1/engine/output_processor.py) [caller:334] samples=2 events=14..22
+└─_run_module_as_main (<frozen runpy>) samples=185 events=1..185
+  └─_run_code (<frozen runpy>) [caller:198] samples=185 events=1..185
+    └─<module> (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:88] samples=185 events=1..185
+      └─main (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:341] samples=185 events=1..185
+        └─run_trace (/home/server/ai-infra-dev/trace_python/call_stack_analysis/__main__.py) [caller:337] samples=185 events=1..185
+          └─run (/home/server/ai-infra-dev/trace_python/call_stack_analysis/config/hisparse.py) [caller:311] samples=185 events=1..185
+            ├─LLMEngine.from_engine_args (vllm/v1/engine/llm_engine.py) [caller:35] samples=15 events=1..15
+            │ └─LLMEngine.__init__ (vllm/v1/engine/llm_engine.py) [caller:191] samples=15 events=1..15
+            │   └─EngineCoreClient.make_client (vllm/v1/engine/core_client.py) [caller:116] samples=15 events=1..15
+            │     └─InprocClient.__init__ (vllm/v1/engine/core_client.py) [caller:136] samples=15 events=1..15
+            │       └─EngineCore.__init__ (vllm/v1/engine/core.py) [caller:386] samples=15 events=1..15
+            │         ├─instrument_otel.<locals>.sync_wrapper (vllm/tracing/otel.py) [caller:147] samples=4 events=1..4
+            │         │ └─Executor.__init__ (vllm/v1/executor/abstract.py) [caller:175] samples=4 events=1..4
+            │         │   └─UniProcExecutor._init_executor (vllm/v1/executor/uniproc_executor.py) [caller:120] samples=4 events=1..4
+            │         │     └─Worker.load_model (vllm/v1/worker/gpu_worker.py) [caller:74] samples=4 events=1..4
+            │         │       └─GPUModelRunner.load_model (vllm/v1/worker/gpu/model_runner.py) [caller:601] samples=4 events=1..4
+            │         │         └─instrument_otel.<locals>.sync_wrapper (vllm/tracing/otel.py) [caller:403] samples=4 events=1..4
+            │         │           └─BaseModelLoader.load_model (vllm/model_executor/model_loader/base_loader.py) [caller:175] samples=4 events=1..4
+            │         │             └─BaseModelLoader.create_model (vllm/model_executor/model_loader/base_loader.py) [caller:76] samples=4 events=1..4
+            │         │               └─instrument_otel.<locals>.sync_wrapper (vllm/tracing/otel.py) [caller:53] samples=4 events=1..4
+            │         │                 └─initialize_model (vllm/model_executor/model_loader/utils.py) [caller:175] samples=4 events=1..4
+            │         │                   └─DeepseekV32ForCausalLM.__init__ (vllm/models/deepseek_v32/nvidia/model.py) [caller:101] samples=4 events=1..4
+            │         │                     └─DeepseekV2ForCausalLM.__init__ (vllm/model_executor/models/deepseek_v2.py) [caller:441] samples=4 events=1..4
+            │         │                       └─DeepseekV32Model.__init__ (vllm/models/deepseek_v32/nvidia/model.py) [caller:1914] samples=4 events=1..4
+            │         │                         └─make_layers (vllm/model_executor/models/utils.py) [caller:216] samples=4 events=1..4
+            │         │                           └─NoopOffloader.wrap_modules (vllm/model_executor/offloader/base.py) [caller:913] samples=4 events=1..4
+            │         │                             └─make_layers.<locals>.<genexpr> (vllm/model_executor/models/utils.py) [caller:120] samples=4 events=1..4
+            │         │                               └─DeepseekV32Model.__init__.<locals>.<lambda> (vllm/models/deepseek_v32/nvidia/model.py) [caller:914] samples=4 events=1..4
+            │         │                                 └─DeepseekV32DecoderLayer.__init__ (vllm/models/deepseek_v32/nvidia/model.py) [caller:218] samples=4 events=1..4
+            │         │                                   └─DeepseekV32Attention.__init__ (vllm/models/deepseek_v32/attention.py) [caller:83] samples=4 events=1..4
+            │         │                                     └─MLAAttention.__init__ (vllm/model_executor/layers/attention/mla_attention.py) [caller:202] samples=4 events=1..4
+            │         │                                       └─FlashInferMLASparseSM120Impl.__init__ 🎯[1] (vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py) [caller:576] samples=4 events=1..4
+            │         └─instrument_otel.<locals>.sync_wrapper (vllm/tracing/otel.py) [caller:160] samples=11 events=5..15
+            │           └─EngineCore._initialize_kv_caches (vllm/v1/engine/core.py) [caller:175] samples=11 events=5..15
+            │             ├─Executor.determine_available_memory (vllm/v1/executor/abstract.py) [caller:300] samples=1 events=5..5
+            │             │ └─UniProcExecutor.collective_rpc (vllm/v1/executor/uniproc_executor.py) [caller:157] samples=1 events=5..5
+            │             │   └─run_method (vllm/v1/serial_utils.py) [caller:103] samples=1 events=5..5
+            │             │     └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:508] samples=1 events=5..5
+            │             │       └─Worker.determine_available_memory (vllm/v1/worker/gpu_worker.py) [caller:124] samples=1 events=5..5
+            │             │         └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:700] samples=1 events=5..5
+            │             │           └─GPUModelRunner.profile_run (vllm/v1/worker/gpu/model_runner.py) [caller:124] samples=1 events=5..5
+            │             │             └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:1027] samples=1 events=5..5
+            │             │               └─step_eplb_after.<locals>.decorator.<locals>.wrapper (vllm/v1/worker/gpu/eplb_utils.py) [caller:124] samples=1 events=5..5
+            │             │                 └─GPUModelRunner._dummy_run (vllm/v1/worker/gpu/model_runner.py) [caller:57] samples=1 events=5..5
+            │             │                   └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:923] samples=1 events=5..5
+            │             │                     └─GPUModelRunner.execute_model 🎯[5] (vllm/v1/worker/gpu/model_runner.py) [caller:124] samples=1 events=5..5
+            │             └─Executor.compile_or_warm_up_model (vllm/v1/executor/abstract.py) [caller:379] samples=10 events=6..15
+            │               └─UniProcExecutor.collective_rpc (vllm/v1/executor/uniproc_executor.py) [caller:135] samples=10 events=6..15
+            │                 └─run_method (vllm/v1/serial_utils.py) [caller:103] samples=10 events=6..15
+            │                   └─instrument_otel.<locals>.sync_wrapper (vllm/tracing/otel.py) [caller:508] samples=10 events=6..15
+            │                     └─Worker.compile_or_warm_up_model (vllm/v1/worker/gpu_worker.py) [caller:175] samples=10 events=6..15
+            │                       └─Worker._compile_or_warm_up_model (vllm/v1/worker/gpu_worker.py) [caller:938] samples=10 events=6..15
+            │                         └─kernel_warmup (vllm/model_executor/warmup/kernel_warmup.py) [caller:982] samples=10 events=6..15
+            │                           └─flashinfer_sparse_mla_decode_autotune_warmup (vllm/model_executor/warmup/flashinfer_sparse_mla_warmup.py) [caller:237] samples=10 events=6..15
+            │                             └─_flashinfer_sparse_mla_decode_autotune (vllm/model_executor/warmup/flashinfer_sparse_mla_warmup.py) [caller:314] samples=10 events=6..15
+            │                               └─_run_flashinfer_sparse_mla_decode_autotune (vllm/model_executor/warmup/flashinfer_sparse_mla_warmup.py) [caller:290] samples=10 events=6..15
+            │                                 └─_run_sparse_mla_decode_autotune_v2 (vllm/model_executor/warmup/flashinfer_sparse_mla_warmup.py) [caller:160] samples=10 events=6..15
+            │                                   └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:274] samples=10 events=6..15
+            │                                     └─step_eplb_after.<locals>.decorator.<locals>.wrapper (vllm/v1/worker/gpu/eplb_utils.py) [caller:124] samples=10 events=6..15
+            │                                       └─GPUModelRunner._dummy_run (vllm/v1/worker/gpu/model_runner.py) [caller:55] samples=10 events=6..15
+            │                                         └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:923] samples=10 events=6..15
+            │                                           └─GPUModelRunner.execute_model 🎯[6] (vllm/v1/worker/gpu/model_runner.py) [caller:124] samples=10 events=6..15
+            │                                             ├─DefaultModelState.prepare_attn (vllm/v1/worker/gpu/model_states/default.py) [caller:1954] samples=1 events=7..7
+            │                                             │ └─build_attn_metadata (vllm/v1/worker/gpu/attn_utils.py) [caller:222] samples=1 events=7..7
+            │                                             │   └─AttentionGroup.build_metadata (vllm/v1/worker/utils.py) [caller:574] samples=1 events=7..7
+            │                                             │     └─SparseMLACommonMetadataBuilder.build 🎯[7] (vllm/model_executor/layers/attention/sparse_mla_attention.py) [caller:348] samples=1 events=7..7
+            │                                             └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:2084] samples=8 events=8..15
+            │                                               └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=8 events=8..15
+            │                                                 └─DeepseekV2ForCausalLM.forward (vllm/model_executor/models/deepseek_v2.py) [caller:1794] samples=8 events=8..15
+            │                                                   └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1972] samples=8 events=8..15
+            │                                                     └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=8 events=8..15
+            │                                                       └─DeepseekV32Model.forward (vllm/models/deepseek_v32/nvidia/model.py) [caller:1794] samples=8 events=8..15
+            │                                                         └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:293] samples=8 events=8..15
+            │                                                           └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=8 events=8..15
+            │                                                             └─DeepseekV32DecoderLayer.forward (vllm/models/deepseek_v32/nvidia/model.py) [caller:1794] samples=8 events=8..15
+            │                                                               └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:151] samples=8 events=8..15
+            │                                                                 └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=8 events=8..15
+            │                                                                   └─DeepseekV32Attention.forward (vllm/models/deepseek_v32/attention.py) [caller:1794] samples=8 events=8..15
+            │                                                                     └─eager_break_during_capture.<locals>.wrapper (vllm/compilation/breakable_cudagraph.py) [caller:450] samples=8 events=8..15
+            │                                                                       └─DeepseekV32Attention._sparse_indexer_and_attn (vllm/models/deepseek_v32/attention.py) [caller:103] samples=8 events=8..15
+            │                                                                         └─FlashInferMLASparseSM120Impl.forward_mqa 🎯[8] (vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py) [caller:597] samples=8 events=8..15
+            │                                                                           └─FlashInferMLASparseSM120Impl._run_mqa_kernel 🎯[9] (vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py) [caller:141] samples=4 events=9..15
+            ├─LLMEngine.add_request 🎯[16] (vllm/v1/engine/llm_engine.py) [caller:36] samples=2 events=16..17
+            │ └─InprocClient.add_request (vllm/v1/engine/core_client.py) [caller:299] samples=1 events=17..17
+            │   └─EngineCore.add_request (vllm/v1/engine/core.py) [caller:408] samples=1 events=17..17
+            │     └─Scheduler.add_request 🎯[17] (vllm/v1/core/sched/scheduler.py) [caller:548] samples=1 events=17..17
+            └─LLMEngine.step (vllm/v1/engine/llm_engine.py) [caller:41] samples=168 events=18..185
+              ├─InprocClient.get_output (vllm/v1/engine/core_client.py) [caller:327] samples=166 events=18..185
+              │ └─EngineCore.step_with_batch_queue (vllm/v1/engine/core.py) [caller:399] samples=166 events=18..185
+              │   ├─Scheduler.schedule 🎯[18] (vllm/v1/core/sched/scheduler.py) [caller:725] samples=34 events=18..180
+              │   │ ├─Scheduler._get_local_prefix_cache_hit (vllm/v1/core/sched/scheduler.py) [caller:1100] samples=1 events=19..19
+              │   │ │ └─KVCacheManager.get_computed_blocks 🎯[19] (vllm/v1/core/kv_cache_manager.py) [caller:652] samples=1 events=19..19
+              │   │ ├─KVCacheManager.allocate_slots 🎯[20] (vllm/v1/core/kv_cache_manager.py) [caller:1408] samples=3 events=20..22
+              │   │ │ └─KVCacheCoordinator.allocate_new_blocks (vllm/v1/core/kv_cache_coordinator.py) [caller:602] samples=2 events=21..22
+              │   │ │   └─KVCacheCoordinator.allocate_new_blocks.<locals>.<genexpr> (vllm/v1/core/kv_cache_coordinator.py) [caller:335] samples=2 events=21..22
+              │   │ │     └─SingleTypeKVCacheManager.allocate_new_blocks (vllm/v1/core/single_type_kv_cache_manager.py) [caller:336] samples=2 events=21..22
+              │   │ │       └─BlockPool.get_new_blocks 🎯[21] (vllm/v1/core/block_pool.py) [caller:406] samples=2 events=21..22
+              │   │ ├─Scheduler._build_kv_connector_meta (vllm/v1/core/sched/scheduler.py) [caller:1712] samples=6 events=23..41
+              │   │ │ └─HiSparseConnector.build_connector_meta (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/connector.py) [caller:1744] samples=6 events=23..41
+              │   │ │   └─HiSparseConnectorScheduler.build_connector_meta (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/connector.py) [caller:395] samples=6 events=23..41
+              │   │ │     ├─HiSparseCoordinator.advance_scheduled (vllm/v1/hisparse/coordinator.py) [caller:152] samples=4 events=23..40
+              │   │ │     │ └─HiSparseCoordinator.plan_prefix_materialization 🎯[23] (vllm/v1/hisparse/coordinator.py) [caller:454] samples=4 events=23..40
+              │   │ │     │   └─HiSparseCoordinator._plan_page_transfer 🎯[24] (vllm/v1/hisparse/coordinator.py) [caller:486] samples=2 events=24..25
+              │   │ │     └─HiSparseCoordinator.build_row_mirrors 🎯[26] (vllm/v1/hisparse/coordinator.py) [caller:179] samples=2 events=26..41
+              │   │ └─KVCacheManager.allocate_slots 🎯[39] (vllm/v1/core/kv_cache_manager.py) [caller:892] samples=11 events=39..169
+              │   ├─UniProcExecutor.execute_model (vllm/v1/executor/uniproc_executor.py) [caller:727] samples=116 events=27..178
+              │   │ └─UniProcExecutor.collective_rpc (vllm/v1/executor/uniproc_executor.py) [caller:122] samples=116 events=27..178
+              │   │   └─run_method (vllm/v1/serial_utils.py) [caller:109] samples=116 events=27..178
+              │   │     └─WorkerWrapperBase.execute_model (vllm/v1/worker/worker_base.py) [caller:508] samples=116 events=27..178
+              │   │       └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:383] samples=116 events=27..178
+              │   │         └─Worker.execute_model (vllm/v1/worker/gpu_worker.py) [caller:124] samples=116 events=27..178
+              │   │           └─context_decorator.<locals>.decorate_context (.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py) [caller:1360] samples=116 events=27..178
+              │   │             └─GPUModelRunner.execute_model (vllm/v1/worker/gpu/model_runner.py) [caller:124] samples=116 events=27..178
+              │   │               ├─DefaultModelState.prepare_attn (vllm/v1/worker/gpu/model_states/default.py) [caller:1954] samples=12 events=27..170
+              │   │               │ └─build_attn_metadata (vllm/v1/worker/gpu/attn_utils.py) [caller:222] samples=12 events=27..170
+              │   │               │   └─AttentionGroup.build_metadata (vllm/v1/worker/utils.py) [caller:574] samples=12 events=27..170
+              │   │               │     └─SparseMLACommonMetadataBuilder.build 🎯[27] (vllm/model_executor/layers/attention/sparse_mla_attention.py) [caller:348] samples=12 events=27..170
+              │   │               ├─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:2084] samples=102 events=28..178
+              │   │               │ └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=102 events=28..178
+              │   │               │   └─DeepseekV2ForCausalLM.forward (vllm/model_executor/models/deepseek_v2.py) [caller:1794] samples=102 events=28..178
+              │   │               │     └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1972] samples=102 events=28..178
+              │   │               │       └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=102 events=28..178
+              │   │               │         └─DeepseekV32Model.forward (vllm/models/deepseek_v32/nvidia/model.py) [caller:1794] samples=102 events=28..178
+              │   │               │           └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:293] samples=102 events=28..178
+              │   │               │             └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=102 events=28..178
+              │   │               │               └─DeepseekV32DecoderLayer.forward (vllm/models/deepseek_v32/nvidia/model.py) [caller:1794] samples=102 events=28..178
+              │   │               │                 └─Module._wrapped_call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:151] samples=102 events=28..178
+              │   │               │                   └─Module._call_impl (.venv/lib/python3.12/site-packages/torch/nn/modules/module.py) [caller:1783] samples=102 events=28..178
+              │   │               │                     └─DeepseekV32Attention.forward (vllm/models/deepseek_v32/attention.py) [caller:1794] samples=102 events=28..178
+              │   │               │                       └─eager_break_during_capture.<locals>.wrapper (vllm/compilation/breakable_cudagraph.py) [caller:450] samples=102 events=28..178
+              │   │               │                         └─DeepseekV32Attention._sparse_indexer_and_attn (vllm/models/deepseek_v32/attention.py) [caller:103] samples=102 events=28..178
+              │   │               │                           └─FlashInferMLASparseSM120Impl.forward_mqa 🎯[28] (vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py) [caller:597] samples=102 events=28..178
+              │   │               │                             ├─FlashInferMLASparseSM120Impl._run_mqa_kernel 🎯[29] (vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py) [caller:141] samples=48 events=29..178
+              │   │               │                             └─HiSparseMLAIndexGroup.convert_logical_to_physical_topk (vllm/v1/attention/backends/mla/index_group.py) [caller:132] samples=6 events=94..101
+              │   │               │                               └─HiSparseCacheHandle.swap_in (vllm/v1/hisparse/runtime.py) [caller:256] samples=6 events=94..101
+              │   │               │                                 └─HiSparseRuntime.swap_in 🎯[94] (vllm/v1/hisparse/runtime.py) [caller:1288] samples=6 events=94..101
+              │   │               │                                   └─HiSparseRuntime._resolve_and_stage_group (vllm/v1/hisparse/runtime.py) [caller:1112] samples=4 events=95..101
+              │   │               │                                     ├─HiSparseRuntime._resolve_residency 🎯[95] (vllm/v1/hisparse/runtime.py) [caller:1052] samples=2 events=95..100
+              │   │               │                                     └─HiSparseRuntime._swap_rows 🎯[96] (vllm/v1/hisparse/runtime.py) [caller:1067] samples=2 events=96..101
+              │   │               └─ActiveKVConnector.finish_forward (vllm/v1/worker/gpu/kv_connector.py) [caller:2086] samples=2 events=36..51
+              │   │                 └─HiSparseConnector.finish_forward (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/connector.py) [caller:131] samples=2 events=36..51
+              │   │                   └─HiSparseConnectorWorker.finish_forward (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:287] samples=2 events=36..51
+              │   │                     └─HiSparseConnectorWorker._finish_mirror_phase (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:920] samples=2 events=36..51
+              │   │                       └─HiSparseConnectorWorker._enqueue_host_mirror (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:914] samples=2 events=36..51
+              │   │                         └─HiSparseConnectorWorker._enqueue_row_dma (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:897] samples=2 events=36..51
+              │   │                           └─HiSparseConnectorWorker._submit_dma_descriptors 🎯[36] (vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py) [caller:711] samples=2 events=36..51
+              │   └─Scheduler.update_from_output 🎯[52] (vllm/v1/core/sched/scheduler.py) [caller:783] samples=16 events=52..185
+              │     └─Scheduler._free_request 🎯[182] (vllm/v1/core/sched/scheduler.py) [caller:2419] samples=4 events=182..185
+              │       └─Scheduler._free_blocks (vllm/v1/core/sched/scheduler.py) [caller:2938] samples=3 events=183..185
+              │         └─Scheduler._free_request_blocks (vllm/v1/core/sched/scheduler.py) [caller:2944] samples=3 events=183..185
+              │           └─KVCacheManager.free 🎯[183] (vllm/v1/core/kv_cache_manager.py) [caller:2967] samples=3 events=183..185
+              │             └─KVCacheCoordinator.free (vllm/v1/core/kv_cache_coordinator.py) [caller:636] samples=2 events=184..185
+              │               └─SingleTypeKVCacheManager.free (vllm/v1/core/single_type_kv_cache_manager.py) [caller:408] samples=2 events=184..185
+              │                 ├─HiSparseSourceManager.pop_blocks_for_free (vllm/v1/core/single_type_kv_cache_manager.py) [caller:598] samples=1 events=184..184
+              │                 │ └─HiSparseCoordinator.free 🎯[184] (vllm/v1/hisparse/coordinator.py) [caller:2345] samples=1 events=184..184
+              │                 └─HiSparseResidentManager.pop_blocks_for_free (vllm/v1/core/single_type_kv_cache_manager.py) [caller:598] samples=1 events=185..185
+              │                   └─HiSparseCoordinator.free 🎯[185] (vllm/v1/hisparse/coordinator.py) [caller:2550] samples=1 events=185..185
+              └─OutputProcessor.process_outputs 🎯[37] (vllm/v1/engine/output_processor.py) [caller:334] samples=2 events=37..53
 
 目标完整命中数（包含超过 limit、未保存调用栈的命中）：
+       4  vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py:FlashInferMLASparseSM120Impl.__init__
+      16  vllm/v1/worker/gpu/model_runner.py:GPUModelRunner.execute_model
+      13  vllm/model_executor/layers/attention/sparse_mla_attention.py:SparseMLACommonMetadataBuilder.build
+      52  vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py:FlashInferMLASparseSM120Impl.forward_mqa
+      52  vllm/v1/attention/backends/mla/flashinfer_mla_sparse_sm120.py:FlashInferMLASparseSM120Impl._run_mqa_kernel
        1  vllm/v1/engine/llm_engine.py:LLMEngine.add_request
        1  vllm/v1/core/sched/scheduler.py:Scheduler.add_request
       13  vllm/v1/core/sched/scheduler.py:Scheduler.schedule
@@ -171,7 +261,6 @@ status=ok events=64
       12  vllm/v1/hisparse/coordinator.py:HiSparseCoordinator.plan_prefix_materialization
       36  vllm/v1/hisparse/coordinator.py:HiSparseCoordinator._plan_page_transfer
       12  vllm/v1/hisparse/coordinator.py:HiSparseCoordinator.build_row_mirrors
-      13  vllm/v1/worker/gpu/model_runner.py:GPUModelRunner.execute_model
       12  vllm/distributed/kv_transfer/kv_connector/v1/hisparse/worker.py:HiSparseConnectorWorker._submit_dma_descriptors
       13  vllm/v1/engine/output_processor.py:OutputProcessor.process_outputs
       12  vllm/v1/core/sched/scheduler.py:Scheduler.update_from_output

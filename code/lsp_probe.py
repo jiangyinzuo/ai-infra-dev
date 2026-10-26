@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Probe Pyrefly without editor mappings or result filtering.
+"""Probe Python language servers without editor mappings or result filtering.
 
 Run with the vLLM environment (no extra dependencies):
     cd ~/ai-infra-dev/code/vllm-workspace/vllm
@@ -139,8 +139,10 @@ def parse_arguments():
     parser.add_argument("--wait", type=float, default=5, help="Seconds before querying (default: 5); not an index-completion guarantee")
     parser.add_argument("--timeout", type=float, default=120, help="Per-request timeout in seconds")
     parser.add_argument("--exclude-declaration", action="store_true")
-    parser.add_argument("--server", default="pyrefly", help="Pyrefly executable")
-    parser.add_argument("--server-arg", action="append", default=[], help="Extra lsp argument; use --server-arg=--flag")
+    parser.add_argument("--server", default="pyrefly", help="Language server executable")
+    parser.add_argument("--server-subcommand", choices=["lsp", "server"], default="lsp",
+                        help="Server entrypoint: lsp for Pyrefly, server for ty")
+    parser.add_argument("--server-arg", action="append", default=[], help="Extra server argument; use --server-arg=--flag")
     parser.add_argument("--log", type=Path, help="Server stderr path (default: unique /tmp file)")
     args = parser.parse_args()
     if args.wait < 0 or args.timeout <= 0:
@@ -221,7 +223,7 @@ def main():
     parser, args = parse_arguments()
     root, files, params = prepare_query(parser, args)
     log = open_log(args.log)
-    command = [args.server, "lsp", *args.server_arg]
+    command = [args.server, args.server_subcommand, *args.server_arg]
     print(f"Python: {sys.executable}\nServer: {command}\nRoot: {root}\nLog: {log.name}", file=sys.stderr)
     client = None
     try:

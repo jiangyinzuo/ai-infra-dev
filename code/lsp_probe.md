@@ -1,6 +1,6 @@
 # LSP 诊断脚本
 
-`lsp_probe.py` 绕过 Neovim，直接查询 Pyrefly。所有命令在 vLLM 目录执行，使用项目的 uv venv：
+`lsp_probe.py` 绕过 Neovim，直接查询 Pyrefly 或 ty。所有命令在 vLLM 目录执行，使用项目的 uv venv：
 
 ```bash
 cd ~/ai-infra-dev/code/vllm-workspace/vllm
@@ -16,6 +16,19 @@ uv run --no-sync --offline --python .venv/bin/python python ../../lsp_probe.py \
 ```
 
 默认查询引用；`--open` 额外打开一个文件，可省略或重复指定。
+
+默认启动 `pyrefly lsp`；查询 ty 时添加 `--server ty --server-subcommand server`。
+
+### 比较两个服务器的引用数量
+
+```bash
+bash ~/ai-infra-dev/code/vllm-workspace/test_lsp_references.sh
+```
+
+分别启动全新会话，查询 `output_processor.py:551` 的 `OutputProcessor`，包含声明。
+数量一致退出 0，不一致或查询失败退出非零；只比较数量，不保证引用位置集合相同。
+使用各服务器正常发现的配置，不创建或覆盖配置。默认等待 5 秒，不保证索引已完成。
+
 
 ## 跳转定义
 
