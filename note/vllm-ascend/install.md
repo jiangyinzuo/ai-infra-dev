@@ -44,3 +44,8 @@ python -c "import vllm_ascend; print(vllm_ascend.__version__)"
 
 启动: https://docs.vllm.ai/projects/ascend/en/latest/getting_started/quick_start.html
 
+## 检查SOC VERSION
+
+```bash
+python3 -c "import acl; print(acl.get_soc_name())"
+```
