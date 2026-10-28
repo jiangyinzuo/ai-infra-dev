@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -xeuo pipefail
 
 # Run from the project directory after configuring CANN.
 # source /usr/local/Ascend/ascend-toolkit/set_env.sh
@@ -12,6 +12,7 @@ if ! [[ "${REPS}" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 command -v msprof >/dev/null
+command -v timeout >/dev/null
 
 python3 gen_pipeline_data.py
 ./build.sh
@@ -22,9 +23,9 @@ fi
 mkdir -p "${PROFILE_ROOT}"
 
 rm -f pipeline_output/static.bin pipeline_output/tpipe_tque.bin
-./build/pipeline_static/pipeline_static
+timeout "${PROFILE_TIMEOUT:-120s}" ./build/pipeline_static/pipeline_static
 cmp pipeline_output/static.bin pipeline_output/golden.bin
-./build/pipeline_tpipe_tque/pipeline_tpipe_tque
+timeout "${PROFILE_TIMEOUT:-120s}" ./build/pipeline_tpipe_tque/pipeline_tpipe_tque
 cmp pipeline_output/static.bin pipeline_output/tpipe_tque.bin
 
 printf 'kernel\tround\tduration_us\tprofile_csv\n' > "${PROFILE_ROOT}/durations.tsv"
@@ -37,7 +38,7 @@ run_profile() {
     local csv_files csv duration
 
     rm -f "pipeline_output/${kernel}.bin"
-    msprof op --output="${output_dir}" "${executable}"
+    timeout "${PROFILE_TIMEOUT:-120s}" msprof op --output="${output_dir}" "${executable}"
     cmp "pipeline_output/${kernel}.bin" pipeline_output/golden.bin
     csv_files=("${output_dir}"/OPPROF_*/OpBasicInfo.csv)
     if [[ ! -f "${csv_files[0]}" || "${#csv_files[@]}" -ne 1 ]]; then

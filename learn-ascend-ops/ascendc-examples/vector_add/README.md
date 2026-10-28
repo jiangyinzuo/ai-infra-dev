@@ -59,7 +59,7 @@ REPS=5 ./profile.sh
 原始 `add_static.asc` 和 `add_tpipe_tque.asc` 原样保留，仍可用 `./profile.sh` 比较。新的一对实现使用相同的 8 个 AIV、每核 16 × 1024 个 float32、相同的 `-O2` 和 `dav-2201` 编译参数，对每块计算 `z = (x + y) * 1.25f`：
 
 - `add_pipeline_static.asc`：单组 UB 缓冲，逐块 `CopyIn → PipeBarrier<PIPE_ALL> → Add/Muls → PipeBarrier<PIPE_ALL> → CopyOut → PipeBarrier<PIPE_ALL>`；这是**刻意串行的朴素基线**，不是最优化的静态缓冲实现。
-- `add_pipeline_tpipe_tque.asc`：每个输入队列 `TQue<..., 2>`、`InitBuffer(..., 2, ...)`；预取两块输入后，消费一块、搬出一块并预取下一块，避免整流水线的全局 `PIPE_ALL` 屏障。两个输入队列必须允许两次未消费的 `EnQue`；只修改 `InitBuffer` 的 num、模板 depth 仍为 1 时，实测输出不正确。
+- `add_pipeline_tpipe_tque.asc`：输入/输出队列 `TQue<..., 1>`，但 `InitBuffer(..., 2, ...)` 分配两组片上缓存；每块依次 `EnQue → DeQue → FreeTensor`，以队列同步替代每块的全局 `PIPE_ALL` 屏障。这不是显式预取两块的实现，不应把性能收益全部归因于双缓冲。
 
 输入由 `gen_pipeline_data.py` 使用固定随机种子生成，`pipeline_output/golden.bin` 为共同的真值。运行：
 
@@ -68,6 +68,15 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 REPS=5 ./profile_pipeline.sh
 ```
 
-脚本重编译全部四个实现、检查两个新程序的输出逐字节等于 golden，奇偶轮交替采集 `msprof op`，逐次校验输出，保存 `durations.tsv`、`summary.tsv` 及原始 profile。用 `PROFILE_ROOT=profiles/my_run` 可以指定新结果目录；目录已存在时脚本拒绝覆盖。
+脚本重编译全部四个实现、检查两个新程序的输出逐字节等于 golden，奇偶轮交替采集 `msprof op`，逐次校验输出，保存 `durations.tsv`、`summary.tsv` 及原始 profile。用 `PROFILE_ROOT=profiles/my_run` 可以指定新结果目录；目录已存在时脚本拒绝覆盖。单次执行默认 120 秒超时（`PROFILE_TIMEOUT` 可调）。此前尝试连续两次 `EnQue` 的预取版本在用户设备上出现卡住，已撤销，不能使用那组版本的 profile 作为结论。
 
 **解释范围：**若 TPipe/TQue 在这里胜出，证明的是“此流水线实现优于这个串行基线”，不是“TPipe/TQue 永远优于静态缓冲”。静态实现也可以用双缓冲、精细的事件同步和流水调度达到类似重叠效果；`num=2` 本身也不保证自动获得最大吞吐。分析重叠和开销时看各次 `PipeUtilization.csv` 的 MTE2/MTE3/Vector/Scalar 时间，单凭 Task Duration 无法证明具体是哪条指令导致加速。
+
+安全队列版本实测：`REPS=3 PROFILE_ROOT=profiles/pipeline_safe_20261028 ./profile_pipeline.sh`；两边与 golden 逐字节相同，报告的频率为 1800 MHz，Block Dim 为 8。
+
+| 实现 | 轮数 | 平均 Task Duration (us) | 最小 (us) | 最大 (us) |
+|---|---:|---:|---:|---:|
+| 串行 static | 3 | 10.633546 | 10.420208 | 10.900218 |
+| TPipe/TQue | 3 | 5.193437 | 5.080101 | 5.380107 |
+
+这组单次 kernel task 耗时中，队列实现相对串行基线缩短约 51.2%；原始 profile 位于 `profiles/pipeline_safe_20261028/`。不能推断差值完全来自双缓冲：串行版本每块包含三个全流水线屏障，队列版本没有。
