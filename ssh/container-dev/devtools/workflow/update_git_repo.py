@@ -55,8 +55,8 @@ def register(subparsers):
         "update",
         description=(
             "更新 ~/ai-infra-dev 和 ~/vimrc：不存在时 git clone，已有仓库执行 git pull --ff-only。"
-            "首次克隆 vimrc 后执行 install/setup.sh。"
-            f"WSL 必须指定 --host（用户固定为 {REMOTE_USER}）；服务器本地执行可省略。"
+            + "首次克隆 vimrc 后执行 install/setup.sh。"
+            + f"WSL 必须指定 --host（用户固定为 {REMOTE_USER}）；服务器本地执行可省略。"
         ),
     )
     add_host_argument(parser)

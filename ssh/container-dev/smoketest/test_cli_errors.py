@@ -33,3 +33,47 @@ def test_subprocess_failure_reports_diagnostic_not_shell_payload(
         assert captured.err == diagnostic
     else:
         assert "ssh2" in captured.err and "2" in captured.err
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        [],
+        ["binaries"],
+        ["binaries", "sync"],
+        ["git-repo"],
+        ["containers"],
+        ["sync-all"],
+        ["models"],
+        ["models", "fetch"],
+        ["models", "upload"],
+        ["images"],
+        ["images", "download"],
+        ["images", "upload"],
+    ],
+)
+def test_empty_required_command_prints_help(command, capsys):
+    with pytest.raises(SystemExit) as error:
+        cli.build_parser().parse_args(command)
+    assert error.value.code == 0
+    assert capsys.readouterr().out.startswith("usage:")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["binaries", "download"],
+        ["binaries", "extract"],
+        ["git-repo", "update"],
+        ["containers", "create"],
+        ["containers", "delete"],
+        ["containers", "ls"],
+        ["models", "discovery"],
+        ["checkhealth"],
+        ["images", "ls"],
+    ],
+)
+def test_empty_optional_command_preserves_execution(command, capsys):
+    args = cli.build_parser().parse_args(command)
+    assert args.command == command[0]
+    assert capsys.readouterr().out == ""

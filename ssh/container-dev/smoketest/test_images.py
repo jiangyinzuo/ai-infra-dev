@@ -120,8 +120,8 @@ def test_remote_probe_loads_alternate_archive_and_verifies_tag(tmp_path):
         "#!"
         + sys.executable
         + '\nimport os,sys,pathlib\ns=pathlib.Path(os.environ["DOCKER_STATE"])\n'
-        'if sys.argv[1]=="images":\n print(s.read_text() if s.exists() else "")\n'
-        'elif sys.argv[1]=="load":\n assert pathlib.Path(sys.argv[3]).name=="vllm-ascend_tag.tar.gz"\n s.write_text("vllm-ascend:tag")\n'
+        + 'if sys.argv[1]=="images":\n print(s.read_text() if s.exists() else "")\n'
+        + 'elif sys.argv[1]=="load":\n assert pathlib.Path(sys.argv[3]).name=="vllm-ascend_tag.tar.gz"\n s.write_text("vllm-ascend:tag")\n'
     )
     docker.chmod(0o755)
     env = dict(

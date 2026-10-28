@@ -125,7 +125,7 @@ def test_extract_dispatches_once_as_fixed_user(tmp_path, args):
     assert "jiangyinzuo@suzhou-one" in result.stdout
     remote_command = (
         'python3 "$HOME"/ai-infra-dev/ssh/container-dev/devtools/cli.py --no-hints '
-        "binaries extract"
+        + "binaries extract"
     )
     assert remote_command in result.stdout
     assert result.stdout.count(remote_command) == 1

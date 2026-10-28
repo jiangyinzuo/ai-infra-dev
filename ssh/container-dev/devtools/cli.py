@@ -13,10 +13,30 @@ from workflow import hints
 import models
 
 
+class HelpOnEmptyParser(argparse.ArgumentParser):
+    """Show help only when an empty command has required arguments."""
+
+    def parse_args(self, args=None, namespace=None):
+        if args is None:
+            args = sys.argv[1:]
+        return super().parse_args(args, namespace)
+
+    def _requires_arguments(self):
+        return any(action.required for action in self._actions) or any(
+            group.required for group in self._mutually_exclusive_groups
+        )
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is not None and not args and self._requires_arguments():
+            self.print_help()
+            self.exit()
+        return super().parse_known_args(args, namespace)
+
+
 def build_parser() -> argparse.ArgumentParser:
     from workflow import binaries, update_git_repo, sync_all, checkhealth, images
 
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = HelpOnEmptyParser(description=__doc__)
     parser.add_argument("--no-hints", action="store_true", help="不显示后续操作提示")
     commands = parser.add_subparsers(dest="command", required=True)
     binaries.register(commands)
@@ -49,7 +69,7 @@ def main() -> int:
             host = getattr(args, "host", None)
             print(
                 f"error: 远程操作超时（主机 {host}，{exc.timeout} 秒）。"
-                "模型扫描可用 --root 缩小范围，或用 --timeout 增加等待时间。",
+                + "模型扫描可用 --root 缩小范围，或用 --timeout 增加等待时间。",
                 file=sys.stderr,
             )
             return 1

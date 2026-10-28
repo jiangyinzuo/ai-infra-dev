@@ -57,13 +57,13 @@ def workspace(tmp_path):
     wrapper = binaries / "git"
     wrapper.write_text(
         "#!/usr/bin/env bash\nset -eu\n"
-        'printf "%s\\n" "${GIT_SSH_COMMAND:-}" >> "$HOME/git-ssh-commands"\n'
-        'printf "%s\\n" "${GIT_TRACE:-}" >> "$HOME/git-traces"\n'
-        "if [[ $1 == clone ]]; then\n"
-        "  repo=${2##*/}; repo=${repo%.git}\n"
-        "  shift 2\n"
-        '  exec "$REAL_GIT" clone "$SOURCES/$repo" "$@"\n'
-        'fi\nexec "$REAL_GIT" "$@"\n'
+        + 'printf "%s\\n" "${GIT_SSH_COMMAND:-}" >> "$HOME/git-ssh-commands"\n'
+        + 'printf "%s\\n" "${GIT_TRACE:-}" >> "$HOME/git-traces"\n'
+        + "if [[ $1 == clone ]]; then\n"
+        + "  repo=${2##*/}; repo=${repo%.git}\n"
+        + "  shift 2\n"
+        + '  exec "$REAL_GIT" clone "$SOURCES/$repo" "$@"\n'
+        + 'fi\nexec "$REAL_GIT" "$@"\n'
     )
     wrapper.chmod(0o755)
     for name, body in {
@@ -83,7 +83,7 @@ def workspace(tmp_path):
     hooks.mkdir()
     (hooks / "sitecustomize.py").write_text(
         "import os, platform\n"
-        'platform.release = lambda: os.environ.get("TEST_KERNEL_RELEASE", "Linux")\n'
+        + 'platform.release = lambda: os.environ.get("TEST_KERNEL_RELEASE", "Linux")\n'
     )
     env["PYTHONPATH"] = str(hooks)
     return home, sources, env

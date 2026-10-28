@@ -30,4 +30,3 @@ def test_all_failed_does_not_select_endpoint(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="timeout"):
         hf_speedtest.fastest_endpoint()
-

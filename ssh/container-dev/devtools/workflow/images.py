@@ -38,9 +38,9 @@ def register(subparsers):
         help="下载镜像归档",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""示例：
-  images download --host localhost --from quay --archive nightly-main-a3-openeuler.tar.gz
+  python3 /home/j00958433/ai-infra-dev/ssh/container-dev/devtools/cli.py images download --from quay --archive nightly-main-a3-openeuler.tar.gz --host localhost
   URL: https://cmc-lfg-artifactory.cmc.tools.huawei.com/artifactory/generic-8166/hw-cr/quay.io/ascend/vllm-ascend/nightly-main-a3-openeuler.tar.gz
-  images download --host localhost --from cmc.rnd --archive vllm-ascend:dev-26.2.0.B109-day20261019-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz
+  python3 /home/j00958433/ai-infra-dev/ssh/container-dev/devtools/cli.py images download --from cmc.rnd --archive vllm-ascend:dev-26.2.0.B109-day20261019-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz --host localhost
   URL: https://cmc-nkg-artifactory.cmc.tools.huawei.com/artifactory/cmc-nkg-inner/MindIE/vLLM%20Ascend/26.2.0.daily/202610/20261019/vLLM-Ascend-images/vllm-ascend:dev-26.2.0.B109-day20261019-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz
 """,
     )

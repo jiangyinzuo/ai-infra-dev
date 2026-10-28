@@ -90,7 +90,12 @@ def test_native_proxy_uses_ssh_config_helper(monkeypatch, tmp_path):
     env = dict(os.environ, PATH=str(tmp_path) + ":" + os.environ["PATH"])
     env["USG_IP"] = "192.0.2.99"
     result = subprocess.run(
-        [sys.executable, str(SSH / "ssh_common/http_proxy.py"), "ssh.github.com", "443"],
+        [
+            sys.executable,
+            str(SSH / "ssh_common/http_proxy.py"),
+            "ssh.github.com",
+            "443",
+        ],
         env=env,
         capture_output=True,
         text=True,

@@ -34,7 +34,7 @@ def workspace(tmp_path):
     hooks.mkdir()
     (hooks / "sitecustomize.py").write_text(
         f"import sys; sys.path.insert(0, {str(ssh)!r})\n"
-        "import ssh_common.remote\nssh_common.remote.local_commit = lambda: 'a' * 40\n"
+        + "import ssh_common.remote\nssh_common.remote.local_commit = lambda: 'a' * 40\n"
     )
     (tools / "openeuler24.03-lts-aarch64").mkdir()
     (tools / "proxy.env").touch()
@@ -43,7 +43,7 @@ def workspace(tmp_path):
     rsync = binaries / "rsync"
     rsync.write_text(
         "#!/usr/bin/env python3\nimport json,os,sys\n"
-        'with open(os.environ["SYNC_LOG"], "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n'
+        + 'with open(os.environ["SYNC_LOG"], "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n'
     )
     with rsync.open("a") as stream:
         stream.write('sys.exit(int(os.environ.get("SYNC_EXIT", "0")))\n')

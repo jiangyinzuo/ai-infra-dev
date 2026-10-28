@@ -3,6 +3,12 @@ line-length = 88
 indent-width = 4
 target-version = "py39"
 
+[lint]
+select = ["ISC001", "ISC002"]
+
+[lint.flake8-implicit-str-concat]
+allow-multiline = false
+
 [format]
 quote-style = "double"
 indent-style = "space"

@@ -135,11 +135,11 @@ def test_bindfs_yum_receives_proxy_after_sudo_clears_environment(workspace):
     yum = binaries / "yum"
     yum.write_text(
         "#!/bin/sh\n"
-        'test "$http_proxy" = "http://proxy:3128" || exit 81\n'
-        'test "$https_proxy" = "http://proxy:3128" || exit 82\n'
-        'test "$NO_PROXY" = "localhost,.internal" || exit 83\n'
-        'test -z "${UNRELATED_SECRET+x}" || exit 84\n'
-        'test "$*" = "install -y gcc make pkgconf-pkg-config fuse-devel" || exit 85\n'
+        + 'test "$http_proxy" = "http://proxy:3128" || exit 81\n'
+        + 'test "$https_proxy" = "http://proxy:3128" || exit 82\n'
+        + 'test "$NO_PROXY" = "localhost,.internal" || exit 83\n'
+        + 'test -z "${UNRELATED_SECRET+x}" || exit 84\n'
+        + 'test "$*" = "install -y gcc make pkgconf-pkg-config fuse-devel" || exit 85\n'
     )
     yum.chmod(0o755)
     env.update(
