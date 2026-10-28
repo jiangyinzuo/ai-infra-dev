@@ -60,15 +60,17 @@ PY
 
 ## 运行朴素矩阵乘法
 
-环境安装好后，在 `learn-triton/` 目录执行：
+`naive_matmul.py` 使用标准 Triton kernel 语法，可在兼容的 CUDA Triton 或 Triton-Ascend 环境运行。默认 `--device auto` 优先选 CUDA，否则尝试 Ascend NPU；也可显式指定：
 
 ```bash
-.venv/bin/python naive_matmul.py
-# 非整块尺寸，验证边界 mask。
-.venv/bin/python naive_matmul.py --m 65 --n 97 --k 33
+# CUDA；当前虚拟环境按上文安装
+.venv/bin/python naive_matmul.py --device cuda
+
+# Ascend；在已配置 CANN、torch_npu 和 Triton-Ascend 的环境运行
+python naive_matmul.py --device npu --m 65 --n 97 --k 33
 ```
 
-脚本用 FP32 逐个 k 累加外积，每个 Triton program 计算一个 16 × 16 输出块，不使用 `tl.dot` 或 Tensor Core。它是教学实现，不用于性能比较；运行后与 PyTorch 矩阵乘法校验，打印最大绝对误差。首次运行包含 JIT 编译。
+非整块尺寸示例用于验证边界 mask。脚本用 FP32 逐个 k 累加外积，每个 Triton program 计算一个 16 × 16 输出块，不使用 `tl.dot` 或 Tensor Core；运行后将结果复制到 CPU，与 PyTorch FP32 矩阵乘法校验并打印最大绝对误差。首次运行包含 JIT 编译。CUDA 环境安装说明仅适用于 NVIDIA；Ascend 需使用与硬件/CANN 匹配的 Triton-Ascend 软件栈。
 
 ## 日常使用
 
