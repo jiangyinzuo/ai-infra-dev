@@ -1,0 +1,5 @@
+euporie
+jupyterlab
+jupyter-collaboration
+# euporie的latex公式渲染
+pylatexenc

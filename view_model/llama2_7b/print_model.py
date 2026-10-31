@@ -1,5 +1,6 @@
 import torch
 from transformers import AutoModelForCausalLM
+# import torchscan
 
 model_path = "hf-models/Llama-2-7b-hf"
 
@@ -29,12 +30,16 @@ def print_module_counts(name: str, module: torch.nn.Module) -> None:
 
 model = AutoModelForCausalLM.from_pretrained(
     model_path,
-    torch_dtype=torch.float16,
+    dtype=torch.float16,
 )
 model = model.cuda().eval()
 
 print("=== print(model) ===")
 print(model)
+# summary_input_ids = torch.zeros(
+#     (3, 7), dtype=torch.long, device=next(model.parameters()).device
+# )
+# torchscan.summary(model, args=(summary_input_ids,))
 
 named_parameters = list(model.named_parameters())
 named_buffers = list(model.named_buffers())
