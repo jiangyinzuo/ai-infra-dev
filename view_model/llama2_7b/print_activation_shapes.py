@@ -58,11 +58,13 @@ def format_input_path(path: str) -> str:
     )
 
 
+def format_flow_reference(source_name: str, path: str) -> str:
+    """Show module forward parameters and nested elements, or output references."""
     if source_name.startswith("in@"):
         return source_name
     if source_name.startswith(("@", "op@")):
         return f"{source_name}.{path}"
-    return f"{source_name}.input[{format_input_path(path)}]"
+    return f"{source_name}.forward({format_input_path(path)})"
 
 
 def format_runtime_local_reference(reference: str) -> str:
@@ -407,10 +409,7 @@ class RuntimeFlowTracer:
                         output_label,
                         output_path,
                     )
-                    target_reference = (
-                        f"{module_name}.input["
-                        f"{format_input_path(input_path)}]"
-                    )
+                    target_reference = format_flow_reference(module_name, input_path)
                     print(
                         "runtime identity flow: "
                         f"{source_reference} -> {target_reference}"
