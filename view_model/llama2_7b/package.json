@@ -1,0 +1,10 @@
+{
+  "name": "llama-attention-diagrams",
+  "private": true,
+  "scripts": {
+    "render:mha": "node render_mha.mjs"
+  },
+  "devDependencies": {
+    "mathjax-full": "3.2.2"
+  }
+}

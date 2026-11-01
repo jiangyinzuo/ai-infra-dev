@@ -1,0 +1,211 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 910" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#444"/>
+    </marker>
+    <marker id="arr-param" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef6c00"/>
+    </marker>
+  </defs>
+
+  <!-- 标题 -->
+  <text x="550" y="32" text-anchor="middle" font-size="19" font-weight="bold" fill="#222">
+    Multi-Head Attention（每个头独立计算 attention）
+  </text>
+
+  <!-- 图例：激活、算子和权重参数使用不同形状与颜色 -->
+  <g id="legend" aria-label="图例">
+    <rect x="950" y="55" width="110" height="28" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+    <text x="1005" y="74" text-anchor="middle" font-size="11" fill="#0d47a1">激活 / 张量</text>
+    <rect x="950" y="91" width="110" height="28" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+    <text x="1005" y="110" text-anchor="middle" font-size="11" fill="#311b92">算子</text>
+    <rect x="950" y="127" width="110" height="28" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+    <text x="1005" y="146" text-anchor="middle" font-size="11" fill="#bf360c">权重参数</text>
+  </g>
+
+  <!-- X -->
+  <rect x="470" y="55" width="160" height="50" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="X\;(n\times d)" x="550" y="85" text-anchor="middle" font-weight="bold" fill="#0d47a1">X  (n × d)</text>
+
+  <!-- 分支线 -->
+  <path d="M 550 105 L 550 117 L 300 117 L 300 130" fill="none" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+  <path d="M 550 117 L 550 130" fill="none" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+  <path d="M 550 117 L 800 117 L 800 130" fill="none" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 投影算子及侧输入权重 -->
+  <rect x="135" y="130" width="70" height="55" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="170" y="142" text-anchor="middle" font-size="9" fill="#bf360c">参数</text>
+  <text data-tex="W_Q" x="170" y="160" text-anchor="middle" fill="#bf360c">W_Q</text>
+  <text data-tex="(d\times d)" x="170" y="177" text-anchor="middle" font-size="10" fill="#6d4c41">(d × d)</text>
+  <line x1="205" y1="157.5" x2="225" y2="157.5" stroke="#ef6c00" stroke-width="1.1" marker-end="url(#arr-param)"/>
+  <rect x="225" y="130" width="150" height="55" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="300" y="160" text-anchor="middle" font-weight="bold" fill="#311b92">MatMul</text>
+  <text x="300" y="177" text-anchor="middle" font-size="10" fill="#4527a0">线性投影</text>
+
+  <rect x="385" y="130" width="70" height="55" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="420" y="142" text-anchor="middle" font-size="9" fill="#bf360c">参数</text>
+  <text data-tex="W_K" x="420" y="160" text-anchor="middle" fill="#bf360c">W_K</text>
+  <text data-tex="(d\times d)" x="420" y="177" text-anchor="middle" font-size="10" fill="#6d4c41">(d × d)</text>
+  <line x1="455" y1="157.5" x2="475" y2="157.5" stroke="#ef6c00" stroke-width="1.1" marker-end="url(#arr-param)"/>
+  <rect x="475" y="130" width="150" height="55" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="550" y="160" text-anchor="middle" font-weight="bold" fill="#311b92">MatMul</text>
+  <text x="550" y="177" text-anchor="middle" font-size="10" fill="#4527a0">线性投影</text>
+
+  <rect x="635" y="130" width="70" height="55" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="670" y="142" text-anchor="middle" font-size="9" fill="#bf360c">参数</text>
+  <text data-tex="W_V" x="670" y="160" text-anchor="middle" fill="#bf360c">W_V</text>
+  <text data-tex="(d\times d)" x="670" y="177" text-anchor="middle" font-size="10" fill="#6d4c41">(d × d)</text>
+  <line x1="705" y1="157.5" x2="725" y2="157.5" stroke="#ef6c00" stroke-width="1.1" marker-end="url(#arr-param)"/>
+  <rect x="725" y="130" width="150" height="55" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="800" y="160" text-anchor="middle" font-weight="bold" fill="#311b92">MatMul</text>
+  <text x="800" y="177" text-anchor="middle" font-size="10" fill="#4527a0">线性投影</text>
+
+  <!-- 箭头到 Q, K, V -->
+  <line x1="300" y1="185" x2="300" y2="215" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="550" y1="185" x2="550" y2="215" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="800" y1="185" x2="800" y2="215" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Q, K, V -->
+  <rect x="225" y="215" width="150" height="55" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="Q" x="300" y="240" text-anchor="middle" font-weight="bold" fill="#0d47a1">Q</text>
+  <text data-tex="(n\times d)" x="300" y="260" text-anchor="middle" font-size="11" fill="#1565c0">(n × d)</text>
+
+  <rect x="475" y="215" width="150" height="55" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="K" x="550" y="240" text-anchor="middle" font-weight="bold" fill="#0d47a1">K</text>
+  <text data-tex="(n\times d)" x="550" y="260" text-anchor="middle" font-size="11" fill="#1565c0">(n × d)</text>
+
+  <rect x="725" y="215" width="150" height="55" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="V" x="800" y="240" text-anchor="middle" font-weight="bold" fill="#0d47a1">V</text>
+  <text data-tex="(n\times d)" x="800" y="260" text-anchor="middle" font-size="11" fill="#1565c0">(n × d)</text>
+
+  <!-- 分头箭头 -->
+  <line x1="300" y1="270" x2="300" y2="305" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="550" y1="270" x2="550" y2="305" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="800" y1="270" x2="800" y2="305" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 分头说明 -->
+  <text data-tex="\text{每个头取对应的 } Q_h,K_h,V_h\;(n\times d_k)\quad\text{各头并行独立计算}" x="550" y="328" text-anchor="middle" font-size="11" fill="#555" font-style="italic">
+    每个头取对应的 Q_h, K_h, V_h  (n × d_k)  ·  各头并行独立计算
+  </text>
+
+  <!-- ================= Head 1 ================= -->
+  <rect x="220" y="345" width="160" height="285" rx="10" fill="none" stroke="#b0b7c3" stroke-width="1.2"/>
+  <text x="300" y="367" text-anchor="middle" font-size="12" font-weight="bold" fill="#455a64">Head 1</text>
+
+  <rect x="235" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="Q_1" x="255" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">Q₁</text>
+
+  <rect x="280" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="K_1" x="300" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">K₁</text>
+
+  <rect x="325" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="V_1" x="345" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">V₁</text>
+
+  <line x1="255" y1="418" x2="255" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="300" y1="418" x2="300" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="345" y1="418" x2="345" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+
+  <rect x="235" y="450" width="130" height="95" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="300" y="478" text-anchor="middle" font-size="12" font-weight="bold" fill="#311b92">Attention</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_1K_1^\top}{\sqrt{d_k}}\right)" x="300" y="500" text-anchor="middle" font-size="9" fill="#4527a0">softmax(Q₁K₁ᵀ/√d_k)</text>
+  <text data-tex="\cdot V_1" x="300" y="518" text-anchor="middle" font-size="9" fill="#4527a0">· V₁</text>
+
+  <line x1="300" y1="545" x2="300" y2="565" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+
+  <rect x="235" y="565" width="130" height="45" rx="6" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.3"/>
+  <text data-tex="\mathrm{head}_1" x="300" y="587" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">head₁</text>
+  <text data-tex="(n\times d_k)" x="300" y="603" text-anchor="middle" font-size="9" fill="#1565c0">(n × d_k)</text>
+
+  <!-- ================= Head 2 ================= -->
+  <rect x="470" y="345" width="160" height="285" rx="10" fill="none" stroke="#b0b7c3" stroke-width="1.2"/>
+  <text x="550" y="367" text-anchor="middle" font-size="12" font-weight="bold" fill="#455a64">Head 2</text>
+
+  <rect x="485" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="Q_2" x="505" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">Q₂</text>
+
+  <rect x="530" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="K_2" x="550" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">K₂</text>
+
+  <rect x="575" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="V_2" x="595" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">V₂</text>
+
+  <line x1="505" y1="418" x2="505" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="550" y1="418" x2="550" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="595" y1="418" x2="595" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+
+  <rect x="485" y="450" width="130" height="95" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="550" y="478" text-anchor="middle" font-size="12" font-weight="bold" fill="#311b92">Attention</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_2K_2^\top}{\sqrt{d_k}}\right)" x="550" y="500" text-anchor="middle" font-size="9" fill="#4527a0">softmax(Q₂K₂ᵀ/√d_k)</text>
+  <text data-tex="\cdot V_2" x="550" y="518" text-anchor="middle" font-size="9" fill="#4527a0">· V₂</text>
+
+  <line x1="550" y1="545" x2="550" y2="565" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+
+  <rect x="485" y="565" width="130" height="45" rx="6" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.3"/>
+  <text data-tex="\mathrm{head}_2" x="550" y="587" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">head₂</text>
+  <text data-tex="(n\times d_k)" x="550" y="603" text-anchor="middle" font-size="9" fill="#1565c0">(n × d_k)</text>
+
+  <!-- 省略号 -->
+  <text x="675" y="475" text-anchor="middle" font-size="28" fill="#666">⋯</text>
+  <text x="675" y="505" text-anchor="middle" font-size="11" fill="#666">共 H 个头</text>
+
+  <!-- ================= Head H ================= -->
+  <rect x="720" y="345" width="160" height="285" rx="10" fill="none" stroke="#b0b7c3" stroke-width="1.2"/>
+  <text x="800" y="367" text-anchor="middle" font-size="12" font-weight="bold" fill="#455a64">Head H</text>
+
+  <rect x="735" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="Q_H" x="755" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">Q_H</text>
+
+  <rect x="780" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="K_H" x="800" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">K_H</text>
+
+  <rect x="825" y="378" width="40" height="40" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text data-tex="V_H" x="845" y="403" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">V_H</text>
+
+  <line x1="755" y1="418" x2="755" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="800" y1="418" x2="800" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="845" y1="418" x2="845" y2="450" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+
+  <rect x="735" y="450" width="130" height="95" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="800" y="478" text-anchor="middle" font-size="12" font-weight="bold" fill="#311b92">Attention</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_HK_H^\top}{\sqrt{d_k}}\right)" x="800" y="500" text-anchor="middle" font-size="9" fill="#4527a0">softmax(Q_H K_Hᵀ/√d_k)</text>
+  <text data-tex="\cdot V_H" x="800" y="518" text-anchor="middle" font-size="9" fill="#4527a0">· V_H</text>
+
+  <line x1="800" y1="545" x2="800" y2="565" stroke="#444" stroke-width="1" marker-end="url(#arr)"/>
+
+  <rect x="735" y="565" width="130" height="45" rx="6" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.3"/>
+  <text data-tex="\mathrm{head}_H" x="800" y="587" text-anchor="middle" font-size="11" font-weight="bold" fill="#0d47a1">head_H</text>
+  <text data-tex="(n\times d_k)" x="800" y="603" text-anchor="middle" font-size="9" fill="#1565c0">(n × d_k)</text>
+
+  <!-- 到 concat 的箭头 -->
+  <line x1="300" y1="610" x2="300" y2="660" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="550" y1="610" x2="550" y2="660" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="800" y1="610" x2="800" y2="660" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Concat 是算子，拼接结果形状标注在框内 -->
+  <rect x="220" y="660" width="660" height="55" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="550" y="682" text-anchor="middle" font-weight="bold" fill="#311b92">Concat</text>
+  <text data-tex="[\mathrm{head}_1;\mathrm{head}_2;\ldots;\mathrm{head}_H]\quad(n\times H\cdot d_k)=(n\times d)" x="550" y="706" text-anchor="middle" font-size="11" fill="#4527a0">
+    [head₁ ; head₂ ; … ; head_H]  (n × H·d_k) = (n × d)
+  </text>
+
+  <!-- 箭头到输出投影算子 -->
+  <line x1="550" y1="715" x2="550" y2="745" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 输出投影算子及侧输入权重 -->
+  <rect x="385" y="745" width="70" height="55" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="420" y="757" text-anchor="middle" font-size="9" fill="#bf360c">参数</text>
+  <text data-tex="W_O" x="420" y="775" text-anchor="middle" fill="#bf360c">W_O</text>
+  <text data-tex="(d\times d)" x="420" y="792" text-anchor="middle" font-size="10" fill="#6d4c41">(d × d)</text>
+  <line x1="455" y1="772.5" x2="475" y2="772.5" stroke="#ef6c00" stroke-width="1.1" marker-end="url(#arr-param)"/>
+  <rect x="475" y="745" width="150" height="55" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="550" y="775" text-anchor="middle" font-weight="bold" fill="#311b92">MatMul</text>
+  <text x="550" y="792" text-anchor="middle" font-size="10" fill="#4527a0">输出投影</text>
+
+  <!-- 箭头到 Output -->
+  <line x1="550" y1="800" x2="550" y2="830" stroke="#444" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Output -->
+  <rect x="495" y="830" width="110" height="55" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text x="550" y="855" text-anchor="middle" font-weight="bold" fill="#0d47a1">Output</text>
+  <text data-tex="(n\times d)" x="550" y="875" text-anchor="middle" font-size="11" fill="#1565c0">(n × d)</text>
+</svg>

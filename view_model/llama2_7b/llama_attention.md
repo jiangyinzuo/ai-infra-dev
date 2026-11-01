@@ -1,22 +1,78 @@
-# LLAMA Attention
+## LLaMA Attention
 
-## LLaMA Attention 公式
-
+假设Batch size （$B$）、头数（$H$）均为1。
 输入序列：$X=[x_1,x_2,\dots,x_n]\in\mathbb{R}^{n\times d}$
 
 - **$n$**：序列长度，也就是 token 的个数；
-- **$d$**：模型隐藏维度，也就是每个 token 向量的维度（hidden size）。
+- **$d$**：模型隐藏维度，也就是每个 token 向量的维度（hidden size）。LLaMA2-7b的$d$=4096
 
-投影得到：$Q=XW_Q,\quad K=XW_K,\quad V=XW_V$
+### 投影
+
+LLaMA2-7b的$W_Q$, $W_K$, $W_V$都是$d \times d$的矩阵。
+投影得到：
+
+$$
+Q=XW_Q,\quad K=XW_K,\quad V=XW_V \\
+Q\in\mathbb{R}^{n\times d},\quad
+K\in\mathbb{R}^{n\times d},\quad
+V\in\mathbb{R}^{n\times d}
+$$
+
+
+#### 投影算子融合机会
+- 未融合时，假设$B$=1，$H$=1
+   - prefill阶段，执行3次独立的矩阵x矩阵
+   - decode阶段，执行3次独立的向量x矩阵
+   - transformers库这类简单实现中，QKV投影矩阵是三个独立的nn.Linear
+```python
+        self.q_proj = nn.Linear(
+            config.hidden_size, config.num_attention_heads * self.head_dim, bias=config.attention_bias
+        )
+        self.k_proj = nn.Linear(
+            config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias
+        )
+        self.v_proj = nn.Linear(
+            config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias
+        )
+```
+- 融合时，由于$X$相同，可以把$W_Q, W_K, W_V$拼成一个矩阵，做一次大矩阵（prefill）/向量（decode）x矩阵。
+   - vLLM中，QKV投影矩阵需要合并实现
+```python
+        self.qkv_proj = QKVParallelLinear(
+            hidden_size=hidden_size,
+            head_size=self.head_dim,
+            total_num_heads=self.total_num_heads,
+            total_num_kv_heads=self.total_num_kv_heads,
+            bias=bias,
+            quant_config=quant_config,
+            prefix=f"{prefix}.qkv_proj",
+        )
+```
+```
+W_QKV = [ W_Q | W_K | W_V ]   形状 4096 × 12288
+
+                 c=0 ... 4095              c=4096 ... 8191           c=8192 ... 12287
+              ┌──── W_Q，4096列 ────┐  ┌──── W_K，4096列 ────┐  ┌──── W_V，4096列 ────┐
+i=0           [ WQ[0,0] ... WQ[0,4095] | WK[0,0] ... WK[0,4095] | WV[0,0] ... WV[0,4095] ]
+i=1           [ WQ[1,0] ... WQ[1,4095] | WK[1,0] ... WK[1,4095] | WV[1,0] ... WV[1,4095] ]
+i=2           [ WQ[2,0] ... WQ[2,4095] | WK[2,0] ... WK[2,4095] | WV[2,0] ... WV[2,4095] ]
+...
+i=4095        [ WQ[4095,0] ... WQ[4095,4095] | WK[4095,0] ... WK[4095,4095] | WV[4095,0] ... WV[4095,4095] ]
+```
 
 ### 单头注意力
 
 $$
 \text{Attn}(Q,K,V) =
-\text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}+M\right)V
+\text{softmax}\left(\frac{QK^T}{\sqrt{d}}+M\right)V
 $$
 
-其中 $M$ 是 causal mask：
+其中
+$$
+\mathrm{Attn}(Q,K,V)\in\mathbb{R}^{n\times d}
+$$
+
+$M$ 是 causal mask：
 $$
 M_{ij}=
 \begin{cases}
@@ -25,23 +81,160 @@ M_{ij}=
 \end{cases}
 $$
 
-### 多头注意力
+逻辑上，$M\in\mathbb{R}^{n\times n}$；真实实现中，attention 是带 batch 和多头的：
+
+$$
+Q,K\in\mathbb{R}^{B\times H\times n\times d} \\
+QK^T\in\mathbb{R}^{B\times H\times n\times n}
+$$
+
+此时 mask 不需要真的存 $B\times H\times n\times n$ 份，通常存成：
+$$
+M\in\mathbb{R}^{1\times 1\times n\times n}
+$$
+
+### $QK^T$的含义
+
+$QK^T\in\mathbb{R}^{n\times n}$
+
+- **第 $i$ 行**：第 $i$ 个 query token 对所有 key token 的打分；
+- **第 $j$ 列**：所有 query token 对第 $j$ 个 key token 的打分；
+- **元素 $(i,j)$**：第 $i$ 个 query向量 与第 $j$ 个 key向量 的相似度分数：$(QK^T)_{ij}=q_i^Tk_j$
+
+```text
+              key j →
+           k1   k2   k3  ...  kn
+        ┌────┬────┬────┬────┬────┐
+   q1   │s11 │s12 │s13 │ ...│s1n │  ← 第 1 个 query 对全部 key 的分数
+        ├────┼────┼────┼────┼────┤
+   q2   │s21 │s22 │s23 │ ...│s2n │
+        ├────┼────┼────┼────┼────┤
+   q3   │s31 │s32 │s33 │ ...│s3n │
+        ├────┼────┼────┼────┼────┤
+  ...   │ ...│ ...│ ...│ ...│ ...│
+        ├────┼────┼────┼────┼────┤
+   qn   │sn1 │sn2 │sn3 │ ...│snn │
+        └────┴────┴────┴────┴────┘
+         ↑
+      第 j 列：所有 query 对第 j 个 key 的分数
+```
+其中$s_{ij}=q_i^Tk_j$
+
+### Causal Mask
+
+LLaMA 的 causal mask 让 $j>i$ 的位置变成 $-\infty$：
+```
+        k1   k2   k3   k4
+   q1 │ s11  -∞   -∞   -∞ │
+   q2 │ s21  s22  -∞   -∞ │
+   q3 │ s31  s32  s33  -∞ │
+   q4 │ s41  s42  s43  s44│
+```
+
+- 第 $i$ 行只有前 $i$ 列有效；
+- 第 $i$ 个 query 只能看到 $j\le i$ 的 key。
+
+变成$-\infty$后， 再经过softmax ，这些位置的权重精确为 0。
+
+### Softmax归一化
+
+softmax 的输入被称为logits。
+除以$\sqrt{d}$是为了把点积的方差从$d$拉回1，防止 softmax 饱和、梯度消失和数值溢出。
+
+归一化通用形式：
+$\alpha_i=\frac{f(z_i)}{\sum_j f(z_j)}$
+- $f(z)=z$：普通归一化（保持比例）
+- $f(z)=e^z$：softmax归一化（放大差异）
+- $f(z)=\max(z,0)$：ReLU 归一化
+
+示例：$z=(1,2,3)$
+
+- 普通归一化：$(1/6,2/6,3/6)=(0.167,0.333,0.500)$，比例仍是 $1:2:3$；
+- softmax：$(0.090,0.245,0.665)$，比例变成 $1:2.7:7.4$，差距被拉大。
+
+### QKV和Attention的含义
+
+
+| 符号 | 角色 |
+|---|---|
+| $X\in\mathbb{R}^{n\times d}$ | 输入序列$X$的hidden state |
+| $Q$ | 当前 token 发出的**查询** |
+| $K$ | 每个 token 提供的**索引/标签** |
+| $V$ | 每个 token 携带的**实际内容** |
+| $\mathrm{Attn}(Q,K,V)\in\mathbb{R}^{n\times d}$ | **行 $i$**：第 $i$ 个 token 经过注意力后的**新表示**。**列**：隐藏特征维，每个 token 一个 $d$ 维向量。|
+
+- Attention的输出和输入$X$形状完全相同，可以做残差。
+- 经过Attention后，行与行之间不再独立，每一行都把其它行的$V$按权重加起来了。
+
+### 多头注意力（MHA）
+
+| 模型版本 | 注意力头数 (Attention Heads) | KV 头数 (KV Heads) | 每个头维度 ($d_{\text{head}}$) | 备注 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Llama 2 7B** | **32** | 32 | **128** | 标准多头注意力 (MHA) |
+| **Llama 2 13B** | **40** | 40 | **128** | 标准多头注意力 (MHA) |
+| **Llama 2 70B** | **64** | **8** | **128** | 分组查询注意力 (GQA) |
+
+
+Transformers的Llama 2 7B实现中，多头在投影阶段是经过同一个`q_proj、k_proj、v_proj`矩阵乘法，
+经过view + transpose改变shape实现。
+```
+=== prefill attention ===
+hidden_states: shape=(1, 4, 4096), dtype=torch.float32
+position_ids: shape=(1, 4), dtype=torch.int64
+attention_mask: shape=(1, 1, 4, 4), dtype=torch.float32
+attention_mask[0, 0]: [[0.0, -inf, -inf, -inf], [0.0, 0.0, -inf, -inf], [0.0, 0.0, 0.0, -inf], [0.0, 0.0, 0.0, 0.0]]
+cache tokens before attention: 0
+
+=== Python-level operator trace ===
+[01] LlamaAttention.forward
+  [02] q_proj: Linear, input=(shape=(1, 4, 4096), dtype=torch.float32), output=(shape=(1, 4, 4096), dtype=torch.float32)
+  [03] q_proj: view + transpose: output=(shape=(1, 32, 4, 128))
+  [04] k_proj: Linear, input=(shape=(1, 4, 4096), dtype=torch.float32), output=(shape=(1, 4, 4096), dtype=torch.float32)
+  [05] k_proj: view + transpose: output=(shape=(1, 32, 4, 128))
+  [06] v_proj: Linear, input=(shape=(1, 4, 4096), dtype=torch.float32), output=(shape=(1, 4, 4096), dtype=torch.float32)
+  [07] v_proj: view + transpose: output=(shape=(1, 32, 4, 128))
+```
+
+在投影阶段，多头注意力本质和单头没区别
+```
+W_Q，数学形状 4096 × 4096
+行 i = 输入维度；列 c = 输出维度
+
+                c=0 ... 127                  c=128 ... 255            ...         c=3968 ... 4095
+        ┌────────── 头1 ─────────────┐ ┌────────── 头2 ─────────────┐     ┌──────────── 头32 ─────────────┐
+i=0     [ WQ[0,0]   ... WQ[0,127]    | WQ[0,128]   ... WQ[0,255]    | ... | WQ[0,3968]   ... WQ[0,4095]   ]
+i=1     [ WQ[1,0]   ... WQ[1,127]    | WQ[1,128]   ... WQ[1,255]    | ... | WQ[1,3968]   ... WQ[1,4095]   ]
+i=2     [ WQ[2,0]   ... WQ[2,127]    | WQ[2,128]   ... WQ[2,255]    | ... | WQ[2,3968]   ... WQ[2,4095]   ]
+...
+i=4095  [ WQ[4095,0]... WQ[4095,127] | WQ[4095,128]... WQ[4095,255] | ... | WQ[4095,3968]...WQ[4095,4095] ]
+        └──── W_Q^(1) 4096×128 ──────┘ └────── W_Q^(2) 4096×128 ────┘     └────── W_Q^(32) 4096×128 ──────┘
+```
 
 对第 $h$ 个头（$h=1,\dots,H$）：
 
 $$
-Q_h=XW_Q^{(h)},\quad K_h=XW_K^{(h)},\quad V_h=XW_V^{(h)}
+W_Q^{(h)}\in\mathbb R^{d\times d_k},\qquad
+W_K^{(h)}\in\mathbb R^{d\times d_k},\qquad
+W_V^{(h)}\in\mathbb R^{d\times d_v}
 $$
 
-每个头维度通常为：$d_k=\frac{d}{H}$
+$$
+Q_h=XW_Q^{(h)}\in\mathbb R^{n\times d_k},\\
+K_h=XW_K^{(h)}\in\mathbb R^{n\times d_k},\\
+V_h=XW_V^{(h)}\in\mathbb R^{n\times d_v}.
+$$
+
+每个头维度通常为：$d_k=d_v=\frac{d}{H}$
 
 第 $h$ 个头的输出：
+
 $$
 \text{head}_h
 =
 \text{softmax}\left(
-\frac{Q_hK_h^T}{\sqrt{d_k}}+M
+\frac{Q_hK_h^\top}{\sqrt{d_k}}+M
 \right)V_h
+\in\mathbb R^{n\times d_v}.
 $$
 
 其中 $M$ 是 causal mask。
@@ -51,10 +244,15 @@ $$
 $$
 \text{MultiHead}(X)
 =
-\text{Concat}(\text{head}_1,\dots,\text{head}_H)W_O
+\text{Concat}(\text{head}_1,\dots,\text{head}_H)W_O \in\mathbb R^{n\times d}
 $$
 
-如果有 RoPE，则先对每个头的 \(Q_h,K_h\) 做位置旋转，再算 attention：
+![MHA](./mha.svg)
+
+输出投影$W_O$：让不同 head 的输出可以线性混合，形成新的特征。没有
+$W_O$ ，各 head 的信息只是简单拼接，缺少跨 head 的线性融合。
+
+如果有 RoPE，则先对每个头的 $Q_h,K_h$ 做位置旋转，再算 attention：
 $$
 \text{head}_h
 =
@@ -63,21 +261,31 @@ $$
 \right)V_h
 $$
 
-## 没有RoPE的后果
+### 多头相比单头，理论计算量相同
 
-\[
+从算法复杂度的角度看，对于长度为 $n$、维度为 $d$ 的序列：
+*   **单头注意力的时间复杂度**：$\Theta(n^2 \cdot d)$。
+*   **多头注意力的时间复杂度**：假设有 $H$ 个头，每个头维度为 $d_k = d/H$。每个头的计算量为 $\Theta(n^2 \cdot d_k)$，总和为 $H \cdot \Theta(n^2 \cdot d_k) = \Theta(n^2 \cdot H \cdot d_k) = \Theta(n^2 \cdot d)$。
+
+两者在时间复杂度上是**同一个量级**。
+
+实际实现性能对比：待分析
+
+### RoPE
+
+#### 没有RoPE的后果
+
+$$
 \text{score}_{ij}
 =
 \frac{q_i^T k_j}{\sqrt{d_k}}
 =
 \frac{(x_iW_Q)^T(x_jW_K)}{\sqrt{d_k}}
-\]
+$$
 
 这个分数**只依赖 \(x_i\) 和 \(x_j\) 的内容，完全不依赖 \(i\) 和 \(j\)**。位置 \(i,j\) 没有以任何形式进入公式。
 
----
-
-## 2. 核心问题：Attention 是置换等变的
+##### Attention 是置换等变的
 
 假设没有 causal mask，对输入做任意置换 \(P\)（打乱 token 顺序）：
 
@@ -107,6 +315,8 @@ P\cdot\text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
 P\cdot\text{Attn}(Q,K,V)
 \]
 
+[逐行softmax的置换等变性证明](./softmax_permutation_equivariance.md)
+
 即：
 
 \[
@@ -117,175 +327,18 @@ P\cdot\text{Attn}(Q,K,V)
 
 这叫**置换等变**：打乱输入顺序，输出只是被同样打乱，内容完全不变。
 
-**这意味着：模型对“顺序”完全无感。** “猫追狗”和“狗追猫”在模型眼里是同一个东西，只是排列不同。
+##### 单层 attention、无RoPE、有Causal mask，只取最后位置，结果相同
 
----
 
-## 3. Causal mask 能救多少？
-
-LLaMA 是 decoder-only，有 causal mask，情况稍微好一点，但远远不够。
-
-Causal mask 只做了这件事：
-
-```text
-位置 i 只能 attend 到 j ≤ i
+```
+        k1   k2   k3   k4
+   q1 │ s11  -∞   -∞   -∞ │
+   q2 │ s21  s22  -∞   -∞ │
+   q3 │ s31  s32  s33  -∞ │
+   q4 │ s41  s42  s43  s44│
 ```
 
-它提供了“**谁在谁前面**”这个方向信息，但**没有提供“隔多远”**。
-
-看 attention score：
-
-\[
-\text{score}_{ij}
-=
-\frac{q_i^Tk_j}{\sqrt{d_k}}
-\]
-
-即使有 mask，这个分数仍然只取决于内容。mask 只是把 \(j>i\) 的项置为 \(-\infty\)，对 \(j\le i\) 的项**没有任何位置相关的修正**。
-
-具体后果：
-
-### 后果一：无法表达“距离衰减”
-
-在自然语言里，邻近 token 通常更相关。理想情况下：
-
-\[
-\text{score}_{ij}\ \text{应该随}\ |i-j|\ \text{增大而衰减}
-\]
-
-但没有位置编码时，\(\text{score}_{ij}\) 对 \(|i-j|\) 没有任何偏好。模型无法表达“位置 5 的 token 对位置 6 的关注应该强于对位置 100 的关注”这种先验。
-
-### 后果二：无法区分“相同内容、不同距离”
-
-假设 \(q_i\) 和两个 key \(k_j,k_{j'}\) 内容完全相同：
-
-\[
-k_j=k_{j'}=k
-\]
-
-那么：
-
-\[
-\text{score}_{ij}=\text{score}_{ij'}
-\]
-
-不管 \(j\) 离 \(i\) 是 1 步还是 100 步，attention 权重完全一样。模型没有任何机制区分“刚才说的词”和“很久以前说的词”。
-
-### 后果三：语序信息丢失
-
-考虑两个句子：
-
-```text
-句子 A：狗 咬 人
-句子 B：人 咬 狗
-```
-
-Token 集合相同，只是顺序不同。在没有位置编码的 causal attention 下：
-
-- 位置 3 的 token 在 A 中是“人”，在 B 中是“狗”；
-- 它能看到的前面 token 集合分别是 {狗,咬,人} 和 {人,咬,狗}；
-- 但 attention score 只比较内容，不比较位置。
-
-模型很难从 attention 本身学到“主语在动词前、宾语在动词后”这种语序模式。它只能依赖 causal mask 提供的“可见范围”差异，这远远不足以表达完整的语序。
-
----
-
-## 4. 一个具体数值例子
-
-取极简设定：\(d_k=2\)，所有 token 的 \(q,k\) 都相同：
-
-\[
-q_i=(1,0),\quad k_j=(1,0)\quad \forall i,j
-\]
-
-则：
-
-\[
-q_i^Tk_j=1\quad \forall i,j
-\]
-
-经过 causal mask 后，位置 \(i\) 的 attention 权重是：
-
-\[
-\alpha_{ij}
-=
-\frac{\exp(1)}{\sum_{j'\le i}\exp(1)}
-=
-\frac{1}{i}
-\quad (j\le i)
-\]
-
-也就是说，位置 \(i\) 对**所有可见位置均匀分配注意力**：
-
-```text
-位置 5 的 attention：
-  j=1   j=2   j=3   j=4   j=5
-  1/5   1/5   1/5   1/5   1/5
-```
-
-模型完全不知道“j=4 比 j=1 更近”。如果语言模型需要“最近说的词更重要”，它没有任何归纳偏置可以利用，只能完全从数据里硬学。
-
----
-
-## 5. 那为什么不能“让模型自己学位置”？
-
-理论上，模型可以通过 \(W_Q,W_K\) 学到一些位置相关的东西吗？**不能**，因为 \(Q=XW_Q\) 中 \(X\) 的每一行只包含该 token 的内容，不包含它的位置。同一个 token 出现在位置 1 和位置 100，它的 \(q\) 向量完全一样。
-
-没有位置编码，模型**没有任何入口**把位置信息注入 Q/K。这不是“学得好不好的问题”，而是“信息根本不存在”。
-
----
-
-## 6. RoPE 补上了什么？
-
-RoPE 在计算 attention score 之前，对 Q/K 做位置相关的旋转：
-
-\[
-q_i'=R_i q_i,\quad k_j'=R_j k_j
-\]
-
-其中 \(R_i\) 由位置 \(i\) 决定。于是：
-
-\[
-\text{score}_{ij}
-=
-\frac{(R_iq_i)^T(R_jk_j)}{\sqrt{d_k}}
-=
-\frac{q_i^TR_i^TR_jk_j}{\sqrt{d_k}}
-=
-\frac{q_i^TR_{j-i}k_j}{\sqrt{d_k}}
-\]
-
-现在 score **显式依赖 \(j-i\)**：
-
-- 距离近，旋转差小；
-- 距离远，旋转差大；
-- 模型可以通过学习 \(W_Q,W_K\) 来决定“哪些内容维度对距离敏感”。
-
-对比一下：
-
-| | 无位置编码 | 有 RoPE |
-|---|---|---|
-| score 公式 | \(q_i^Tk_j\) | \(q_i^TR_{j-i}k_j\) |
-| 是否依赖位置 | 否 | 是，且只依赖相对位置 |
-| 能否表达距离衰减 | 不能 | 可以 |
-| 置换等变 | 是 | 否 |
-| 语序信息 | 几乎没有 | 有 |
-
----
-
-## 7. 一句话总结
-
-LLaMA 的 Attention 公式
-
-\[
-\text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}+M\right)V
-\]
-
-中，\(QK^T\) 只比较内容，\(M\) 只提供“可见/不可见”。没有 RoPE，模型**没有任何机制知道 token 的顺序和距离**，attention 对置换等变，无法表达“邻近更重要”“语序不同语义不同”这些基本语言规律。RoPE 通过对 Q/K 做位置相关旋转，把相对位置 \(j-i\) 注入点积，才让 Attention 真正“看得见顺序”。
-
-## RoPE
-
-### 二维向量的旋转矩阵
+#### 二维向量的旋转矩阵
 
 假设有一个二维向量：$\mathbf{v} = (x, y)$，向量长度是$r = \sqrt{x^2+y^2}$。
 
@@ -296,7 +349,7 @@ LLaMA 的 Attention 公式
 1. **长度不变**：$|\mathbf{v}'| = |\mathbf{v}| = r$。
 2. **方向变了**：原来的角度加上 $\theta$，变成新的角度。
 
-#### 旋转公式推导
+##### 旋转公式推导
 
 原来的向量可以写成：$x = r\cos\alpha$, $y = r\sin\alpha$，
 其中 $\alpha$ 是原向量和 x 轴的夹角。
@@ -324,7 +377,7 @@ $$
 
 这就是二维旋转公式。
 
-#### 写成矩阵形式
+##### 写成矩阵形式
 
 $$
 \begin{pmatrix}
@@ -342,7 +395,7 @@ y
 \end{pmatrix}
 $$
 
-### RoPE核心原理
+#### RoPE核心原理
 
 LLaMA 中的 RoPE (Rotary Position Embedding) 通过一种**旋转**操作将位置信息融入注意力机制。它的核心思想是：对 Query (Q) 和 Key (K) 向量的维度进行成对旋转，旋转的角度由该 token 的**绝对位置**决定。这样一来，当计算两个 token 的 Q 和 K 的点积时，其结果会自然地只依赖于它们的**相对位置**。
 
@@ -384,7 +437,9 @@ $$
 - $m\theta_i$ 就是旋转角度。
 - $\theta_i = 10000^{-2i/d}$（LLaMA 3将10000调为500000，支持更长的上下文）
 
-### LLaMA 中的具体实现：`rotate_half` 风格
+TODO: 相对位置
+
+#### LLaMA 中的具体实现：`rotate_half` 风格
 
 在实际的 LLaMA 代码实现中，为了高效计算，通常不会显式地构造旋转矩阵，而是采用一种称为 **`rotate_half`** 的向量化操作。
 
