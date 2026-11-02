@@ -1,1 +1,1 @@
-from transformers.models.llama.modeling_llama import LlamaForCausalLM
+from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaAttention
