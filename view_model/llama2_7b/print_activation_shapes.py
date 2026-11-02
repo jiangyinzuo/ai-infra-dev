@@ -709,7 +709,10 @@ def make_projection_hook(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Print activation input/output and QKV shapes."
+        description=(
+            "Print activation input/output and QKV shapes, "
+            "then decode one greedy next token from the final-position logits."
+        )
     )
     parser.add_argument(
         "--prompt",
@@ -740,6 +743,15 @@ def main() -> None:
             "adds runtime overhead"
         ),
     )
+    parser.add_argument(
+        "--last-token-only",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "compute logits only for the final token by passing "
+            "logits_to_keep=1 to the causal language model"
+        ),
+    )
     args = parser.parse_args()
 
     if args.sample_values < 0:
@@ -763,6 +775,7 @@ def main() -> None:
     print(f"input_ids: {input_ids}")
     print(f"tokens: {tokenizer.convert_ids_to_tokens(input_ids)}")
     print(f"watched layers: {layer_indices}")
+    print(f"logits mode: {'last token only' if args.last_token_only else 'all tokens'}")
 
     handles = []
     explained_dimensions: set[str] = set()
@@ -939,10 +952,19 @@ def main() -> None:
             else nullcontext()
         )
         with torch.inference_mode(), tensor_operation_context:
-            model(**inputs, use_cache=False)
+            model_inputs = dict(inputs)
+            if args.last_token_only:
+                model_inputs["logits_to_keep"] = 1
+            outputs = model(**model_inputs, use_cache=False)
+            next_token_id = outputs.logits[0, -1, :].argmax().item()
     finally:
         for handle in handles:
             handle.remove()
+
+    print("\nnext token (greedy argmax):")
+    print(f"token_id: {next_token_id}")
+    print(f"token: {tokenizer.convert_ids_to_tokens(next_token_id)!r}")
+    print(f"text: {tokenizer.decode([next_token_id], skip_special_tokens=False)!r}")
 
 
 if __name__ == "__main__":
