@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1120" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#444"/>
+    </marker>
+    <marker id="arr-param" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef6c00"/>
+    </marker>
+  </defs>
+  <!-- Llama 2 70B: hidden_size=8192, num_attention_heads=64, num_key_value_heads=8. -->
+  <text x="550" y="29" text-anchor="middle" font-size="19" fill="#222" font-weight="bold">Llama 2 70B · Grouped-Query Attention（GQA）</text>
+  <text data-tex="d=8192\quad H_Q=64\quad H_{KV}=8\quad d_{\mathrm{head}}=128" x="550" y="52" text-anchor="middle" font-size="12" fill="#555">d = 8192 · 64 Query 头 · 8 KV 头 · 每头 128 维</text>
+  <g id="legend" aria-label="图例">
+  <rect id="legend-activation" data-kind="activation" x="950" y="78" width="110" height="28" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text x="1005" y="97" text-anchor="middle" font-size="11" fill="#0d47a1">激活 / 张量</text>
+  <rect id="legend-operator" data-kind="operator" x="950" y="114" width="110" height="28" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="1005" y="133" text-anchor="middle" font-size="11" fill="#311b92">算子</text>
+  <rect id="legend-weight" data-kind="weight" x="950" y="150" width="110" height="28" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="1005" y="169" text-anchor="middle" font-size="11" fill="#bf360c">权重参数</text>
+  </g>
+  <rect id="input" data-kind="activation" x="470" y="68" width="160" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="X\;(n\times8192)" x="550" y="94" text-anchor="middle" font-size="13" fill="#0d47a1">X (n × 8192)</text>
+  <path d="M 550 110 V 122 H 300" fill="none" stroke="#444" stroke-width="1.3"/>
+  <path d="M 550 122 H 800" fill="none" stroke="#444" stroke-width="1.3"/>
+  <line x1="300" y1="122" x2="300" y2="140" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="550" y1="122" x2="550" y2="140" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="800" y1="122" x2="800" y2="140" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="weight-Q" data-kind="weight" x="130" y="140" width="80" height="55" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="170" y="152" text-anchor="middle" font-size="9" fill="#bf360c">参数</text>
+  <text data-tex="W_Q" x="170" y="170" text-anchor="middle" font-size="13" fill="#bf360c">W_Q</text>
+  <text data-tex="(8192\times8192)" x="170" y="187" text-anchor="middle" font-size="9" fill="#6d4c41">(8192 × 8192)</text>
+  <line x1="210" y1="167.5" x2="225" y2="167.5" stroke="#ef6c00" stroke-width="1.1" marker-end="url(#arr-param)"/>
+  <rect id="project-Q" data-kind="operator" x="225" y="140" width="150" height="55" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="300" y="169" text-anchor="middle" font-size="13" fill="#311b92" font-weight="bold">MatMul</text>
+  <text x="300" y="187" text-anchor="middle" font-size="10" fill="#4527a0">线性投影</text>
+  <line x1="300" y1="195" x2="300" y2="220" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="projected-Q" data-kind="activation" x="225" y="220" width="150" height="65" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text x="300" y="242" text-anchor="middle" font-size="13" fill="#0d47a1" font-weight="bold">Q · 64 个头</text>
+  <text data-tex="(n\times8192)" x="300" y="262" text-anchor="middle" font-size="11" fill="#1565c0">(n × 8192)</text>
+  <text x="300" y="278" text-anchor="middle" font-size="10" fill="#1565c0">64 头 × 128 维</text>
+  <line x1="300" y1="285" x2="300" y2="310" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="weight-K" data-kind="weight" x="380" y="140" width="80" height="55" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="420" y="152" text-anchor="middle" font-size="9" fill="#bf360c">参数</text>
+  <text data-tex="W_K" x="420" y="170" text-anchor="middle" font-size="13" fill="#bf360c">W_K</text>
+  <text data-tex="(8192\times1024)" x="420" y="187" text-anchor="middle" font-size="9" fill="#6d4c41">(8192 × 1024)</text>
+  <line x1="460" y1="167.5" x2="475" y2="167.5" stroke="#ef6c00" stroke-width="1.1" marker-end="url(#arr-param)"/>
+  <rect id="project-K" data-kind="operator" x="475" y="140" width="150" height="55" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="550" y="169" text-anchor="middle" font-size="13" fill="#311b92" font-weight="bold">MatMul</text>
+  <text x="550" y="187" text-anchor="middle" font-size="10" fill="#4527a0">线性投影</text>
+  <line x1="550" y1="195" x2="550" y2="220" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="projected-K" data-kind="activation" x="475" y="220" width="150" height="65" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text x="550" y="242" text-anchor="middle" font-size="13" fill="#0d47a1" font-weight="bold">K · 8 个头</text>
+  <text data-tex="(n\times1024)" x="550" y="262" text-anchor="middle" font-size="11" fill="#1565c0">(n × 1024)</text>
+  <text x="550" y="278" text-anchor="middle" font-size="10" fill="#1565c0">8 头 × 128 维</text>
+  <line x1="550" y1="285" x2="550" y2="310" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="weight-V" data-kind="weight" x="630" y="140" width="80" height="55" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="670" y="152" text-anchor="middle" font-size="9" fill="#bf360c">参数</text>
+  <text data-tex="W_V" x="670" y="170" text-anchor="middle" font-size="13" fill="#bf360c">W_V</text>
+  <text data-tex="(8192\times1024)" x="670" y="187" text-anchor="middle" font-size="9" fill="#6d4c41">(8192 × 1024)</text>
+  <line x1="710" y1="167.5" x2="725" y2="167.5" stroke="#ef6c00" stroke-width="1.1" marker-end="url(#arr-param)"/>
+  <rect id="project-V" data-kind="operator" x="725" y="140" width="150" height="55" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="800" y="169" text-anchor="middle" font-size="13" fill="#311b92" font-weight="bold">MatMul</text>
+  <text x="800" y="187" text-anchor="middle" font-size="10" fill="#4527a0">线性投影</text>
+  <line x1="800" y1="195" x2="800" y2="220" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="projected-V" data-kind="activation" x="725" y="220" width="150" height="65" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text x="800" y="242" text-anchor="middle" font-size="13" fill="#0d47a1" font-weight="bold">V · 8 个头</text>
+  <text data-tex="(n\times1024)" x="800" y="262" text-anchor="middle" font-size="11" fill="#1565c0">(n × 1024)</text>
+  <text x="800" y="278" text-anchor="middle" font-size="10" fill="#1565c0">8 头 × 128 维</text>
+  <line x1="800" y1="285" x2="800" y2="310" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="group-and-rope" data-kind="operator" x="45" y="310" width="1010" height="58" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="550" y="333" text-anchor="middle" font-size="12" fill="#311b92" font-weight="bold">分头 / reshape → 对 Q、K 应用 RoPE → 按 KV 组路由</text>
+  <text data-tex="g(h)=1+\left\lfloor\frac{h-1}{8}\right\rfloor\quad(h=1,\ldots,64)\qquad64/8=8\ \text{个 Query 头 / KV 组}" x="550" y="356" text-anchor="middle" font-size="12" fill="#4527a0">每 8 个 Query 头共享一组 K/V</text>
+  <line x1="270" y1="368" x2="270" y2="394" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="830" y1="368" x2="830" y2="394" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <!-- KV Group 1: Q heads 1–8 share K_1, V_1; all attention heads remain independent. -->
+  <g id="kv-group-1" data-kv-head="1" data-query-start="1" data-query-end="8">
+  <rect id="group-boundary-1" data-kind="group" x="45" y="394" width="450" height="410" rx="10" fill="none" stroke="#b0b7c3" stroke-width="1.2"/>
+  <text x="270" y="416" text-anchor="middle" font-size="13" fill="#455a64" font-weight="bold">KV Group 1 · 8 个 Query 头</text>
+  <text data-tex="Q_{1},\ldots,Q_{8}\quad\longrightarrow\quad K_1,V_1\ \text{共享}" x="270" y="438" text-anchor="middle" font-size="12" fill="#555">Q1–Q8 共用 K1/V1</text>
+  <rect id="shared-K-1" data-kind="activation" x="170" y="452" width="90" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="K_1" x="215" y="471" text-anchor="middle" font-size="12" fill="#0d47a1">K1</text>
+  <text data-tex="(n\times128)" x="215" y="488" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <rect id="shared-V-1" data-kind="activation" x="280" y="452" width="90" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="V_1" x="325" y="471" text-anchor="middle" font-size="12" fill="#0d47a1">V1</text>
+  <text data-tex="(n\times128)" x="325" y="488" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <path d="M 215 494 V 512 M 68 512 H 388" fill="none" stroke="#444" stroke-width="1.3"/>
+  <path d="M 325 494 V 530 M 152 530 H 472" fill="none" stroke="#444" stroke-width="1.3"/>
+  <g id="query-head-1" data-query-head="1" data-kv-head="1">
+  <line x1="68" y1="512" x2="68" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="152" y1="530" x2="152" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="query-1" data-kind="activation" x="74" y="550" width="72" height="38" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="Q_{1}" x="110" y="568" text-anchor="middle" font-size="12" fill="#0d47a1">Q1</text>
+  <text data-tex="(n\times128)" x="110" y="582" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="110" y1="588" x2="110" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="attention-1" data-kind="operator" x="55" y="615" width="110" height="75" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="110" y="635" text-anchor="middle" font-size="11" fill="#311b92" font-weight="bold">Attention 1</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_{1}K_1^\top}{\sqrt{128}}+M\right)" x="110" y="657" text-anchor="middle" font-size="8" fill="#4527a0">softmax(Q1K1ᵀ/√128 + M)</text>
+  <text data-tex="\cdot V_1" x="110" y="679" text-anchor="middle" font-size="10" fill="#4527a0">· V1</text>
+  <line x1="110" y1="690" x2="110" y2="715" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="head-output-1" data-kind="activation" x="55" y="715" width="110" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="\mathrm{head}_{1}" x="110" y="735" text-anchor="middle" font-size="11" fill="#0d47a1">head1</text>
+  <text data-tex="(n\times128)" x="110" y="751" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="110" y1="757" x2="110" y2="830" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  </g>
+  <g id="query-head-2" data-query-head="2" data-kv-head="1">
+  <line x1="198" y1="512" x2="198" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="282" y1="530" x2="282" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="query-2" data-kind="activation" x="204" y="550" width="72" height="38" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="Q_{2}" x="240" y="568" text-anchor="middle" font-size="12" fill="#0d47a1">Q2</text>
+  <text data-tex="(n\times128)" x="240" y="582" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="240" y1="588" x2="240" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="attention-2" data-kind="operator" x="185" y="615" width="110" height="75" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="240" y="635" text-anchor="middle" font-size="11" fill="#311b92" font-weight="bold">Attention 2</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_{2}K_1^\top}{\sqrt{128}}+M\right)" x="240" y="657" text-anchor="middle" font-size="8" fill="#4527a0">softmax(Q2K1ᵀ/√128 + M)</text>
+  <text data-tex="\cdot V_1" x="240" y="679" text-anchor="middle" font-size="10" fill="#4527a0">· V1</text>
+  <line x1="240" y1="690" x2="240" y2="715" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="head-output-2" data-kind="activation" x="185" y="715" width="110" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="\mathrm{head}_{2}" x="240" y="735" text-anchor="middle" font-size="11" fill="#0d47a1">head2</text>
+  <text data-tex="(n\times128)" x="240" y="751" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="240" y1="757" x2="240" y2="830" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  </g>
+  <g id="query-head-8" data-query-head="8" data-kv-head="1">
+  <line x1="388" y1="512" x2="388" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="472" y1="530" x2="472" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="query-8" data-kind="activation" x="394" y="550" width="72" height="38" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="Q_{8}" x="430" y="568" text-anchor="middle" font-size="12" fill="#0d47a1">Q8</text>
+  <text data-tex="(n\times128)" x="430" y="582" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="430" y1="588" x2="430" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="attention-8" data-kind="operator" x="375" y="615" width="110" height="75" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="430" y="635" text-anchor="middle" font-size="11" fill="#311b92" font-weight="bold">Attention 8</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_{8}K_1^\top}{\sqrt{128}}+M\right)" x="430" y="657" text-anchor="middle" font-size="8" fill="#4527a0">softmax(Q8K1ᵀ/√128 + M)</text>
+  <text data-tex="\cdot V_1" x="430" y="679" text-anchor="middle" font-size="10" fill="#4527a0">· V1</text>
+  <line x1="430" y1="690" x2="430" y2="715" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="head-output-8" data-kind="activation" x="375" y="715" width="110" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="\mathrm{head}_{8}" x="430" y="735" text-anchor="middle" font-size="11" fill="#0d47a1">head8</text>
+  <text data-tex="(n\times128)" x="430" y="751" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="430" y1="757" x2="430" y2="830" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  </g>
+  <text x="335" y="638" text-anchor="middle" font-size="27" fill="#666">⋯</text>
+  <text x="335" y="662" text-anchor="middle" font-size="10" fill="#666">省略 5 个头</text>
+  </g>
+  <!-- KV Group 8: Q heads 57–64 share K_8, V_8; all attention heads remain independent. -->
+  <g id="kv-group-8" data-kv-head="8" data-query-start="57" data-query-end="64">
+  <rect id="group-boundary-8" data-kind="group" x="605" y="394" width="450" height="410" rx="10" fill="none" stroke="#b0b7c3" stroke-width="1.2"/>
+  <text x="830" y="416" text-anchor="middle" font-size="13" fill="#455a64" font-weight="bold">KV Group 8 · 8 个 Query 头</text>
+  <text data-tex="Q_{57},\ldots,Q_{64}\quad\longrightarrow\quad K_8,V_8\ \text{共享}" x="830" y="438" text-anchor="middle" font-size="12" fill="#555">Q57–Q64 共用 K8/V8</text>
+  <rect id="shared-K-8" data-kind="activation" x="730" y="452" width="90" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="K_8" x="775" y="471" text-anchor="middle" font-size="12" fill="#0d47a1">K8</text>
+  <text data-tex="(n\times128)" x="775" y="488" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <rect id="shared-V-8" data-kind="activation" x="840" y="452" width="90" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="V_8" x="885" y="471" text-anchor="middle" font-size="12" fill="#0d47a1">V8</text>
+  <text data-tex="(n\times128)" x="885" y="488" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <path d="M 775 494 V 512 M 628 512 H 948" fill="none" stroke="#444" stroke-width="1.3"/>
+  <path d="M 885 494 V 530 M 712 530 H 1032" fill="none" stroke="#444" stroke-width="1.3"/>
+  <g id="query-head-57" data-query-head="57" data-kv-head="8">
+  <line x1="628" y1="512" x2="628" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="712" y1="530" x2="712" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="query-57" data-kind="activation" x="634" y="550" width="72" height="38" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="Q_{57}" x="670" y="568" text-anchor="middle" font-size="12" fill="#0d47a1">Q57</text>
+  <text data-tex="(n\times128)" x="670" y="582" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="670" y1="588" x2="670" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="attention-57" data-kind="operator" x="615" y="615" width="110" height="75" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="670" y="635" text-anchor="middle" font-size="11" fill="#311b92" font-weight="bold">Attention 57</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_{57}K_8^\top}{\sqrt{128}}+M\right)" x="670" y="657" text-anchor="middle" font-size="8" fill="#4527a0">softmax(Q57K8ᵀ/√128 + M)</text>
+  <text data-tex="\cdot V_8" x="670" y="679" text-anchor="middle" font-size="10" fill="#4527a0">· V8</text>
+  <line x1="670" y1="690" x2="670" y2="715" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="head-output-57" data-kind="activation" x="615" y="715" width="110" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="\mathrm{head}_{57}" x="670" y="735" text-anchor="middle" font-size="11" fill="#0d47a1">head57</text>
+  <text data-tex="(n\times128)" x="670" y="751" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="670" y1="757" x2="670" y2="830" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  </g>
+  <g id="query-head-58" data-query-head="58" data-kv-head="8">
+  <line x1="758" y1="512" x2="758" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="842" y1="530" x2="842" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="query-58" data-kind="activation" x="764" y="550" width="72" height="38" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="Q_{58}" x="800" y="568" text-anchor="middle" font-size="12" fill="#0d47a1">Q58</text>
+  <text data-tex="(n\times128)" x="800" y="582" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="800" y1="588" x2="800" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="attention-58" data-kind="operator" x="745" y="615" width="110" height="75" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="800" y="635" text-anchor="middle" font-size="11" fill="#311b92" font-weight="bold">Attention 58</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_{58}K_8^\top}{\sqrt{128}}+M\right)" x="800" y="657" text-anchor="middle" font-size="8" fill="#4527a0">softmax(Q58K8ᵀ/√128 + M)</text>
+  <text data-tex="\cdot V_8" x="800" y="679" text-anchor="middle" font-size="10" fill="#4527a0">· V8</text>
+  <line x1="800" y1="690" x2="800" y2="715" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="head-output-58" data-kind="activation" x="745" y="715" width="110" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="\mathrm{head}_{58}" x="800" y="735" text-anchor="middle" font-size="11" fill="#0d47a1">head58</text>
+  <text data-tex="(n\times128)" x="800" y="751" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="800" y1="757" x2="800" y2="830" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  </g>
+  <g id="query-head-64" data-query-head="64" data-kv-head="8">
+  <line x1="948" y1="512" x2="948" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="1032" y1="530" x2="1032" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="query-64" data-kind="activation" x="954" y="550" width="72" height="38" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="Q_{64}" x="990" y="568" text-anchor="middle" font-size="12" fill="#0d47a1">Q64</text>
+  <text data-tex="(n\times128)" x="990" y="582" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="990" y1="588" x2="990" y2="615" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="attention-64" data-kind="operator" x="935" y="615" width="110" height="75" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="990" y="635" text-anchor="middle" font-size="11" fill="#311b92" font-weight="bold">Attention 64</text>
+  <text data-tex="\operatorname{softmax}\!\left(\frac{Q_{64}K_8^\top}{\sqrt{128}}+M\right)" x="990" y="657" text-anchor="middle" font-size="8" fill="#4527a0">softmax(Q64K8ᵀ/√128 + M)</text>
+  <text data-tex="\cdot V_8" x="990" y="679" text-anchor="middle" font-size="10" fill="#4527a0">· V8</text>
+  <line x1="990" y1="690" x2="990" y2="715" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="head-output-64" data-kind="activation" x="935" y="715" width="110" height="42" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text data-tex="\mathrm{head}_{64}" x="990" y="735" text-anchor="middle" font-size="11" fill="#0d47a1">head64</text>
+  <text data-tex="(n\times128)" x="990" y="751" text-anchor="middle" font-size="9" fill="#1565c0">(n × 128)</text>
+  <line x1="990" y1="757" x2="990" y2="830" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  </g>
+  <text x="895" y="638" text-anchor="middle" font-size="27" fill="#666">⋯</text>
+  <text x="895" y="662" text-anchor="middle" font-size="10" fill="#666">省略 5 个头</text>
+  </g>
+  <text x="550" y="569" text-anchor="middle" font-size="30" fill="#666">⋯</text>
+  <text x="550" y="598" text-anchor="middle" font-size="11" fill="#666">其余 6 组</text>
+  <text x="550" y="618" text-anchor="middle" font-size="11" fill="#666">共 8 组</text>
+  <rect id="concat" data-kind="operator" x="45" y="830" width="1010" height="55" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="550" y="852" text-anchor="middle" font-size="13" fill="#311b92" font-weight="bold">Concat · 按 Query 头顺序拼接全部 64 个输出</text>
+  <text data-tex="[\mathrm{head}_1;\ldots;\mathrm{head}_{64}]\quad(n\times64\cdot128)=(n\times8192)" x="550" y="875" text-anchor="middle" font-size="12" fill="#4527a0">[head1; …; head64] (n × 64 × 128) = (n × 8192)</text>
+  <line x1="550" y1="885" x2="550" y2="910" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="weight-O" data-kind="weight" x="380" y="910" width="80" height="55" rx="2" fill="#fff3e0" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="420" y="922" text-anchor="middle" font-size="9" fill="#bf360c">参数</text>
+  <text data-tex="W_O" x="420" y="940" text-anchor="middle" font-size="13" fill="#bf360c">W_O</text>
+  <text data-tex="(8192\times8192)" x="420" y="957" text-anchor="middle" font-size="9" fill="#6d4c41">(8192 × 8192)</text>
+  <line x1="460" y1="937.5" x2="475" y2="937.5" stroke="#ef6c00" stroke-width="1.1" marker-end="url(#arr-param)"/>
+  <rect id="project-output" data-kind="operator" x="475" y="910" width="150" height="55" rx="0" fill="#ede7f6" stroke="#5e35b1" stroke-width="1.5"/>
+  <text x="550" y="939" text-anchor="middle" font-size="13" fill="#311b92" font-weight="bold">MatMul</text>
+  <text x="550" y="957" text-anchor="middle" font-size="10" fill="#4527a0">输出投影</text>
+  <line x1="550" y1="965" x2="550" y2="990" stroke="#444" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect id="output" data-kind="activation" x="475" y="990" width="150" height="55" rx="7" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
+  <text x="550" y="1014" text-anchor="middle" font-size="13" fill="#0d47a1" font-weight="bold">Output</text>
+  <text data-tex="(n\times8192)" x="550" y="1036" text-anchor="middle" font-size="11" fill="#1565c0">(n × 8192)</text>
+  <text x="550" y="1070" text-anchor="middle" font-size="12" fill="#555">每个 Query 头独立计算 softmax 与输出；共享的是 K/V，不是注意力分数。</text>
+  <text x="550" y="1093" text-anchor="middle" font-size="11" fill="#666">以 prefill self-attention 为例，省略 batch；M 为 causal mask；K/V 共享不要求物理复制。</text>
+</svg>

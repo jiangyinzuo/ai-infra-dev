@@ -6,16 +6,22 @@ euporie-preview --run --save linear.ipynb
 jupyter lab --ip=0.0.0.0 --custom-css
 ```
 
-## MHA 静态图
+## Attention 静态图
 
 图中蓝色圆角框表示激活／张量，紫色直角框表示算子，橙色小卡片表示权重参数。权重从侧面接入 MatMul，浅灰透明的 Head 外框只表示分组；右上角图例与成品一起生成。布局采用紧凑间距，保留三列及输出链对齐，不缩小公式字号。
 
-编辑 `llama2_7b/mha.source.svg` 中的布局和 `data-tex` 公式，重新生成 `llama2_7b/mha.svg`：
+- [MHA](llama2_7b/mha.svg)：各 Query 头使用各自的 K/V。
+- [Llama 2 70B GQA](llama2_7b/gqa.svg)：64 个 Query 头、8 个 KV 头、每头 128 维；每 8 个 Query 头共享一对 K/V，但独立计算 softmax 和输出。图中展开第 1 组（Q1–Q8）和第 8 组（Q57–Q64），其余组和组内部分头用省略号表示。Q 投影宽度为 8192，K/V 投影宽度各为 1024；图中省略 batch，展示 prefill 自注意力。
+
+编辑 `llama2_7b/mha.source.svg` 或 `llama2_7b/gqa.source.svg` 中的布局和 `data-tex` 公式，使用共用生成器 `render_attention.mjs` 生成对应静态 SVG：
 
 ```bash
 cd llama2_7b
 npm ci
 npm run render:mha
+npm run render:gqa
 ```
 
 MathJax 仅在生成时使用，成品可以直接在 Markdown 中嵌入。生成器将公式输出为 `<g>` 路径组，只保留一个最外层 `<svg>`；不要重新引入嵌套 `<svg>`，避免 Live Server 在多个 `</svg>` 处重复注入自动刷新脚本，导致 HTTP 响应截断和 XML 解析失败。
+
+Llama 2 70B 参数可对照[公开 config.json](https://huggingface.co/NousResearch/Llama-2-70b-hf/blob/main/config.json)：`hidden_size=8192`、`num_attention_heads=64`、`num_key_value_heads=8`。

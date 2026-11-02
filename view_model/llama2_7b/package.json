@@ -2,7 +2,8 @@
   "name": "llama-attention-diagrams",
   "private": true,
   "scripts": {
-    "render:mha": "node render_mha.mjs"
+    "render:mha": "node render_attention.mjs mha",
+    "render:gqa": "node render_attention.mjs gqa"
   },
   "devDependencies": {
     "mathjax-full": "3.2.2"

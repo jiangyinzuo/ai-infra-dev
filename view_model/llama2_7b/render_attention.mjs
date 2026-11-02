@@ -6,13 +6,14 @@ import { liteAdaptor } from 'mathjax-full/js/adaptors/liteAdaptor.js';
 import { RegisterHTMLHandler } from 'mathjax-full/js/handlers/html.js';
 import 'mathjax-full/js/input/tex/ams/AmsConfiguration.js';
 
+const name = process.argv[2];
 const adaptor = liteAdaptor();
 RegisterHTMLHandler(adaptor);
 const mathDocument = mathjax.document('', {
   InputJax: new TeX({ packages: ['base', 'ams'] }),
   OutputJax: new SVG({ fontCache: 'none' }),
 });
-const source = await readFile(new URL('mha.source.svg', import.meta.url), 'utf8');
+const source = await readFile(new URL(`${name}.source.svg`, import.meta.url), 'utf8');
 const parsed = adaptor.parse(source, 'text/html');
 const diagram = adaptor.tags(adaptor.body(parsed), 'svg')[0];
 let formulaCount = 0;
@@ -42,7 +43,7 @@ for (const label of adaptor.tags(diagram, 'text')) {
   formulaCount++;
 }
 
-const result = '<!-- Generated from mha.source.svg by npm run render:mha. -->\n'
+const result = `<!-- Generated from ${name}.source.svg by npm run render:${name}. -->\n`
   + adaptor.outerHTML(diagram) + '\n';
-await writeFile(new URL('mha.svg', import.meta.url), result, 'utf8');
-console.log(`Rendered ${formulaCount} formulas to mha.svg`);
+await writeFile(new URL(`${name}.svg`, import.meta.url), result, 'utf8');
+console.log(`Rendered ${formulaCount} formulas to ${name}.svg`);
