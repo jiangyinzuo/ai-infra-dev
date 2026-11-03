@@ -2,7 +2,7 @@
 
 ## 要解决的问题
 
-沿一次受控请求，记录选定函数的入口状态和调用路径，既能供程序分析，也能让人快速找到关键阶段。它不是全量 profiler，不记录函数返回，也不追踪 CUDA kernel。
+在受控场景或显式包装的进程入口中，记录选定函数的入口状态和调用路径，既能供程序分析，也能让人快速找到关键阶段。需要 Python 3.12+。它不是全量 profiler，不记录函数返回，也不追踪 CUDA kernel。
 
 命令行只接收配置和统一输出前缀。每次固定覆盖生成四份文件，不维护格式选择参数或旧格式兼容：
 
@@ -32,11 +32,11 @@ HiSparse 配置复用现有 dummy 模型参数，运行 2304-token 输入、8-to
 
 ## 采集机制
 
-核心是 `sys.settrace()`，只处理当前线程的 Python `call` 事件，不使用 bdb 行断点。目标源码编译但不执行，通过 code object 的文件、首行和限定名定位函数，再匹配运行时调用。因此不依赖多行 `if` 等语句的可执行行位置。
+核心是 `sys.settrace()` 的 Python `call` 事件；用 Python 3.12 的 `threading.settrace_all_threads()` 覆盖当前进程已有和后续创建的 Python 线程，不使用 bdb 行断点。目标源码编译但不执行，通过 code object 的文件、首行和限定名定位函数，再匹配运行时调用。因此不依赖多行 `if` 等语句的可执行行位置。
 
 函数内部循环不会反复触发入口采集；循环反复调用函数则会。生成器和协程恢复也可能产生 call 事件，命中数不能一概等同于独立调用或请求次数。
 
-每个目标的 `limit` 限制详细事件数量，但不停止累计命中数；0 表示只计数。`sequence` 仅为已保存详细事件编号，`hit` 是该目标的完整命中序号。
+每进程、每目标独立计算 `limit` 和命中数。`limit` 限制详细事件数量，但不停止累计命中数；0 表示只计数。`sequence` 是该进程已保存详细事件的编号，`hit` 是该进程该目标的完整命中序号。进程内锁串行更新计数、写事件和聚合树；关闭时等待正在写入的事件结束，再写摘要。
 
 调用栈沿 `frame.f_back` 从最外层 Python 帧收集到目标函数，包含工具入口、配置和依赖。root 内文件用相对路径，外部文件保留原路径。它只是当前线程的栈，不跨进程拼接因果链。
 
@@ -44,23 +44,38 @@ HiSparse 配置复用现有 dummy 模型参数，运行 2304-token 输入、8-to
 
 ## 日志隔离与资源恢复
 
-配置加载和目标程序的 Python stdout、底层 fd 1 都临时指向 stderr，防止 Python print、原生扩展或继承 stdout 的子进程污染追踪记录。目标原有 stderr 保持不变。
+仅 CLI 在加载配置、执行目标场景时，把 Python stdout 和底层 fd 1 临时指向 stderr，避免日志混入追踪结果。原有 stderr 保持不变；库接口不重定向输出。
 
 fd 重定向作用于整个进程，其他线程的 stdout 也会受影响。它不设置强制刷新或改模型计算，但改变了输出去向。
 
-命令行解析、输出文件管理、运行上下文和采集主流程分别由 `parse_args`、`open_writer`、`execution_context`、`run_trace` 承担。运行上下文在正常退出或异常时恢复 trace hook、cwd 和配置覆盖的环境变量；输出文件由上下文管理器关闭。
+`configuration.py` 保存 `Target`、`TraceConfig`；`tracing.py` 负责目标匹配、字段快照和栈采集；`output.py` 负责文件与树输出；`runtime.py` 的 `TraceSession` 负责进程内安装、关闭和错误摘要；`__main__.py` 仅负责 CLI、可信配置加载及 cwd/env/stdout 上下文。CLI 正常退出或异常时恢复 cwd 和配置覆盖的环境变量。
+
+## 进程与线程生命周期
+
+`TraceSession` 是可 pickle 的配置对象，只包含源码根目录、目标、绝对输出前缀、会话 ID 和可选配置路径。子进程不重新 import 用户配置，也不执行 `TraceConfig.run`。`session.run(callable, *args, **kwargs)` 在当前进程创建采集器、调用业务入口并保留其返回值或异常；`session.capture()` 提供同一生命周期的上下文接口。子进程默认立即采集，父进程的延迟 start 开关不跨进程传播。
+
+每个进程必须显式接入入口，包括孙进程。fork 后、进入包装入口之前，继承的 hook 按 PID 拒绝采集，且在触碰锁、计数和 writer 之前返回。进入包装入口后创建新的锁、writer、计数和树；spawn/forkserver 在新进程中走同一初始化路径。没有 multiprocessing 全局补丁、at-fork 自动安装或原生代码注入，也不为了采集改变业务的启动方式。
+
+库接口按 `<prefix>.<PID>-<随机实例ID>` 创建四份输出，避免共享 writer 与 PID 复用冲突。CLI 显式覆盖前缀，保留原有四个主进程文件名。各文件只含一个进程的事件；相同 `run_id` 表示共享会话配置，不表示跨进程连续调用栈。forkserver 下 OS 父进程可能是辅助服务，不能用 PPID 冒充业务上的请求来源。
+
+安装和退出限定在主线程，同一进程不能嵌套采集。退出时停止采集，恢复进入时的当前线程 trace hook 和 threading 默认 hook；继承自其他 PID 的本工具 hook 不会恢复。Python 接口不能取得并重建其他线程各自单独设置的不同 hook，因此不支持与这类 hook 或其他调试器同时使用。现有 profile hook 不改动。
+
+未包装的子进程不会生成采集文件。强杀、`os._exit()` 或写入故障可能没有最终摘要和树，已刷新的 JSONL 事件仍可读取。跨进程同步启停、向任意现存 PID attach、IPC 因果链和跨机器采集不在此接口范围。
+
 
 ## 事件协议与失败行为
 
 事件 JSONL 只维护当前格式，按以下顺序输出：
 
-1. `run`：配置路径、root、解释器和采集范围。
-2. `event`：`sequence`、`target`、`hit`、字段快照 `values`、外层到内层的调用栈 `stack`。
+1. `run`：配置路径（库接口可为空）、root、解释器、启动方式、实际输出前缀和采集范围。
+2. `event`：`sequence`、`target`、`hit`、字段快照 `values`、外层到内层的调用栈 `stack`、`thread_id`、`native_thread_id`、`monotonic_ns`。
 3. `summary`：`status`、`error`、已保存事件数、各目标完整命中数和总耗时。
+
+所有记录包含 `run_id`、`process_instance_id`、`pid`、`ppid`、`process_name`。事件时间戳取自当前主机的单调时钟，不是墙钟；多线程时间戳在等待写锁前采集，因此文件序号表示串行写入顺序，不保证时间戳严格递增。时间相邻不证明 IPC 因果关系。
 
 `run` 和 `summary` 的 `started_at` 为运行开始时的本地 ISO 8601 日期时间，包含时区偏移，精确到秒。JSON 树通过 `summary.started_at` 保留该时间，文本树在头部显示 `trace_started_at`；不是生成树文件的时间。
 
-耗时包含初始化，不是函数耗时。目标抛异常时保留已写事件，写失败摘要及部分调用树，返回非零；traceback 写 stderr。配置加载、目标解析、文件创建失败发生在运行前，不保证存在摘要。输出流故障也无法保证最终摘要。
+耗时包含采集上下文内的初始化，不是函数耗时。业务异常会保留已写事件、写失败摘要及部分调用树，再原样抛出；CLI 转为非零退出码并将 traceback 写 stderr，子进程由 multiprocessing 处理未捕获异常。配置加载、目标解析、文件创建失败发生在运行前，不保证存在摘要。输出流故障也无法保证最终摘要。
 
 ## 调用树如何合并
 
@@ -84,6 +99,19 @@ JSON 的 `tree` 用函数标签作键、子调用作值，叶子为 `{}`。这�
 
 ## 能证明什么
 
-追踪只覆盖当前线程的 Python 调用，不接管新线程、子进程、远端或 CUDA kernel。Python tracing 和文件写入会改变时序，不用于性能结论。
+追踪覆盖显式接入进程中的 Python 线程；不自动接管任意子进程、现存 PID、远端或 CUDA kernel。Python tracing 和文件写入会改变时序，不用于性能结论。
 
 CPU 侧函数进入顺序不等于 GPU 工作完成顺序。命中 `swap_in` 不证明实际发生非空 H2D；进入 DMA 提交函数也不等于测得传输字节或带宽。需要进一步采集状态或使用专门的 GPU 分析工具才能回答这些问题。
+
+## 离线验证
+
+`tests/multiprocess_smoke.py` 用真实 pipe 和 `multiprocessing.get_context(method).Process` 模拟 API → EngineCore → 两个 Worker；业务入口采用与 vLLM 类似的静态进程入口，所有入口显式经 `session.run` 包装。不加载 vLLM，不使用 GPU。
+
+验证业务结果、PID/PPID 与进程名、每进程计数及 limit、原始字段及真实栈、独立输出和树摘要；包括安装前已有的线程、安装后创建的线程，以及 fork 后包装入口前的目标调用。pytest 另覆盖 CLI 入口、cwd/env 恢复、异常退出、hook 恢复和子进程失败隔离。
+
+从仓库根目录执行：
+
+```bash
+uv run --no-project --with pytest --python 3.12 python -m pytest trace_python/call_stack_analysis/tests -q
+```
+

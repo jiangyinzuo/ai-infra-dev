@@ -1,6 +1,6 @@
 # Python 函数追踪
 
-记录选定函数的参数和调用栈。需要 Python 3.11+，工具自身只用标准库；目标程序需使用已安装其依赖的解释器。只运行可信的 Python 配置。
+记录选定函数的参数和调用栈。需要 Python 3.12+，工具自身只用标准库；目标程序需使用已安装其依赖的解释器。只运行可信的 Python 配置。
 
 ## 运行 HiSparse 示例
 
@@ -86,6 +86,32 @@ python trace_python/call_stack_analysis --config /path/to/config.py --output-pre
 - `Target(file, function, fields, limit)`：相对源码路径、完整函数限定名、局部变量或属性路径、最多保存的详细事件数。超过 limit 仍计数，0 表示仅计数。
 - `env`：可选的本次运行环境变量。
 
-当前只追踪当前线程的 Python 调用，会影响时序，不用于测性能；不会进入 CUDA kernel。输出重定向至 stderr，目标失败返回非零并保留已采集结果。
+## 多进程入口
+
+使用公共接口 `TraceSession(root, targets, output_prefix)`，不要把已打开的 writer 或 `TraceConfig.run` 传给子进程：
+
+- 当前进程：`with session.capture() as tracer:`；默认立即采集，传 `active=False` 后可调用 `tracer.start()` 开始。
+- 子进程：`context.Process(target=session.run, args=(worker_main, ...))`；`worker_main` 必须能被所选启动方式加载，spawn 通常要求可导入的模块级函数或静态方法。
+- 每一层子进程入口都需显式包装，嵌套启动时传递同一 `session`。兼容 fork、spawn、forkserver，不改变实际启动方式。
+- 安装和退出必须在进程主线程；同一进程不能嵌套采集。不要与其他调试器或按线程单独安装的 trace hook 混用。
+
+每个进程输出 `<output_prefix>.<PID>-<实例ID>` 加上述四个后缀，计数、limit、序号和调用树独立；所有记录带 `run_id` 和进程身份，事件另带线程身份及 `monotonic_ns`。输出目录须已存在。库接口不修改 cwd、环境或 stdout，也不会执行配置中的 `run()`。
+
+CLI 的 `run(start)` 和原有四个输出文件名保持不变；它不会自动接管配置启动的子进程。父进程的 `start()` 也不会改变已有子进程的采集开关。这不是向已运行 PID 事后 attach 的接口。
+
+### 运行离线多进程示例
+
+不需要 vLLM、GPU 或额外依赖。从仓库根目录执行：
+
+```bash
+python trace_python/call_stack_analysis/tests/multiprocess_smoke.py --start-method fork --output-prefix /tmp/trace-fork
+python trace_python/call_stack_analysis/tests/multiprocess_smoke.py --start-method spawn --output-prefix /tmp/trace-spawn
+```
+
+示例启动 API 主进程、EngineCore 和两个 Worker，通过 pipe 传递请求及结果，输出进程身份、计算结果与文件路径。省略 `--output-prefix` 时使用临时目录，验证后自动删除。
+
+完整入口示例见 [multiprocess_smoke.py](tests/multiprocess_smoke.py)；每个进程的栈单独查看，不把 IPC 两端拼成一条 Python 调用栈。
+
+采集覆盖当前进程中已有和后续创建的 Python 线程，会影响时序，不用于测性能；不会进入 CUDA kernel。CLI 将目标输出重定向至 stderr，目标失败返回非零并保留已采集结果。
 
 采集机制、输出协议、调用树与计数规则见 [DESIGN.md](DESIGN.md)。

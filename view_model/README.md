@@ -8,6 +8,24 @@ euporie-preview --run --save linear.ipynb
 jupyter lab --ip=0.0.0.0 --custom-css
 ```
 
+## 经典模型
+
+- Llama2
+- DeepSeek V3.1: GQA, MHA -> MLA, MoE
+- DeepSeek V3.2: topk稀疏注意力
+    - GLM5.1
+    - GLM5.2
+    - GLM5.3
+    - GLM5.3 flash
+- DeepSeek V4, V4.1
+- Qwen-Next: mamba full
+    - Qwen3.5
+    - Qwen3.6
+    - Qwen3.8
+- Kimi K3: KDA
+
+TP + X特性
+
 ## Attention 静态图
 
 图中蓝色圆角框表示激活／张量，紫色直角框表示算子，橙色小卡片表示权重参数。权重从侧面接入 MatMul，浅灰透明的 Head 外框只表示分组；右上角图例与成品一起生成。布局采用紧凑间距，保留三列及输出链对齐，不缩小公式字号。
