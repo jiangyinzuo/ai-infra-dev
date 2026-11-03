@@ -1,3 +1,5 @@
+https://sebastianraschka.com/llm-architecture-gallery/
+
 uv venv --python 3.12 --seed --managed-python
 source gitee-proxy.sh
 
