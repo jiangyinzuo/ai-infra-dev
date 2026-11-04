@@ -1,0 +1,3 @@
+from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaAttention
+from transformers.models.deepseek_v3 import DeepseekV3ForCausalLM
+from transformers.models.deepseek_v3.modeling_deepseek_v3 import DeepseekV3Attention, DeepseekV3MLP, DeepseekV3MoE
