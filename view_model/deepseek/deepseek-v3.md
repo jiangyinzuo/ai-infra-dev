@@ -453,6 +453,21 @@ s_{i,t}, & s_{i,t}+b_i\in\operatorname{TopK}\left(\{s_{j,t}+b_j\mid 1\le j\le N_
 
 推理时使用训练完成后固定的路由偏置；训练期间根据专家负载调整偏置的过程不属于这次前向计算。
 
+##### hf transformers实现
+
+专家路由打分，其实是一个Linear。token数量大于0时，是矩阵乘法。
+```python
+    def __init__(self, config: DeepseekV3Config):
+        self.weight = nn.Parameter(torch.zeros(self.num_experts, self.hidden_dim))
+    def forward(self, hidden_states):
+        router_logits = F.linear(hidden_states.type(torch.float32), self.weight.type(torch.float32))
+```
+```
+batchsize=1, num_token=4，专家数量256，hidden_state=7168时，
+linear: input_shapes=[(4, 7168), (256, 7168)], output_shapes=[(4, 256)]
+sigmoid: input_shapes=[(4, 256)], output_shapes=[(4, 256)]
+```
+
 #### 2. 由原始亲和分数计算门控权重
 
 被选中的专家使用未加偏置的亲和分数作为权重，并在选中的专家之间归一化：
