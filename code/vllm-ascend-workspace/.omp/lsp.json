@@ -1,11 +1,14 @@
 {
   "servers": {
-    "pyrefly": {
-      "command": "pyrefly",
-      "args": ["lsp"],
+    "python-lsp": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "if [ -x .venv/bin/pyrefly ]; then exec .venv/bin/pyrefly lsp; elif command -v pyrefly >/dev/null 2>&1; then exec pyrefly lsp; else exec ty server; fi"
+      ],
       "fileTypes": [".py", ".pyi"],
       "languageId": "python",
-      "rootMarkers": ["pyrefly.toml"]
+      "rootMarkers": ["ty.toml"]
     }
   }
 }

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import importlib.util
 import os
 import sys
 import traceback
@@ -17,20 +16,7 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from trace_python.call_stack_analysis import TraceConfig, TraceSession
-
-
-def load_config(path: Path) -> TraceConfig:
-    spec = importlib.util.spec_from_file_location("trace_user_config", path)
-    if spec is None or spec.loader is None:
-        raise ValueError(f"无法加载配置：{path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    config = module.config
-    if not isinstance(config, TraceConfig):
-        raise ValueError("配置必须导出 TraceConfig 类型的 config")
-    if not config.root.is_absolute():
-        raise ValueError("config.root 必须为绝对路径；可相对于配置的 __file__ 计算")
-    return config
+from trace_python.call_stack_analysis.configuration import load_config
 
 
 @contextlib.contextmanager

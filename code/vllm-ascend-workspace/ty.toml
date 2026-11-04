@@ -1,0 +1,4 @@
+[environment]
+python = ".venv"
+python-version = "3.12"
+root = ["./vllm", "./vllm-ascend"]

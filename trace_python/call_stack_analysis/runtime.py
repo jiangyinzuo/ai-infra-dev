@@ -99,7 +99,7 @@ class TraceSession:
                 "python": sys.executable,
                 "output_prefix": str(prefix),
                 "start_method": multiprocessing.get_start_method(allow_none=True),
-                "scope": "current-process Python threads; explicit child entrypoints; no CUDA kernel tracing",
+                "scope": "current-process Python threads; no CUDA kernel tracing",
             })
             started = time.monotonic()
             status, error = "ok", None

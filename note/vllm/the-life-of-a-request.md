@@ -1,6 +1,8 @@
 <!-- vllmclass -->
 :vim:foldlevel=7 nowrap:
 
+https://docs.vllm.ai/en/latest/design/arch_overview/
+
 DeepSeek-V3.2缩小版 + HiSparse 0.32.1rc1.dev 2026-10-21
 
 ## Engine层：LLMEngine、EngineCore、InprocClient
@@ -26,8 +28,13 @@ class InprocClient(EngineCoreClient):
         self.engine_core = EngineCore(...)
 ```
 
-## Scheduler层：Scheduler
+### EngineCore
 
+EngineCore会warmup初始化KVCache
+
+一个请求来了以后，先入队。
+
+step: 调度、执行、采样、更新
 ```vllmclass
 class EngineCore:
         self.scheduler: SchedulerInterface = Scheduler(...)
@@ -36,7 +43,11 @@ class EngineCore:
         self,
     ) -> tuple[dict[int, EngineCoreOutputs] | None, bool]:
             scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
+```
 
+## Scheduler层：Scheduler
+
+```vllmclass
 # /home/server/ai-infra-dev/code/vllm-workspace/vllm/vllm/v1/core/sched/scheduler.py:85
 # vllm.v1.core.sched.scheduler.Scheduler
 class Scheduler(SchedulerInterface):
@@ -149,9 +160,20 @@ class KVConnectorMetadata(ABC):  # noqa: B024
 
 ## Executor层：UniProcExecutor、WorkerWrapperBase、Worker
 
+```
+  󰌗 WorkerBase
+    󰌗 Worker
+   │ └ No subtypes
+    󰌗 NPUWorker
+      󰌗 NPUWorker310
+```
+
 ## ModelRunner层：GPUModelRunner、NPUModelRunner
 
-NPUModelRunner在vllm-ascend仓
+v1即将下线，优先看ModelRunner v2
+
+NPUModelRunner在vllm-ascend仓。之前GPUModelRunner改动很频繁，为了保证和上游实时保持行为一致，
+NPUModelRunner选择继承GPUModelRunner
 
 ### 模型：Module、DeepseekV32Model、DeepseekV32DecoderLayer、DeepseekV32Attention
 

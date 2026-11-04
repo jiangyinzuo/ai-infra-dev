@@ -48,7 +48,7 @@ HiSparse 配置复用现有 dummy 模型参数，运行 2304-token 输入、8-to
 
 fd 重定向作用于整个进程，其他线程的 stdout 也会受影响。它不设置强制刷新或改模型计算，但改变了输出去向。
 
-`configuration.py` 保存 `Target`、`TraceConfig`；`tracing.py` 负责目标匹配、字段快照和栈采集；`output.py` 负责文件与树输出；`runtime.py` 的 `TraceSession` 负责进程内安装、关闭和错误摘要；`__main__.py` 仅负责 CLI、可信配置加载及 cwd/env/stdout 上下文。CLI 正常退出或异常时恢复 cwd 和配置覆盖的环境变量。
+`configuration.py` 保存 `Target`、`TraceConfig` 和可信配置加载；`tracing.py` 负责目标匹配、字段快照和栈采集；`output.py` 负责文件与树输出；`runtime.py` 的 `TraceSession` 负责进程内安装、关闭和错误摘要；`__main__.py` 负责原有 CLI 及 cwd/env/stdout 上下文。CLI 正常退出或异常时恢复 cwd 和配置覆盖的环境变量。
 
 ## 进程与线程生命周期
 
@@ -60,8 +60,22 @@ fd 重定向作用于整个进程，其他线程的 stdout 也会受影响。它
 
 安装和退出限定在主线程，同一进程不能嵌套采集。退出时停止采集，恢复进入时的当前线程 trace hook 和 threading 默认 hook；继承自其他 PID 的本工具 hook 不会恢复。Python 接口不能取得并重建其他线程各自单独设置的不同 hook，因此不支持与这类 hook 或其他调试器同时使用。现有 profile hook 不改动。
 
-未包装的子进程不会生成采集文件。强杀、`os._exit()` 或写入故障可能没有最终摘要和树，已刷新的 JSONL 事件仍可读取。跨进程同步启停、向任意现存 PID attach、IPC 因果链和跨机器采集不在此接口范围。
+未包装的子进程不会自动生成采集文件。强杀、`os._exit()` 或写入故障可能没有最终摘要和树，已刷新的 JSONL 事件仍可读取。跨进程同步启停、IPC 因果链和跨机器采集不在此接口范围。已有 PID 可另用下述 CPython 3.14+ attach 入口接入。
 
+
+## CPython 3.14+ 事后 attach
+
+`attach.py` 是控制端，`attach_target.py` 是注入后的目标端入口，采集核心仍为 `TraceSession.capture()`。控制端和目标端须为相同主、次版本的 CPython 3.14+；预发布解释器须精确版本相同。控制端加载可信配置，只序列化 root、Target 字段、输出前缀和 run_id；目标不 import 配置，不执行 run，不覆盖环境、cwd 或 stdout。
+
+控制目录在输出目录下用 `mkdtemp` 创建，权限限制为当前用户；每条 start/stop 请求有不可变 JSON 和 bootstrap Python 文件，响应以原子 replace 写入。bootstrap 临时提供工具 import 路径并恢复 sys.path；异常通过响应返回，不能抛入业务代码。工具代码、源码与控制/输出路径须在目标可见；不做跨容器路径翻译。
+
+`sys.remote_exec(pid, script)` 只是提交请求，不证明代码已执行。控制端等待目标写 start 确认才认为安装成功；目标持有已进入的 capture 上下文，覆盖当前进程已有及未来 Python 线程。到期或控制端捕获 Ctrl-C 后提交 stop；目标关闭 capture、恢复 hooks、写摘要并关闭输出文件后才确认 stop。重复 attach 不覆盖现有采集器；不同 run_id 的 stop 不能关闭其他会话。目标正常退出时以 PID 检查保护的 atexit 关闭，fork 子进程不能关闭父采集器。
+
+安装超时或中断时，控制端先写取消标记，再读 start 确认；目标先发布 start 确认，再检查取消标记。若控制端读到了成功确认，就提交幂等 stop；否则迟到的 start 会在安装前跳过，或安装后关闭并写 cancelled。此顺序避免取消与安装确认交错时无人负责卸载。未确认请求的 bootstrap/配置文件必须保留，防止目标晚些时候读取已删除的脚本；控制端失败报告给出保留目录和部分成功/卸载状态，不把未知状态报作成功。
+
+每个 PID 各有进程实例 ID 和独立文件，所有 PID 共享 run_id。逐个安装、全部确认后计时，停止也逐个确认；事件仍只有各线程的真实栈，不添加伪造的跨进程调用边。计时包含已安装进程等待其他 PID 安装的时间，不是同步采集或无插桩性能测量。
+
+该入口不更改 Linux ptrace/Yama 或容器权限，不绕过禁用 remote debugging 的解释器。主线程若未到达安全执行点，请求可能延迟；卸载超时必须报告仍可能在采集。控制端 SIGKILL、目标强杀和写失败不能保证最终摘要或及时卸载。已导入的工具模块会留在目标进程中；恢复 hooks 不等于回滚 Python 导入。
 
 ## 事件协议与失败行为
 
@@ -99,7 +113,7 @@ JSON 的 `tree` 用函数标签作键、子调用作值，叶子为 `{}`。这�
 
 ## 能证明什么
 
-追踪覆盖显式接入进程中的 Python 线程；不自动接管任意子进程、现存 PID、远端或 CUDA kernel。Python tracing 和文件写入会改变时序，不用于性能结论。
+追踪覆盖显式接入或 attach 的进程中的 Python 线程；不自动接管子进程、未指定 PID、远端或 CUDA kernel。Python tracing 和文件写入会改变时序，不用于性能结论。
 
 CPU 侧函数进入顺序不等于 GPU 工作完成顺序。命中 `swap_in` 不证明实际发生非空 H2D；进入 DMA 提交函数也不等于测得传输字节或带宽。需要进一步采集状态或使用专门的 GPU 分析工具才能回答这些问题。
 
@@ -114,4 +128,19 @@ CPU 侧函数进入顺序不等于 GPU 工作完成顺序。命中 `swap_in` 不
 ```bash
 uv run --no-project --with pytest --python 3.12 python -m pytest trace_python/call_stack_analysis/tests -q
 ```
+
+`tests/attach_subject.py` 是未预装采集器的目标程序；已有工作线程先于 attach 创建。`tests/attach_smoke.py` 用真实 `sys.remote_exec` 验证主线程、已有和新增工作线程的字段与栈、同 PID 卸载后重装、多 PID 会话、输出隔离和 hook 恢复；另验证无效目标、迟到请求取消及目标禁用 remote debugging。控制端是目标进程的父进程，以便在 Linux Yama 策略允许的权限范围内验证，不修改安全设置。无权限时明确 skip，不以 mock 代替真实 attach。
+
+Python 3.14 验证使用 uv 创建的独立虚拟环境，从仓库根目录执行：
+
+```bash
+uv venv --python 3.14 trace_python/call_stack_analysis/.venv-attach314
+uv pip install --python trace_python/call_stack_analysis/.venv-attach314/bin/python pytest
+trace_python/call_stack_analysis/.venv-attach314/bin/python \
+  trace_python/call_stack_analysis/tests/attach_smoke.py \
+  --output-prefix trace_python/call_stack_analysis/.venv-attach314/smoke/attached --duration 1
+trace_python/call_stack_analysis/.venv-attach314/bin/python \
+  -m pytest trace_python/call_stack_analysis/tests -q
+```
+
 

@@ -150,6 +150,8 @@ AllReduce -> ReduceScatter + AllScatter
 Send / Recieve
 ## DP（数据并行）
 
+一个DP对应一个EngineCore/Scheduler，TP共用EngineCore。
+
 用户变动了，用多个模型副本分担请求。
 DP：输入不一样
 

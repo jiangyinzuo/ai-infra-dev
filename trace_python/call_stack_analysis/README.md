@@ -112,6 +112,33 @@ python trace_python/call_stack_analysis/tests/multiprocess_smoke.py --start-meth
 
 完整入口示例见 [multiprocess_smoke.py](tests/multiprocess_smoke.py)；每个进程的栈单独查看，不把 IPC 两端拼成一条 Python 调用栈。
 
-采集覆盖当前进程中已有和后续创建的 Python 线程，会影响时序，不用于测性能；不会进入 CUDA kernel。CLI 将目标输出重定向至 stderr，目标失败返回非零并保留已采集结果。
+## 直接 attach 已运行进程（CPython 3.14+）
+
+无需目标预先导入采集器。控制端和目标端必须使用**相同主、次版本的 CPython，且至少为 3.14**；预发布解释器要求精确版本相同。工具目录、配置中的源码路径及输出目录须在双方可见的同一文件系统命名空间中。
+
+从仓库根目录创建独立验证环境并运行：
+
+```bash
+uv venv --python 3.14 trace_python/call_stack_analysis/.venv-attach314
+trace_python/call_stack_analysis/.venv-attach314/bin/python \
+  -m trace_python.call_stack_analysis.attach \
+  --pid 12345 12346 \
+  --config /path/to/config.py \
+  --output-prefix /tmp/attached \
+  --duration 10 --timeout 10
+```
+
+- 复用现有 `TraceConfig`：只在控制端 import 配置，传入 `root` 和 `targets`；不调用 `run()`、不应用 `env`。配置顶层代码仍会执行，必须可信。
+- 逐个安装并等待确认，全部确认后等待 `--duration` 秒，再请求卸载、输出摘要与调用树。先安装的进程采集时间会略长；不是跨进程同步采集窗口。
+- 每个 PID 独立输出四份文件；stdout 的 JSON 给出 `run_id`、实际 `output_prefix` 与 `stopped` 状态。失败返回非零，Ctrl-C 会尝试卸载已安装的采集器。
+- 只处理列出的 PID，不自动发现已有或新建子进程；只采集安装后的目标函数入口，不补录历史调用，也不暂停在交互式断点。
+
+无需 vLLM 的真实 attach 示例：运行 `python3.14 trace_python/call_stack_analysis/tests/attach_smoke.py`（可使用上面虚拟环境中的解释器）。它先启动未插桩目标，再 attach；省略输出前缀时自动清理临时文件，详细验证命令见 [DESIGN.md](DESIGN.md#离线验证)。
+
+目标主线程必须回到 Python 安全执行点才能安装或卸载；长时间停留在原生调用或 I/O 中可能超时。超时不是“没有安装”的证明。控制端会取消迟到的 start 请求；若仍有未确认请求，会报告并保留 `.call-stack-attach-*` 控制目录，**确认请求执行完毕前不要删除它**。卸载未确认时会明确报告采集器可能仍在运行。强杀控制端不能保证卸载。
+
+Linux attach 受 Yama/ptrace、用户身份和容器权限限制；目标也不能禁用 Python remote debugging。工具不会修改系统安全设置。只对有权调试的进程使用；attach 会向目标加载 Python 模块、安装 hooks 并写文件，改变执行时序。卸载不移除已加载模块，不改变目标 cwd、环境或 stdout。
+
+采集覆盖当前进程中已有和后续创建的 Python 线程，会影响时序，不用于测性能；不会进入 CUDA kernel。原有受控场景 CLI 将目标输出重定向至 stderr；attach 不改变目标输出去向。
 
 采集机制、输出协议、调用树与计数规则见 [DESIGN.md](DESIGN.md)。
