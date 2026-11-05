@@ -1,3 +1,12 @@
+## 参考材料
+
+[The vLLM MoE Playbook: A Practical Guide to TP, DP, PP and Expert Parallelism](https://rocm.blogs.amd.com/software-tools-optimization/vllm-moe-guide/README.html)
+[Efficient Decode Context Parallelism with vLLM for Long Context Workloads](https://vllm-project.github.io/2026/08/07/decode-context-parallelism.html)
+[Elastic Expert Parallelism in vLLM](https://vllm-project.github.io/2026/05/14/elastic-expert-parallelism.html)
+[Context parallelism and MoE DP + TP + CP + EP](https://docs.google.com/presentation/d/1aeZw7dF7zTLzTSwavZYjU5XRENRp5Dk7rMXDkhoD2zw/edit?pli=1&slide=id.p#slide=id.p)
+
+---
+
 HBM的容量有限，放
 - 权重
 - KVCache
