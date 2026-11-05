@@ -25,6 +25,16 @@ jupyter lab --ip=0.0.0.0 --custom-css
 - Kimi K3: KDA
 
 TP + X特性
+## DeepSeek V3.2 Indexer
+
+在 `view_model` 目录执行：
+
+```bash
+.venv/bin/python deepseek/deepseek_v32_indexer.py
+```
+
+按官方配置的真实维度构建单个 `DeepseekV32Indexer`，以 BF16 随机权重和随机输入执行 forward，打印模块、参数形状与 token 索引。不下载配置或模型权重；需安装支持 `deepseek_v32` 的 Transformers。默认输入为 8 个 token，可修改脚本中的 `SEQUENCE_LENGTH`；`index_topk` 保持官方值 2048。
+
 
 ## Attention 静态图
 
