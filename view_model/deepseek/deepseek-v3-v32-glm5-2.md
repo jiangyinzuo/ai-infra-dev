@@ -4,9 +4,7 @@
 
 与 MHA 为每个头分别缓存完整的 Key 和 Value 不同，MLA 将所有头的内容 Key/Value 联合低秩压缩为共享潜向量 \(\mathbf{c}_t^{KV}\)，并将单独投影的共享 RoPE Key \(\mathbf{k}_t^R\) 一并存入 KV Cache；计算注意力时再从 \(\mathbf{c}_t^{KV}\) 上投影恢复各头的内容 Key 和 Value。RoPE 位置部分与内容部分分开处理。
 
----
-
-### 数学公式（依据 DeepSeek-V3 技术报告）
+### 公式
 
 设第 \(t\) 个 token 的输入为 \(\mathbf{h}_t \in \mathbb{R}^{d}\)，注意力头数为 \(n_h\)，每个头的维度为 \(d_h\)。
 以下以蓝色方框标出推理阶段需要写入 KV Cache 的向量。
