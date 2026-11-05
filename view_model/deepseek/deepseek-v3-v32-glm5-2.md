@@ -633,3 +633,158 @@ all buffers meta: True
 仅根据官方配置构建模块；没有真实权重数值，不能直接推理。
 当前 Transformers 实现不构建 MTP 层，并合并专家投影；这里的 BF16 参数不代表 checkpoint 的 FP8 存储布局和量化 scale。
 ```
+
+## DeepSeek Sparse Attention
+
+稀疏注意力，改变的是每个Query token在计算注意力时，所能访问的Key Value候选集合的大小。
+
+沿用上文，以 $n$ 表示上下文 token 数。Dense Attention 可以看到全部历史 KV，注意力矩阵是稠密的，计算复杂度为 $\mathcal{O}(n^2)$。
+但在 DeepSeek Sparse Attention 中，被大幅缩减为 Top-K 个（$k=2048$）。模型先经过 lightning indexer 给所有历史 token 打分，然后只保留分数最高的 $k$ 个参与后续的核心注意力计算。核心注意力的计算复杂度降至 $\mathcal{O}(n\cdot k)$；indexer 本身仍为 $\mathcal{O}(n^2)$。
+
+> 当上下文长度 $n$ = 128K 时，$k$ = 2048 仅占 $n$ 的 1.6%，核心注意力计算量理论上可减少约 98%。
+
+## DSA数学公式
+
+
+| 符号 | 含义 |
+| --- | --- |
+| $t$、$j$ | 当前 Query 位置、被访问的 KV 位置；因果可见范围为 $1\le j\le t\le n$，包含当前位置 |
+| $\mathbf{h}_t\in\mathbb{R}^{d}$ | Attention / Indexer 的输入隐状态，已过当前层的 attention 前置 RMSNorm |
+| $i$、$n_h$ | 头编号、MLA 注意力头数；MLA 中 $i=1,\ldots,n_h$ |
+| $d_h$、$d_h^R$ | MLA 每头内容维度、解耦 RoPE 维度 |
+| $\mathbf{c}_t^Q\in\mathbb{R}^{d_c'}$、$\mathbf{c}_j^{KV}\in\mathbb{R}^{d_c}$ | 沿用上文的 Query 压缩潜向量、KV 联合压缩潜向量；$\bar{\mathbf c}_t^Q$ 显式表示 Query RMSNorm 后的共享表示 |
+| 上标 $C$、$R$、$I$ | 分别表示内容、RoPE 、Indexer 相关变量；$I$ 不是 MLA 的头编号 |
+| $n_h^I=64$、$d_h^I=128$ | indexer 头数、每头维度；indexer 中 $i=1,\ldots,n_h^I$，区别于 MLA 的 $n_h,d_h$ |
+| $I_{t,j}$、$\mathcal{S}_t$、$k$ | 索引分数、被选 KV 位置集合、选择数量上限；V3.2 使用 $k=2048$ |
+
+### lightning indexer
+
+$$
+\boxed{
+I_{t,j}=\sum_{i=1}^{n_h^I}
+w_{t,i}^I\cdot
+\operatorname{ReLU}\!\left(
+(\mathbf{q}_{t,i}^I)^T\mathbf{k}_j^I
+\right)
+}
+$$
+
+绿色表示 lightning indexer 自身的可学习参数。下列符号为[官方实现](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/model.py)中参数的简记：
+
+| 权重 | 尺寸 | 官方参数 |
+| --- | --- | --- |
+| ${\color{green}W^{IQ}}$ | $n_h^I d_h^I\times d_c'=8192\times1536$ | `indexer.wq_b.weight` |
+| ${\color{green}W^{IK}}$ | $d_h^I\times d=128\times7168$ | `indexer.wk.weight` |
+| ${\color{green}W^{IW}}$ | $n_h^I\times d=64\times7168$ | `indexer.weights_proj.weight` |
+| ${\color{green}\boldsymbol{\gamma}^I}$ | $d_h^I=128$ | `indexer.k_norm.weight`，Key 的 LayerNorm 缩放 |
+| ${\color{green}\boldsymbol{\beta}^I}$ | $d_h^I=128$ | `indexer.k_norm.bias`，Key 的 LayerNorm 偏置 |
+
+#### $\mathbf q^I$、$\mathbf k^I$ 的构造
+
+来源：[报告 §2.1，式 (1)、Figure 2](https://arxiv.org/html/2512.02556v1#S2.SS1)；[官方 `MLA.forward` / `Indexer.forward`](https://huggingface.co/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/model.py)；[HF `DeepseekV32Attention.forward` / `DeepseekV32Indexer.forward`](https://github.com/huggingface/transformers/blob/main/src/transformers/models/deepseek_v32/modeling_deepseek_v32.py)。以下为实现的数学展开，忽略浮点舍入。
+
+**投影与归一化**
+
+上文按报告省略压缩后的归一化；此处以 $\bar{\mathbf c}_t^Q$ 区分实现中 MLA 与 indexer 共用的 RMSNorm 结果。
+
+$$
+\begin{aligned}
+\mathbf c_t^Q &= W^{DQ}\mathbf h_t,\\
+\bar{\mathbf c}_t^Q
+&=\operatorname{RMSNorm}_{\boldsymbol\gamma^Q}(\mathbf c_t^Q)
+=\boldsymbol\gamma^Q\odot
+\frac{\mathbf c_t^Q}{\sqrt{\|\mathbf c_t^Q\|_2^2/d_c'+\varepsilon_Q}}
+\in\mathbb R^{d_c'},\\
+\widetilde{\mathbf q}_{t,i}^I
+&=\left[\operatorname{reshape}_{n_h^I\times d_h^I}
+\!\left({\color{green}W^{IQ}}\bar{\mathbf c}_t^Q\right)\right]_{i,:},\\
+\mathbf z_j^I&={\color{green}W^{IK}}\mathbf h_j,\\
+\mu_j&=\frac{1}{d_h^I}\sum_{a=1}^{d_h^I}z_{j,a}^I,
+\qquad
+\sigma_j^2=\frac{1}{d_h^I}\sum_{a=1}^{d_h^I}(z_{j,a}^I-\mu_j)^2,\\
+\widetilde{\mathbf k}_j^I
+&=\operatorname{LayerNorm}_{{\color{green}\boldsymbol\gamma^I},{\color{green}\boldsymbol\beta^I}}(\mathbf z_j^I)
+={\color{green}\boldsymbol\gamma^I}\odot
+\frac{\mathbf z_j^I-\mu_j\mathbf 1}{\sqrt{\sigma_j^2+10^{-6}}}
++{\color{green}\boldsymbol\beta^I}
+\in\mathbb R^{d_h^I}.
+\end{aligned}
+$$
+
+| 符号 | 官方实现 | HF 实现 |
+| --- | --- | --- |
+| $W^{DQ}$、$\boldsymbol\gamma^Q$（MLA 参数，非 indexer 独有） | `wq_a.weight`、`q_norm.weight` | `q_a_proj.weight`、`q_a_layernorm.weight` |
+| $\bar{\mathbf c}_t^Q$（与 MLA 共享） | `qr` | `q_resid` |
+| $\widetilde{\mathbf q}_{t,i}^I$ | `indexer.wq_b(qr)` 后按 head 拆分 | `indexer.wq_b(q_resid)` 后按 head 拆分 |
+| $\widetilde{\mathbf k}_j^I$（所有 indexer heads 共享） | `indexer.k_norm(indexer.wk(x))` | `indexer.k_norm(indexer.wk(hidden_states))` |
+
+**部分 RoPE：前 $d_h^R=64$ 维旋转，后 $d_h^I-d_h^R=64$ 维直通**
+
+令 $m=d_h^R/2$，$D_{\cos,p}^I=\operatorname{diag}(\mathrm{cos}_p[:m])$、$D_{\sin,p}^I=\operatorname{diag}(\mathrm{sin}_p[:m])$；$\mathrm{cos}_p,\mathrm{sin}_p$ 取实现的位置编码。Half-split 配对 $(a,a+m)$，$a=1,\ldots,m$：
+
+$$
+R_p^I=
+\begin{bmatrix}D_{\cos,p}^I&-D_{\sin,p}^I\\D_{\sin,p}^I&D_{\cos,p}^I\end{bmatrix},
+\qquad
+P_p^I=\operatorname{diag}(R_p^I,\operatorname{Id}_{d_h^I-d_h^R}),
+\qquad
+\boxed{
+\mathbf q_{t,i}^I=P_t^I\widetilde{\mathbf q}_{t,i}^I,
+\quad
+\mathbf k_j^I=P_j^I\widetilde{\mathbf k}_j^I
+}.
+$$
+
+官方：`apply_rotary_emb(..., interleaved=False)`；HF：`apply_rotary_pos_emb(..., unsqueeze_dim=2)`。缓存保存位置变换后的 indexer Key（官方另做下述量化）。
+
+**与评分式的缩放对齐**
+
+$$
+\begin{aligned}
+a_{t,i}^I&=\left[{\color{green}W^{IW}}\mathbf h_t\right]_i,
+\qquad
+w_{t,i}^I:=\frac{a_{t,i}^I}{\sqrt{n_h^I d_h^I}},\\
+I_{t,j}^{\mathrm{HF}}
+&=\sum_{i=1}^{n_h^I}\frac{a_{t,i}^I}{\sqrt{n_h^I}}
+\operatorname{ReLU}\!\left(
+\frac{(\mathbf q_{t,i}^I)^T\mathbf k_j^I}{\sqrt{d_h^I}}
+\right)
+=\sum_{i=1}^{n_h^I} w_{t,i}^I
+\operatorname{ReLU}\!\left((\mathbf q_{t,i}^I)^T\mathbf k_j^I\right).
+\end{aligned}
+$$
+
+**官方额外的 Hadamard / FP8 路径**
+
+$$
+\mathcal H^I=\frac{\operatorname{Hadamard}_{d_h^I}}{\sqrt{d_h^I}},
+\qquad (\mathcal H^I)^T\mathcal H^I=\operatorname{Id}_{d_h^I},
+\qquad
+(\mathcal H^I\mathbf q_{t,i}^I)^T(\mathcal H^I\mathbf k_j^I)=(\mathbf q_{t,i}^I)^T\mathbf k_j^I.
+$$
+
+$$
+\widehat{\mathbf q}_{t,i}^I
+=\mathcal Q_{\mathrm{FP8}}(\mathcal H^I\mathbf q_{t,i}^I),
+\qquad
+\widehat{\mathbf k}_j^I
+=\mathcal Q_{\mathrm{FP8}}(\mathcal H^I\mathbf k_j^I),
+\qquad
+I_{t,j}^{\mathrm{official}}
+\approx I_{t,j}^{\mathrm{HF}}.
+$$
+
+$\mathcal Q_{\mathrm{FP8}}$ 表示含 scale 的量化—反量化有效值；官方执行 `rotate_activation → act_quant → fp8_index`，HF 省略这三步，以模型 dtype 投影、FP32 点积评分；量化后不保证分数或 Top-K 完全相同。
+
+### Lighting Indexer算子在NPU上的性能问题
+
+lighting indexer算子，NPU不亲和，耗时比较大。
+使用PCP，切多份输入，弥补NPU上lighting indexer性能差的缺点。
+
+#### PCP
+
+模型在 Prefill 阶段的大部分计算（如 RMSNorm, FFN, Embedding 等）都是
+Token-Wise（逐 Token） 的，彼此独立，完全可以分开计算。只有 Attention 模块需要
+Token 间的交互，而 PCP 通过特定的通信机制解决了这个问题。
+
+## GLM 5.2/5.3 IndexShare
