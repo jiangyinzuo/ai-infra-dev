@@ -159,18 +159,15 @@ MLA 将每个 token 的 KV Cache 从标准多头注意力下的 \(n_h(2d_h+d_h^R
 
 先约定记号。忽略 batch 和层号，固定一个 query 位置 \(t\)，历史 key 位置 \(j\le t\)。DeepSeek-V3 中：
 
-\[
-W^{UQ}\in\mathbb{R}^{n_h d_h\times d_c'},\quad
-W^{UK},W^{UV}\in\mathbb{R}^{n_h d_h\times d_c},\quad
-W^O\in\mathbb{R}^{d\times n_h d_h}
-\]
-
 按头分块：
 
 \[
-W^{UQ}=\begin{bmatrix}W_1^{UQ}\\ \vdots\\ W_{n_h}^{UQ}\end{bmatrix},\quad
-W^{UK}=\begin{bmatrix}W_1^{UK}\\ \vdots\\ W_{n_h}^{UK}\end{bmatrix},\quad
-W^{UV}=\begin{bmatrix}W_1^{UV}\\ \vdots\\ W_{n_h}^{UV}\end{bmatrix}
+\begin{aligned}
+W^{UQ}&=\begin{bmatrix}W_1^{UQ}\\ \vdots\\ W_{n_h}^{UQ}\end{bmatrix}\in\mathbb{R}^{n_h d_h\times d_c'},\\
+W^{UK}&=\begin{bmatrix}W_1^{UK}\\ \vdots\\ W_{n_h}^{UK}\end{bmatrix}\in\mathbb{R}^{n_h d_h\times d_c},\\
+W^{UV}&=\begin{bmatrix}W_1^{UV}\\ \vdots\\ W_{n_h}^{UV}\end{bmatrix}\in\mathbb{R}^{n_h d_h\times d_c},\\
+W^O&\in\mathbb{R}^{d\times n_h d_h}.
+\end{aligned}
 \]
 
 其中 \(W_i^{UQ}\in\mathbb{R}^{d_h\times d_c'}\)，\(W_i^{UK},W_i^{UV}\in\mathbb{R}^{d_h\times d_c}\)。
@@ -643,6 +640,7 @@ all buffers meta: True
 
 > 当上下文长度 $n$ = 128K 时，$k$ = 2048 仅占 $n$ 的 1.6%，核心注意力计算量理论上可减少约 98%。
 
+### Lightning Indexer
 ```
 DeepseekV32Indexer(
   (wq_b): Linear(in_features=1536, out_features=8192, bias=False)
@@ -662,12 +660,13 @@ parameter numel: 13,959,424
 | 符号 | 含义 |
 | --- | --- |
 | $t$、$j$ | 当前 Query 位置、被访问的 KV 位置；因果可见范围为 $1\le j\le t\le n$，包含当前位置 |
-| $\mathbf{h}_t\in\mathbb{R}^{d}$ | Attention / Indexer 的输入隐状态，已过当前层的 attention 前置 RMSNorm |
+| ${\color{red}\mathbf{h}_t}\in\mathbb{R}^{d}=\mathbb R^{7168}$ | Attention / Indexer 的输入隐状态，已过当前层的 attention 前置 RMSNorm |
 | $i$、$n_h$ | 头编号、MLA 注意力头数；MLA 中 $i=1,\ldots,n_h$ |
 | $d_h$、$d_h^R$ | MLA 每头内容维度、解耦 RoPE 维度 |
-| $\mathbf{c}_t^Q\in\mathbb{R}^{d_c'}$、$\mathbf{c}_j^{KV}\in\mathbb{R}^{d_c}$ | 沿用上文的 Query 压缩潜向量、KV 联合压缩潜向量；$\bar{\mathbf c}_t^Q$ 显式表示 Query RMSNorm 后的共享表示 |
+| ${\color{red}\mathbf{c}_t^Q}\in\mathbb{R}^{d_c'}=\mathbb R^{1536}$、$\mathbf{c}_j^{KV}\in\mathbb{R}^{d_c}=\mathbb R^{512}$ | 沿用上文的 Query 压缩潜向量、KV 联合压缩潜向量；${\color{red}\bar{\mathbf c}_t^Q}\in\mathbb R^{d_c'}=\mathbb R^{1536}$ 显式表示 Query RMSNorm 后的共享表示 |
 | 上标 $C$、$R$、$I$ | 分别表示内容、RoPE 、Indexer 相关变量；$I$ 不是 MLA 的头编号 |
 | $n_h^I=64$、$d_h^I=128$ | indexer 头数、每头维度；indexer 中 $i=1,\ldots,n_h^I$，区别于 MLA 的 $n_h,d_h$ |
+| $\mathbf q_{t,i}^I,\mathbf k_j^I\in\mathbb R^{d_h^I}=\mathbb R^{128}$ | Indexer 每头 Query 与所有 indexer 头共享的 Key，均已完成部分 RoPE |
 | $I_{t,j}$、$\mathcal{S}_t$、$k$ | 索引分数、被选 KV 位置集合、选择数量上限；V3.2 使用 $k=2048$ |
 
 
@@ -681,15 +680,15 @@ w_{t,i}^I\cdot
 }
 $$
 
-绿色表示 lightning indexer 自身的可学习参数。下列符号为[官方实现](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/model.py)中参数的简记：
+红色表示 MLA 与 indexer 共用的权重和激活；绿色表示 lightning indexer 自身的可学习参数。下列符号为[官方实现](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/model.py)中参数的简记：
 
 | 权重 | 尺寸 | 官方参数 |
 | --- | --- | --- |
-| ${\color{green}W^{IQ}}$ | $n_h^I d_h^I\times d_c'=8192\times1536$ | `indexer.wq_b.weight` |
-| ${\color{green}W^{IK}}$ | $d_h^I\times d=128\times7168$ | `indexer.wk.weight` |
-| ${\color{green}W^{IW}}$ | $n_h^I\times d=64\times7168$ | `indexer.weights_proj.weight` |
-| ${\color{green}\boldsymbol{\gamma}^I}$ | $d_h^I=128$ | `indexer.k_norm.weight`，Key 的 LayerNorm 缩放 |
-| ${\color{green}\boldsymbol{\beta}^I}$ | $d_h^I=128$ | `indexer.k_norm.bias`，Key 的 LayerNorm 偏置 |
+| ${\color{green}W^{IQ}}\in\mathbb R^{n_h^I d_h^I\times d_c'}$ | $\mathbb R^{8192\times1536}$ | `indexer.wq_b.weight` |
+| ${\color{green}W^{IK}}\in\mathbb R^{d_h^I\times d}$ | $\mathbb R^{128\times7168}$ | `indexer.wk.weight` |
+| ${\color{green}W^{IW}}\in\mathbb R^{n_h^I\times d}$ | $\mathbb R^{64\times7168}$ | `indexer.weights_proj.weight` |
+| ${\color{green}\boldsymbol{\gamma}^I}\in\mathbb R^{d_h^I}$ | $\mathbb R^{128}$ | `indexer.k_norm.weight`，Key 的 LayerNorm 缩放 |
+| ${\color{green}\boldsymbol{\beta}^I}\in\mathbb R^{d_h^I}$ | $\mathbb R^{128}$ | `indexer.k_norm.bias`，Key 的 LayerNorm 偏置 |
 
 #### $\mathbf q^I$、$\mathbf k^I$ 的构造
 
@@ -697,20 +696,22 @@ $$
 
 **投影与归一化**
 
-上文按报告省略压缩后的归一化；此处以 $\bar{\mathbf c}_t^Q$ 区分实现中 MLA 与 indexer 共用的 RMSNorm 结果。
+上文按报告省略压缩后的归一化；此处以 ${\color{red}\bar{\mathbf c}_t^Q}$ 区分实现中 MLA 与 indexer 共用的 RMSNorm 结果。
+
+共享权重的尺寸为 ${\color{red}W^{DQ}}\in\mathbb R^{d_c'\times d}=\mathbb R^{1536\times7168}$、${\color{red}\boldsymbol\gamma^Q}\in\mathbb R^{d_c'}=\mathbb R^{1536}$。
 
 $$
 \begin{aligned}
-\mathbf c_t^Q &= W^{DQ}\mathbf h_t,\\
-\bar{\mathbf c}_t^Q
-&=\operatorname{RMSNorm}_{\boldsymbol\gamma^Q}(\mathbf c_t^Q)
-=\boldsymbol\gamma^Q\odot
-\frac{\mathbf c_t^Q}{\sqrt{\|\mathbf c_t^Q\|_2^2/d_c'+\varepsilon_Q}}
-\in\mathbb R^{d_c'},\\
+{\color{red}\mathbf c_t^Q} &= {\color{red}W^{DQ}}{\color{red}\mathbf h_t}\in\mathbb R^{d_c'}=\mathbb R^{1536},\\
+{\color{red}\bar{\mathbf c}_t^Q}
+&=\operatorname{RMSNorm}_{{\color{red}\boldsymbol\gamma^Q}}({\color{red}\mathbf c_t^Q})
+:={\color{red}\boldsymbol\gamma^Q}\odot
+\frac{{\color{red}\mathbf c_t^Q}}{\sqrt{\|{\color{red}\mathbf c_t^Q}\|_2^2/d_c'+\varepsilon_Q}}
+\in\mathbb R^{d_c'}=\mathbb R^{1536},\\
 \widetilde{\mathbf q}_{t,i}^I
 &=\left[\operatorname{reshape}_{n_h^I\times d_h^I}
-\!\left({\color{green}W^{IQ}}\bar{\mathbf c}_t^Q\right)\right]_{i,:},\\
-\mathbf z_j^I&={\color{green}W^{IK}}\mathbf h_j,\\
+\!\left({\color{green}W^{IQ}}{\color{red}\bar{\mathbf c}_t^Q}\right)\right]_{i,:}\in\mathbb R^{d_h^I}=\mathbb R^{128},\\
+\mathbf z_j^I&={\color{green}W^{IK}}{\color{red}\mathbf h_j}\in\mathbb R^{d_h^I}=\mathbb R^{128},\\
 \mu_j&=\frac{1}{d_h^I}\sum_{a=1}^{d_h^I}z_{j,a}^I,
 \qquad
 \sigma_j^2=\frac{1}{d_h^I}\sum_{a=1}^{d_h^I}(z_{j,a}^I-\mu_j)^2,\\
@@ -719,32 +720,31 @@ $$
 ={\color{green}\boldsymbol\gamma^I}\odot
 \frac{\mathbf z_j^I-\mu_j\mathbf 1}{\sqrt{\sigma_j^2+10^{-6}}}
 +{\color{green}\boldsymbol\beta^I}
-\in\mathbb R^{d_h^I}.
+\in\mathbb R^{d_h^I}=\mathbb R^{128}.
 \end{aligned}
 $$
 
 | 符号 | 官方实现 | HF 实现 |
 | --- | --- | --- |
-| $W^{DQ}$、$\boldsymbol\gamma^Q$（MLA 参数，非 indexer 独有） | `wq_a.weight`、`q_norm.weight` | `q_a_proj.weight`、`q_a_layernorm.weight` |
-| $\bar{\mathbf c}_t^Q$（与 MLA 共享） | `qr` | `q_resid` |
+| ${\color{red}W^{DQ}}$、${\color{red}\boldsymbol\gamma^Q}$（MLA 参数，非 indexer 独有） | `wq_a.weight`、`q_norm.weight` | `q_a_proj.weight`、`q_a_layernorm.weight` |
+| ${\color{red}\bar{\mathbf c}_t^Q}$（与 MLA 共享） | `qr` | `q_resid` |
 | $\widetilde{\mathbf q}_{t,i}^I$ | `indexer.wq_b(qr)` 后按 head 拆分 | `indexer.wq_b(q_resid)` 后按 head 拆分 |
 | $\widetilde{\mathbf k}_j^I$（所有 indexer heads 共享） | `indexer.k_norm(indexer.wk(x))` | `indexer.k_norm(indexer.wk(hidden_states))` |
 
 **部分 RoPE：前 $d_h^R=64$ 维旋转，后 $d_h^I-d_h^R=64$ 维直通**
 
-令 $m=d_h^R/2$，$D_{\cos,p}^I=\operatorname{diag}(\mathrm{cos}_p[:m])$、$D_{\sin,p}^I=\operatorname{diag}(\mathrm{sin}_p[:m])$；$\mathrm{cos}_p,\mathrm{sin}_p$ 取实现的位置编码。Half-split 配对 $(a,a+m)$，$a=1,\ldots,m$：
+令 $m=d_h^R/2=32$，$D_{\cos,p}^I=\operatorname{diag}(\mathrm{cos}_p[:m])\in\mathbb R^{m\times m}=\mathbb R^{32\times32}$、$D_{\sin,p}^I=\operatorname{diag}(\mathrm{sin}_p[:m])\in\mathbb R^{m\times m}=\mathbb R^{32\times32}$；$\mathrm{cos}_p,\mathrm{sin}_p$ 取实现的位置编码。Half-split 配对 $(a,a+m)$，$a=1,\ldots,m$：
 
 $$
-R_p^I=
-\begin{bmatrix}D_{\cos,p}^I&-D_{\sin,p}^I\\D_{\sin,p}^I&D_{\cos,p}^I\end{bmatrix},
-\qquad
-P_p^I=\operatorname{diag}(R_p^I,\operatorname{Id}_{d_h^I-d_h^R}),
-\qquad
-\boxed{
-\mathbf q_{t,i}^I=P_t^I\widetilde{\mathbf q}_{t,i}^I,
-\quad
-\mathbf k_j^I=P_j^I\widetilde{\mathbf k}_j^I
-}.
+\begin{aligned}
+R_p^I&=
+\begin{bmatrix}D_{\cos,p}^I&-D_{\sin,p}^I\\D_{\sin,p}^I&D_{\cos,p}^I\end{bmatrix}
+\in\mathbb R^{d_h^R\times d_h^R}=\mathbb R^{64\times64},\\
+P_p^I&=\operatorname{diag}(R_p^I,\operatorname{Id}_{d_h^I-d_h^R})
+\in\mathbb R^{d_h^I\times d_h^I}=\mathbb R^{128\times128},\\
+\mathbf q_{t,i}^I&=P_t^I\widetilde{\mathbf q}_{t,i}^I\in\mathbb R^{d_h^I}=\mathbb R^{128},\\
+\mathbf k_j^I&=P_j^I\widetilde{\mathbf k}_j^I\in\mathbb R^{d_h^I}=\mathbb R^{128}.
+\end{aligned}
 $$
 
 官方：`apply_rotary_emb(..., interleaved=False)`；HF：`apply_rotary_pos_emb(..., unsqueeze_dim=2)`。缓存保存位置变换后的 indexer Key（官方另做下述量化）。
@@ -753,7 +753,7 @@ $$
 
 $$
 \begin{aligned}
-a_{t,i}^I&=\left[{\color{green}W^{IW}}\mathbf h_t\right]_i,
+a_{t,i}^I&=\left[{\color{green}W^{IW}}{\color{red}\mathbf h_t}\right]_i,
 \qquad
 w_{t,i}^I:=\frac{a_{t,i}^I}{\sqrt{n_h^I d_h^I}},\\
 I_{t,j}^{\mathrm{HF}}
@@ -769,34 +769,194 @@ $$
 **官方额外的 Hadamard / FP8 路径**
 
 $$
-\mathcal H^I=\frac{\operatorname{Hadamard}_{d_h^I}}{\sqrt{d_h^I}},
-\qquad (\mathcal H^I)^T\mathcal H^I=\operatorname{Id}_{d_h^I},
-\qquad
-(\mathcal H^I\mathbf q_{t,i}^I)^T(\mathcal H^I\mathbf k_j^I)=(\mathbf q_{t,i}^I)^T\mathbf k_j^I.
+\begin{aligned}
+\mathcal H^I&=\frac{\operatorname{Hadamard}_{d_h^I}}{\sqrt{d_h^I}}
+\in\mathbb R^{d_h^I\times d_h^I}=\mathbb R^{128\times128},\\
+(\mathcal H^I)^T\mathcal H^I&=\operatorname{Id}_{d_h^I},\\
+(\mathcal H^I\mathbf q_{t,i}^I)^T(\mathcal H^I\mathbf k_j^I)&=(\mathbf q_{t,i}^I)^T\mathbf k_j^I.
+\end{aligned}
 $$
 
 $$
+\begin{aligned}
 \widehat{\mathbf q}_{t,i}^I
-=\mathcal Q_{\mathrm{FP8}}(\mathcal H^I\mathbf q_{t,i}^I),
-\qquad
+&:=\mathcal Q_{\mathrm{FP8}}(\mathcal H^I\mathbf q_{t,i}^I)\in\mathbb R^{d_h^I}=\mathbb R^{128},\\
 \widehat{\mathbf k}_j^I
-=\mathcal Q_{\mathrm{FP8}}(\mathcal H^I\mathbf k_j^I),
-\qquad
+&:=\mathcal Q_{\mathrm{FP8}}(\mathcal H^I\mathbf k_j^I)\in\mathbb R^{d_h^I}=\mathbb R^{128},\\
 I_{t,j}^{\mathrm{official}}
-\approx I_{t,j}^{\mathrm{HF}}.
+&\approx I_{t,j}^{\mathrm{HF}}.
+\end{aligned}
 $$
 
 $\mathcal Q_{\mathrm{FP8}}$ 表示含 scale 的量化—反量化有效值；官方执行 `rotate_activation → act_quant → fp8_index`，HF 省略这三步，以模型 dtype 投影、FP32 点积评分；量化后不保证分数或 Top-K 完全相同。
 
-### Lighting Indexer算子在NPU上的性能问题
+#### Lightning Indexer 与 Full Attention 的计算复杂度对比
+
+统计单层、单序列的推理前向，1 MAC = 2 FLOPs。Full 与 Sparse 均采用 **MLA 吸收路径**，注意力头数为 $n_h=128$。
+
+
+Indexer 为 $n_h^I=64$、$d_h^I=128$。下方主项与数值只计位置对上的点积和 Value 聚合，其他开销见步骤表。
+
+令 $n$ 为可见 token 数（包含当前 token），$m=\min(n,k)$。完整因果 Prefill 的位置对数为 $P$，稀疏主注意力的位置对数为 $S$：
+
+$$
+P=\frac{n(n+1)}{2},\qquad
+S=\sum_{t=1}^{n}\min(t,k)=nm-\frac{m(m-1)}{2}.
+$$
+
+##### 主项与计算节省
+
+下表固定 Query 位置 $t$，查询矩阵的行表示各个头。沿用上文矩阵吸收中的 $W_i^{QK}=(W_i^{UQ})^T W_i^{UK}$，将吸收后的内容查询记为 $Q_t^{QK}$，RoPE 查询仍记为 $Q_t^R$。实现中使用共享 RMSNorm 后的 ${\color{red}\bar{\mathbf c}_t^Q}$：
+
+$$
+Q_t^{QK}=
+\begin{bmatrix}
+({\color{red}\bar{\mathbf c}_t^Q})^T W_1^{QK}\\
+\vdots\\
+({\color{red}\bar{\mathbf c}_t^Q})^T W_{n_h}^{QK}
+\end{bmatrix}
+\in\mathbb R^{n_h\times d_c}=\mathbb R^{128\times512},
+\qquad
+Q_t^R=
+\begin{bmatrix}
+(\mathbf q_{t,1}^R)^T\\
+\vdots\\
+(\mathbf q_{t,n_h}^R)^T
+\end{bmatrix}
+\in\mathbb R^{n_h\times d_h^R}=\mathbb R^{128\times64}.
+$$
+
+$C_{\le t}^{KV}\in\mathbb R^{t\times d_c}=\mathbb R^{t\times512}$、$K_{\le t}^R\in\mathbb R^{t\times d_h^R}=\mathbb R^{t\times64}$ 分别将历史潜向量 $\mathbf c_j^{KV}$、RoPE Key $\mathbf k_j^R$ 按行堆叠。因此，表中的矩阵点积与上文的吸收公式一致：
+
+$$
+[S_t]_{i,j}=({\color{red}\bar{\mathbf c}_t^Q})^T W_i^{QK}\mathbf c_j^{KV}
++(\mathbf q_{t,i}^R)^T\mathbf k_j^R.
+$$
+
+令 $A_t=\operatorname{Softmax}_j(S_t/\sqrt{d_h+d_h^R})$、$m_t=\lvert\mathcal S_t\rvert=\min(t,k)$。Sparse MLA 只取 $\mathcal S_t$ 对应的列计算 Softmax，并从 $C^{KV}$、$K^R$ 中取对应的行。
+
+Indexer 的大写 $Q_t^I$、$K_{\le t}^I$ 是上文位置变换后的小写向量 $\mathbf q_{t,i}^I$、$\mathbf k_j^I$ 的矩阵写法。
+
+$$
+Q_t^I=
+\begin{bmatrix}
+(\mathbf q_{t,1}^I)^T\\
+\vdots\\
+(\mathbf q_{t,n_h^I}^I)^T
+\end{bmatrix}
+\in\mathbb R^{n_h^I\times d_h^I}=\mathbb R^{64\times128},
+\qquad
+K_{\le t}^I=
+\begin{bmatrix}
+(\mathbf k_1^I)^T\\
+\vdots\\
+(\mathbf k_t^I)^T
+\end{bmatrix}
+\in\mathbb R^{t\times d_h^I}=\mathbb R^{t\times128}.
+$$
+
+因此 $[Q_t^I(K_{\le t}^I)^T]_{i,j}=(\mathbf q_{t,i}^I)^T\mathbf k_j^I$，正是原索引评分式中第 $i$ 个头对位置 $j$ 的点积。
+
+$d_K=d_c+d_h^R=512+64=576$ 表示 **MLA 矩阵吸收后，每个头进行 QK 点积的有效维度**，由 $512$ 维 KV 潜向量与 $64$ 维 RoPE 分量拼接而成；不是未吸收时的 $d_h+d_h^R=128+64=192$。吸收后的 Value 聚合维度为 $d_V=d_c=512$。
+
+| 计算部分 | 主项对应的计算公式（含激活尺寸） | 完整因果 Prefill 主项（FLOPs） | 单 token Decode 主项（FLOPs） |
+| --- | --- | --- | --- |
+| **Indexer：QK 点积** | $B_t=Q_t^I(K_{\le t}^I)^T$<br>$Q_t^I\in\mathbb R^{n_h^I\times d_h^I}=\mathbb R^{64\times128}$<br>$K_{\le t}^I\in\mathbb R^{t\times d_h^I}=\mathbb R^{t\times128}$<br>$B_t\in\mathbb R^{n_h^I\times t}=\mathbb R^{64\times t}$ | $2P n_h^I d_h^I$<br>$=2P\times64\times128$<br>$=16384P\simeq\boxed{8192\,n^2}$ | $2n n_h^I d_h^I$<br>$=2n\times64\times128$<br>$=\boxed{16384\,n}$ |
+| **Full MLA：QK 点积** | $S_t=Q_t^{QK}(C_{\le t}^{KV})^T$<br>$\quad+Q_t^R(K_{\le t}^R)^T$<br>$Q_t^{QK}\in\mathbb R^{n_h\times d_c}=\mathbb R^{128\times512}$<br>$Q_t^R\in\mathbb R^{n_h\times d_h^R}=\mathbb R^{128\times64}$<br>$C_{\le t}^{KV}\in\mathbb R^{t\times d_c}=\mathbb R^{t\times512}$<br>$K_{\le t}^R\in\mathbb R^{t\times d_h^R}=\mathbb R^{t\times64}$<br>$S_t\in\mathbb R^{n_h\times t}=\mathbb R^{128\times t}$ | $2P n_h d_K$<br>$=2P\times128\times(512+64)$<br>$=147456P$<br>$\simeq\boxed{73728\,n^2}$ | $2n n_h d_K$<br>$=2n\times128\times(512+64)$<br>$=\boxed{147456\,n}$ |
+| **Full MLA：Value 聚合** | $\widetilde O_t=A_t C_{\le t}^{KV}$<br>$A_t\in\mathbb R^{n_h\times t}=\mathbb R^{128\times t}$<br>$C_{\le t}^{KV}\in\mathbb R^{t\times d_V}=\mathbb R^{t\times512}$<br>$\widetilde O_t\in\mathbb R^{n_h\times d_V}=\mathbb R^{128\times512}$ | $2P n_h d_V$<br>$=2P\times128\times512$<br>$=131072P$<br>$\simeq\boxed{65536\,n^2}$ | $2n n_h d_V$<br>$=2n\times128\times512$<br>$=\boxed{131072\,n}$ |
+| **Full MLA 合计** | Full QK 点积 + Full Value 聚合 | $(147456+131072)P$<br>$=278528P$<br>$\simeq\boxed{139264\,n^2}$ | $(147456+131072)n$<br>$=\boxed{278528\,n}$ |
+| **Sparse MLA：QK 点积** | $S_t=Q_t^{QK}(C_{\mathcal S_t}^{KV})^T$<br>$\quad+Q_t^R(K_{\mathcal S_t}^R)^T$<br>$Q_t^{QK}\in\mathbb R^{n_h\times d_c}=\mathbb R^{128\times512}$<br>$Q_t^R\in\mathbb R^{n_h\times d_h^R}=\mathbb R^{128\times64}$<br>$C_{\mathcal S_t}^{KV}\in\mathbb R^{m_t\times d_c}=\mathbb R^{m_t\times512}$<br>$K_{\mathcal S_t}^R\in\mathbb R^{m_t\times d_h^R}=\mathbb R^{m_t\times64}$<br>$S_t\in\mathbb R^{n_h\times m_t}=\mathbb R^{128\times m_t}$ | $2S n_h d_K$<br>$=2S\times128\times(512+64)$<br>$=147456S$<br>$\simeq\boxed{147456\,nk}$ | $2m n_h d_K$<br>$=2m\times128\times(512+64)$<br>$=147456m$<br>$\overset{m=k}{=}\boxed{147456\,k}$ |
+| **Sparse MLA：Value 聚合** | $\widetilde O_t=A_t C_{\mathcal S_t}^{KV}$<br>$A_t\in\mathbb R^{n_h\times m_t}=\mathbb R^{128\times m_t}$<br>$C_{\mathcal S_t}^{KV}\in\mathbb R^{m_t\times d_V}=\mathbb R^{m_t\times512}$<br>$\widetilde O_t\in\mathbb R^{n_h\times d_V}=\mathbb R^{128\times512}$ | $2S n_h d_V$<br>$=2S\times128\times512$<br>$=131072S$<br>$\simeq\boxed{131072\,nk}$ | $2m n_h d_V$<br>$=2m\times128\times512$<br>$=131072m$<br>$\overset{m=k}{=}\boxed{131072\,k}$ |
+| **DSA 合计** | Indexer QK 点积<br>+ Sparse QK 点积<br>+ Sparse Value 聚合 | $16384P+147456S+131072S$<br>$=16384P+278528S$<br>$\simeq\boxed{8192\,n^2+278528\,nk}$ | $16384n+147456m+131072m$<br>$=16384n+278528m$<br>$\overset{m=k}{=}\boxed{16384\,n+278528\,k}$ |
+
+表中近似取 $n\gg k$，即 $2P\simeq n^2$、$S\simeq nk$、$m=k$。精确计算使用 $P,S,m$。Indexer 与 Full MLA 扫描相同的位置对，公共因子 $2P$（Decode 为 $2n$）约去后，成本比例为：
+
+$$
+\frac{F_{\mathrm{Indexer}}}{F_{\mathrm{Full}}}
+=\frac{n_h^I d_h^I}{n_h(d_K+d_V)}
+=\frac{64\times128}{128\times(576+512)}
+=\frac{8192}{139264}
+=\frac{1}{17}.
+$$
+
+（$n_h$是注意力头数。）
+
+再加上 Sparse MLA 的位置对占比，得到 DSA 的相对主项成本：
+
+$$
+\boxed{
+r_{\mathrm{prefill}}=\frac{1}{17}+\frac{S}{P},\qquad
+r_{\mathrm{decode}}=\frac{1}{17}+\frac{m}{n},\qquad
+\text{主项净节省比例}=1-r
+}
+$$
+
+**$n=128\times1024=131072$、$k=2048$ 时**，将 $P=\frac{131072\times131073}{2}$、$S=131072\times2048-\frac{2048\times2047}{2}$、$m=2048$ 代入下表；百分比按未舍入值计算：
+
+| 计算部分 | Prefill（TFLOPs） | 占 Full 主项 | Decode（GFLOPs） | 占 Full 主项 |
+| --- | --- | --- | --- | --- |
+| Full MLA | $\frac{2P\times139264}{10^{12}}$<br>$\approx2392.556$ | 基准：$100\%$ | $\frac{2n\times139264}{10^9}$<br>$\approx36.507$ | 基准：$100\%$ |
+| Lightning Indexer | $\frac{2P\times8192}{10^{12}}$<br>$\approx140.739$ | $\frac{1}{17}\times100\%$<br>$\approx5.88\%$ | $\frac{2n\times8192}{10^9}$<br>$\approx2.147$ | $\frac{1}{17}\times100\%$<br>$\approx5.88\%$ |
+| Sparse MLA | $\frac{2S\times139264}{10^{12}}$<br>$\approx74.183$ | $\frac{S}{P}\times100\%$<br>$\approx3.10\%$ | $\frac{2m\times139264}{10^9}$<br>$\approx0.570$ | $\frac{m}{n}\times100\%$<br>$\approx1.56\%$ |
+| **DSA 合计** | $\frac{2P\times8192+2S\times139264}{10^{12}}$<br>$\approx\mathbf{214.922}$ | $\left(\frac{1}{17}+\frac{S}{P}\right)\times100\%$<br>$\approx\mathbf{8.98\%}$ | $\frac{2n\times8192+2m\times139264}{10^9}$<br>$\approx\mathbf{2.718}$ | $\left(\frac{1}{17}+\frac{m}{n}\right)\times100\%$<br>$\approx\mathbf{7.44\%}$ |
+| **净节省：Full − DSA** | $\frac{2P\times139264-2P\times8192-2S\times139264}{10^{12}}$<br>$\approx\mathbf{2177.634}$ | $(1-r_{\mathrm{prefill}})\times100\%$<br>$\approx\mathbf{91.02\%}$ | $\frac{2n\times139264-2n\times8192-2m\times139264}{10^9}$<br>$\approx\mathbf{33.789}$ | $(1-r_{\mathrm{decode}})\times100\%$<br>$\approx\mathbf{92.56\%}$ |
+
+**DSA 用低成本的全历史评分，换掉高成本的全历史 MLA；Indexer 仍有二次项，但没有 Value 聚合。**
+
+完整 Prefill 要用 $S/P$，不能套用最后一个 Query 的 $k/n$；若 $n\le k$，则 $S=P$，没有稀疏收益，反而多出 indexer 开销。
+
+##### Indexer 关键步骤的时间复杂度
+
+Query 下投影和 RMSNorm 复用 MLA 的结果，不重复计费。以下 Q/K 预处理与缓存写入只作用于**新 token**；Key 为所有 indexer 头共享。本配置每头一个 FP8 scale；Hadamard / FP8 是官方路径，HF 路径省略这两步。
+
+| 步骤 | 完整 Prefill | 单 token Decode |
+| --- | --- | --- |
+| Query 上投影 `wq_b` | $\mathcal O(nd_c' n_h^I d_h^I)$ | $\mathcal O(d_c' n_h^I d_h^I)$ |
+| Key 投影 `wk` | $\mathcal O(nd\,d_h^I)$ | $\mathcal O(d\,d_h^I)$ |
+| 动态头权重投影 `weights_proj` | $\mathcal O(nd\,n_h^I)$ | $\mathcal O(d\,n_h^I)$ |
+| Key LayerNorm | $\mathcal O(n d_h^I)$ | $\mathcal O(d_h^I)$ |
+| Q/K 部分 RoPE | $\mathcal O(n(n_h^I+1)d_h^R)$ | $\mathcal O((n_h^I+1)d_h^R)$ |
+| Q/K 快速 Hadamard | $\mathcal O(n(n_h^I+1)d_h^I\log d_h^I)$ | $\mathcal O((n_h^I+1)d_h^I\log d_h^I)$ |
+| Q/K FP8 量化（含分块 scale） | $\mathcal O(n(n_h^I+1)d_h^I)$ | $\mathcal O((n_h^I+1)d_h^I)$ |
+| 合并头权重、Query scale 与固定缩放 | $\mathcal O(n n_h^I)$ | $\mathcal O(n_h^I)$ |
+| 写入 Key Cache 及 scale | $\mathcal O(n d_h^I)$ | $\mathcal O(d_h^I)$ |
+| **全历史 $QK^T$ 点积** | $\boxed{\mathcal O(P n_h^I d_h^I)}$ | $\boxed{\mathcal O(n n_h^I d_h^I)}$ |
+| ReLU、乘头权重、跨头求和 | $\mathcal O(P n_h^I)$ | $\mathcal O(n n_h^I)$ |
+| 显式 causal mask（若单独处理） | $\mathcal O(n^2)$ | $\mathcal O(n)$；可见范围已裁好时省略 |
+| Top-K 无序选择（线性选择算法） | 期望 $\mathcal O(P)$ | 期望 $\mathcal O(n)$ |
+| 所选项排序（若要求有序输出） | $\mathcal O(S\log(1+m))$ | $\mathcal O(m\log(1+m))$ |
+| 输出 / 复制位置索引 | $\mathcal O(S)$ | $\mathcal O(m)$ |
+| 新 token 的 dtype 转换、拼接与布局复制 | $\mathcal O(n[d+(n_h^I+1)d_h^I])$ | $\mathcal O(d+(n_h^I+1)d_h^I)$ |
+
+Top-K 若采用堆式选择，Prefill / Decode 分别为 $\mathcal O(P\log(1+k))$ / $\mathcal O(n\log(1+m))$；`torch.topk` 的具体策略取决于后端。缓存、复制行表示数据搬运量；仅建立视图的 `view` / `split` 为 $\mathcal O(1)$。
+
+**固定模型维度和 $k$，DSA 的完整 Prefill 仍为二次增长，单 token Decode 仍随 $n$ 线性增长；只有稀疏主注意力部分降为 $\mathcal O(nk)$ / $\mathcal O(k)$。**
+
+**适用边界**：上述净节省不含投影、归一化、Top-K、量化、访存和通信，不是整模型收益或实测加速比。省算需要真正跳过未选中 KV 的稀疏 kernel；官方参考实现先算完整分数再加 mask、使用稠密 Value 聚合，不能获得表中的稀疏收益。FlashAttention 减少中间矩阵存储，不改变 Full Attention 的二次计算量。
+
+依据：[报告 §2.1、§2.3](https://arxiv.org/html/2512.02556v1#S2.SS3)、[官方 `Indexer.forward` / `MLA.forward`](https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/main/inference/model.py)。复算：[lightning_indexer_flops.py](lightning_indexer_flops.py)，运行 `python3 lightning_indexer_flops.py`，可用 `--seq-len`、`--top-k` 调整参数。
+
+#### Lighting Indexer算子在NPU上的性能问题
 
 lighting indexer算子，NPU不亲和，耗时比较大。
 使用PCP，切多份输入，弥补NPU上lighting indexer性能差的缺点。
 
-#### PCP
+##### PCP
 
 模型在 Prefill 阶段的大部分计算（如 RMSNorm, FFN, Embedding 等）都是
 Token-Wise（逐 Token） 的，彼此独立，完全可以分开计算。只有 Attention 模块需要
 Token 间的交互，而 PCP 通过特定的通信机制解决了这个问题。
 
 ## GLM 5.2/5.3 IndexShare
+
+https://arxiv.org/abs/2603.12201
+
+在 DSA（DeepSeek Sparse Attention）机制中，每一层都有一个轻量的“索引器 (Indexer)”，它负责从长达百万 token 的历史中，为本层的每个 token 快速筛选出最相关的 Top-k 个 token，后续的注意力计算只在这些被选中的 token 上进行，以此实现稀疏化。
+
+注意到相邻层索引器选出的 Top-k token 集合高度重叠（重叠度高达 70% 到 100%）。这意味着下一层的索引器常常在“重新发现”上一层刚刚选过的位置，造成了大量的重复计算。
+
+IndexShare 利用这种重叠性，让一组连续层共享同一次索引选择的结果。具体采用 “1 层 Full + 3 层 Shared” 的四层分组模式：
+- Full 层（组长）：在每 4 层中，有 1 层会实际运行索引器，完成一次完整的 Top-k token 选择。
+- Shared 层（组员）：紧随其后的 3 层则完全不拥有自己的索引器（不建参数、不做投影、不跑索引选择），直接复用其组长（Full 层）选出的那组 Top-k token 位置来进行自己的稀疏注意力计算。
+
+索引计算量被压缩到原来的 1/4。
