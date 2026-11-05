@@ -643,7 +643,20 @@ all buffers meta: True
 
 > 当上下文长度 $n$ = 128K 时，$k$ = 2048 仅占 $n$ 的 1.6%，核心注意力计算量理论上可减少约 98%。
 
-## DSA数学公式
+```
+DeepseekV32Indexer(
+  (wq_b): Linear(in_features=1536, out_features=8192, bias=False)
+  (wk): Linear(in_features=7168, out_features=128, bias=False)
+  (k_norm): LayerNorm((128,), eps=1e-06, elementwise_affine=True, bias=True)
+  (weights_proj): Linear(in_features=7168, out_features=64, bias=False)
+)
+wq_b.weight: shape=(8192, 1536), dtype=torch.bfloat16, numel=12,582,912
+wk.weight: shape=(128, 7168), dtype=torch.bfloat16, numel=917,504
+k_norm.weight: shape=(128,), dtype=torch.bfloat16, numel=128
+k_norm.bias: shape=(128,), dtype=torch.bfloat16, numel=128
+weights_proj.weight: shape=(64, 7168), dtype=torch.bfloat16, numel=458,752
+parameter numel: 13,959,424
+```
 
 
 | 符号 | 含义 |
@@ -657,7 +670,6 @@ all buffers meta: True
 | $n_h^I=64$、$d_h^I=128$ | indexer 头数、每头维度；indexer 中 $i=1,\ldots,n_h^I$，区别于 MLA 的 $n_h,d_h$ |
 | $I_{t,j}$、$\mathcal{S}_t$、$k$ | 索引分数、被选 KV 位置集合、选择数量上限；V3.2 使用 $k=2048$ |
 
-### lightning indexer
 
 $$
 \boxed{
