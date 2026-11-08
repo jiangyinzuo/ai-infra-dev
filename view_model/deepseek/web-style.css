@@ -1,0 +1,43 @@
+/* Shared layout and tooltip styles; web-template.typ embeds this file into HTML. */
+:root { color-scheme: light dark; }
+body { max-width: 1640px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 28px; align-items: start; font: 16px/1.75 system-ui, "Noto Sans CJK SC", sans-serif; }
+h2,h3,h4,h5,h6 { line-height: 1.4; margin-top: 1.7em; }
+#document-content { grid-column: 2; min-width: 0; }
+#document-content :is(h1,h2,h3,h4,h5,h6) { scroll-margin-top: 16px; }
+#document-toc { grid-column: 1; grid-row: 1; position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; padding-inline-end: 16px; border-inline-end: 1px solid #8888; font-size: 14px; }
+#document-toc summary { cursor: pointer; font-weight: 650; padding-block: 4px; }
+#document-toc ul { margin: 0; padding-inline-start: 14px; list-style: none; }
+#document-toc details > ul { padding-inline-start: 0; }
+#document-toc a { display: block; padding: 4px 0; color: inherit; text-decoration: none; overflow-wrap: anywhere; }
+#document-toc a:hover { text-decoration: underline; }
+#document-toc a:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
+/* Native #table elements share spacing and horizontal scrolling here. */
+.table-scroll { margin: 1.2em 0; max-width: 100%; overflow-x: auto; }
+table { border-collapse: collapse; min-width: 100%; }
+th,td { border: 1px solid #8888; padding: 8px 12px; text-align: left; vertical-align: top; }
+th { font-weight: 650; }
+pre { overflow-x: auto; padding: 12px; border: 1px solid #8888; border-radius: 4px; line-height: 1.5; }
+code { font-family: ui-monospace, "Cascadia Code", monospace; font-size: .9em; }
+blockquote { margin-inline: 0; padding-inline: 16px; border-inline-start: 3px solid #8888; }
+.model-diagram { margin: 1.2em 0; max-width: 100%; overflow-x: auto; background: white; }
+.model-diagram > svg { display: block; width: 100% !important; min-width: 1100px; height: auto !important; }
+.model-diagram [data-diagram-node] { cursor: help; }
+.model-diagram [data-diagram-node]:is(:hover, :focus-visible) > rect { stroke: #245e91; stroke-width: 1.2px; vector-effect: non-scaling-stroke; }
+math[display="block"] { overflow-x: auto; padding-block: 8px; }
+math { white-space: nowrap; font-size: 1.08em; }
+math [data-symbol] { cursor: help; }
+math [data-symbol]:hover,math [data-symbol]:focus { outline: 1px dotted currentColor; outline-offset: 2px; }
+#symbol-tooltip { position: fixed; z-index: 100; box-sizing: border-box; max-width: min(520px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow-y: auto; padding: 10px 14px; border: 1px solid #8888; border-radius: 6px; color: CanvasText; background: Canvas; box-shadow: 0 4px 18px #0003; font: 14px/1.6 system-ui, sans-serif; pointer-events: auto; }
+#symbol-tooltip img { max-width: 100%; height: auto; }
+#symbol-tooltip[hidden] { display: none; }
+#symbol-tooltip.diagram-tooltip { padding: 8px 10px; font-size: 12px; line-height: 1.5; }
+#symbol-tooltip .diagram-definition { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; column-gap: 10px; }
+#symbol-tooltip .diagram-definition + .diagram-definition { margin-top: 4px; padding-top: 4px; border-top: 1px solid #8886; }
+#symbol-tooltip .tooltip-symbol { font-weight: 650; white-space: nowrap; }
+#symbol-tooltip .definition-preview > p { margin: 0; }
+@media (max-width: 1099px) {
+  body { display: block; }
+  #document-toc { position: static; max-height: none; margin-bottom: 20px; padding: 8px 12px; border: 1px solid #8888; border-radius: 4px; }
+  #document-toc details > ul { max-height: 55vh; overflow-y: auto; }
+}
+@media (max-width: 700px) { body { padding: 16px; } }
