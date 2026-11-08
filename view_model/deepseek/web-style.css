@@ -19,8 +19,12 @@ th { font-weight: 650; }
 pre { overflow-x: auto; padding: 12px; border: 1px solid #8888; border-radius: 4px; line-height: 1.5; }
 code { font-family: ui-monospace, "Cascadia Code", monospace; font-size: .9em; }
 blockquote { margin-inline: 0; padding-inline: 16px; border-inline-start: 3px solid #8888; }
-.model-diagram { margin: 1.2em 0; max-width: 100%; overflow-x: auto; background: white; }
-.model-diagram > svg { display: block; width: 100% !important; min-width: 1100px; height: auto !important; }
+.model-diagram { margin: 1.2em 0; max-width: 100%; overflow-x: auto; background: white; container-type: inline-size; }
+/* One scale for every SVG: wide additions scroll rather than shrinking existing MLA nodes. */
+.model-diagram svg { display: block; width: calc(var(--diagram-width) * max(1100px, 100cqw) / var(--diagram-reference-width)) !important; max-width: none; height: auto !important; }
+.diagram-comparison { display: flex; align-items: flex-start; gap: 24px; }
+.diagram-comparison > figure { flex: 0 0 auto; margin: 0; }
+.diagram-comparison figcaption { margin-bottom: 12px; font-weight: 650; }
 .model-diagram [data-diagram-node] { cursor: help; }
 .model-diagram [data-diagram-node]:is(:hover, :focus-visible) > rect { stroke: #245e91; stroke-width: 1.2px; vector-effect: non-scaling-stroke; }
 math[display="block"] { overflow-x: auto; padding-block: 8px; }

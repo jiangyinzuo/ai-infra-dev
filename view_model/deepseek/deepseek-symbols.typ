@@ -52,6 +52,64 @@
       ],
     ),
     (
+      key: "Attention",
+      "context": "mla",
+      label: [Attention],
+      preview: [
+        将 QK 点积、缩放、Softmax 和 Value 加权聚合画在同一个计算框中；三个数据输入是 Query、Key、Value，输出为当前头的 #mi(`\mathbf o_{t,i}`)。
+
+        #mi(`s_j=\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}`)
+        \ #mi(`A_j=\frac{\exp(s_j)}{\sum_{\ell\in\mathcal J_t}\exp(s_\ell)}`)
+        \ #mi(`\operatorname{Attention}=\sum_{j\in\mathcal J_t}A_j\mathbf v_{j,i}^C`)
+
+        MLA 的候选集合为 #mi(`\mathcal J_t=\{1,\ldots,t\}`)；DSA 为 Indexer 选中的 #mi(`\mathcal J_t=\mathcal S_t`)，仅在所选位置上打分、归一化并聚合。这里的未吸收展开使用 #mi(`d_h+d_h^R=128+64=192`)，不是 Indexer 的 128 维，也不是吸收后的 576 维。
+      ],
+    ),
+    (
+      key: "SparseAttention",
+      "context": "dsa",
+      label: [Sparse Attention],
+      preview: [
+        输入：Query、Key、Value、选中位置索引 #mi(`\mathcal S_t`)；输出：每头结果 #mi(`\mathbf o_{t,i}`)。
+
+        #mi(`s_j=\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}`)
+        \ #mi(`\operatorname{SparseAttention}(\mathbf q,K,V,\mathcal S_t)`)
+        \ #mi(`=\sum_{j\in\mathcal S_t}\frac{\exp(s_j)}{\sum_{\ell\in\mathcal S_t}\exp(s_\ell)}\mathbf v_{j,i}^C`)
+
+        仅对 #mi(`\mathcal S_t`) 中的位置计算注意力。
+
+        #link("https://docs.flashinfer.ai/api/sparse.html#flashinfer.sparse.BlockSparseAttentionWrapper")[FlashInfer `BlockSparseAttentionWrapper`] 支持索引驱动的稀疏注意力：`plan(indptr, indices, ...)` 指定稀疏块，`run(q, k, v)` 执行计算。
+      ],
+    ),
+    (
+      key: "MatMulRMSNorm",
+      "context": "mla",
+      label: [MatMulRMSNorm],
+      preview: [
+        #strong[融合算子的数学展开（本图为 MatMul → RMSNorm）]
+
+        #mi(`\operatorname{MatMulRMSNorm}(\mathbf x,W,\mathbf g)`)
+        \ #mi(`=\operatorname{RMSNorm}_{\mathbf g}(W\mathbf x)`)
+        \ #mi(`=\frac{(W\mathbf x)\odot\mathbf g}{\operatorname{RMS}_m(W\mathbf x)}`)
+
+        将归约与逐元素后处理拆开：
+
+        #mi(`\mathbf z=W\mathbf x,\quad s=\sum_{a=1}^{m}z_a^2`)
+        \ #mi(`\rho=\operatorname{rsqrt}(s/m+\epsilon)`)
+        \ #mi(`\operatorname{MatMulRMSNorm}(\mathbf x,W,\mathbf g)=\mathbf z\odot(\mathbf g\rho)`)
+
+        #strong[Prologue：准备 MatMul 输入]
+
+        读取 hidden state #mi(`\mathbf x`) 和投影权重 #mi(`W`)，准备矩阵乘法所需的数据块；读取缩放参数 #mi(`\mathbf g`) 供 Epilogue 使用。随后 MatMul 主循环累加得到 #mi(`\mathbf z=W\mathbf x`)。
+
+        #strong[Epilogue：归约、归一化、写出最终结果]
+
+        ① 对完整输出行求平方和 #mi(`s=\sum_a z_a^2`)；② 计算每行共享的倒数 RMS #mi(`\rho=\operatorname{rsqrt}(s/m+\epsilon)`)；③ 逐元素计算 #mi(`c_a=z_a g_a\rho`)，直接写出归一化后的 #mi(`\mathbf c`)。这样不必把未归一化的 #mi(`\mathbf z`) 单独写回再读入 RMSNorm；跨 tile 的行归约与同步仍需内核保证。
+
+        #strong[分母取 MatMul 输出的 RMS，不是输入 hidden state 的 RMS。] Query 为 #mi(`W^{DQ},\boldsymbol\gamma^Q,m=1536`)，KV 为 #mi(`W^{DKV},\boldsymbol\gamma^{KV},m=512`)；输出沿用图中的 #mi(`\mathbf c_t^Q`) / #mi(`\mathbf c_j^{KV}`)。公式忽略浮点舍入；逻辑融合不等于声明官方已实现单个融合 kernel。
+      ],
+    ),
+    (
       key: "calO",
       "context": "any",
       preview: [
@@ -342,6 +400,22 @@
       ],
     ),
     (
+      key: "hat_q_ti^C",
+      "context": "mla",
+      label: [#mi(`\widehat{\mathbf q}_{t,i}^{C}`)],
+      preview: [
+        按框图报告记号，吸收后的内容 Query 为 #mi(`\widehat{\mathbf q}_{t,i}^{C}=(W_i^{QK})^T\mathbf c_t^Q=(W_i^{UK})^TW_i^{UQ}\mathbf c_t^Q`)，维度 #mi(`d_c=512`)。图中 #mi(`\mathbf c_t^Q`) 是融合块的归一化输出，对应 DSA 正文的 #mi(`\bar{\mathbf c}_t^Q`)。直接与 KV 缓存 #mi(`\mathbf c_j^{KV}`) 做点积，不再构造历史 Key 的内容上投影。
+      ],
+    ),
+    (
+      key: "S_tji^C",
+      "context": "mla",
+      label: [#mi(`S_{t,j,i}^{C}`)],
+      preview: [
+        未缩放的内容分数 #mi(`(\mathbf q_{t,i}^C)^T\mathbf k_{j,i}^C=(\widehat{\mathbf q}_{t,i}^C)^T\mathbf c_j^{KV}`)。它不含 RoPE 项，也未除以 #mi(`\sqrt{d_h+d_h^R}`)，不是完整的注意力分数 #mi(`S_{t,j,i}`)。
+      ],
+    ),
+    (
       key: "W_blk^UV",
       "context": "mla",
       preview: [
@@ -366,14 +440,14 @@
       key: "c_j^KV",
       "context": "mla",
       preview: [
-        历史位置 #mi(`j`) 的共享 KV 压缩潜向量，维度 #mi(`d_{c}=512`)；所有注意力头共用。
+        历史位置 #mi(`j`) 的共享 KV 压缩潜向量，维度 #mi(`d_c=512`)；所有注意力头共用。正文报告公式省略归一化；框图及实际缓存使用 #mi(`\operatorname{RMSNorm}_{\gamma^{KV}}(W^{DKV}\mathbf h_j)`)。
       ],
     ),
     (
       key: "c_t^Q",
       "context": "mla",
       preview: [
-        token #mi(`t`) 的 Query 压缩潜向量 #mi(`W^{DQ} h_{t}`)，维度 #mi(`d_{c}^{\prime}=1536`)。
+        token #mi(`t`) 的 Query 压缩潜向量，维度 #mi(`d_c^{\prime}=1536`)。正文按报告公式写作 #mi(`W^{DQ}\mathbf h_t`)；框图的 MatMulRMSNorm 沿用此记号，但实际输出为 #mi(`\operatorname{RMSNorm}_{\gamma^Q}(W^{DQ}\mathbf h_t)`)，对应 DSA 正文显式记出的 #mi(`\bar{\mathbf c}_t^Q`)。
       ],
     ),
     (
@@ -1001,16 +1075,24 @@
     ),
     (
       key: "bar_c_t^Q",
-      "context": "dsa",
+      "context": "mla",
       preview: [
         共享 Query RMSNorm 后的潜向量，维度 #mi(`d_{c}^{\prime}=1536`)；由 MLA 与 indexer 共用。
       ],
     ),
     (
       key: "gamma^Q",
-      "context": "dsa",
+      "context": "mla",
       preview: [
         MLA Query RMSNorm 的可学习逐维缩放，维度 #mi(`d_{c}^{\prime}=1536`)；不是 indexer 独有参数。
+      ],
+    ),
+    (
+      key: "gamma^KV",
+      "context": "mla",
+      label: [#mi(`\boldsymbol{\gamma}^{KV}`)],
+      preview: [
+        MLA KV 压缩后的 RMSNorm 可学习逐维缩放，维度 #mi(`d_c=512`)，对应官方 `kv_norm.weight` / HF `kv_a_layernorm.weight`。不作用于独立的 RoPE Key 分支。
       ],
     ),
     (
@@ -1309,9 +1391,9 @@
     ),
     (
       key: "RMSNorm",
-      "context": "dsa",
+      "context": "mla",
       preview: [
-        Query 共享归一化：#mi(`\boldsymbol{\gamma}^Q\odot\mathbf c_t^Q/\sqrt{\lVert\mathbf c_t^Q\rVert_2^2/d_c^{\prime}+\varepsilon_Q}`)。
+        沿潜向量特征维做均方根归一化，再施加可学习逐维缩放；Query 为 #mi(`\gamma^Q\odot\mathbf c_t^Q/\sqrt{\lVert\mathbf c_t^Q\rVert_2^2/d_c^{\prime}+\varepsilon_Q}`)，KV 为同样的 #mi(`d_c=512`) 维运算。它依赖当前激活，不能合入固定投影权重。
       ],
     ),
     (
@@ -1319,6 +1401,36 @@
       "context": "dsa",
       preview: [
         Indexer Key 沿特征维减均值、除标准差后施加 #mi(`\gamma^{I}`) 和 #mi(`\beta^{I}`)；稳定项为 #mi(`10^-6`)。
+      ],
+    ),
+    (
+      key: "MatMulLayerNorm",
+      "context": "dsa",
+      label: [MatMulLayerNorm],
+      preview: [
+        #strong[融合算子的数学展开（MatMul → LayerNorm）]
+
+        #mi(`\operatorname{MatMulLayerNorm}(\mathbf x,W,\mathbf g,\mathbf b)`)
+        \ #mi(`=\operatorname{LayerNorm}_{\mathbf g,\mathbf b}(W\mathbf x)`)
+        \ #mi(`=\mathbf g\odot\frac{W\mathbf x-\mu}{\sqrt{\sigma^2+\epsilon}}+\mathbf b`)
+
+        将统计量归约与逐元素后处理拆开：
+
+        #mi(`\mathbf z=W\mathbf x,\quad \mu=\frac{1}{m}\sum_{a=1}^{m}z_a`)
+        \ #mi(`\sigma^2=\frac{1}{m}\sum_{a=1}^{m}(z_a-\mu)^2`)
+        \ #mi(`\rho=\operatorname{rsqrt}(\sigma^2+\epsilon)`)
+        \ #mi(`\operatorname{MatMulLayerNorm}(\mathbf x,W,\mathbf g,\mathbf b)`)
+        \ #mi(`=(\mathbf z-\mu)\odot(\mathbf g\rho)+\mathbf b`)
+
+        #strong[Prologue：准备 MatMul 输入]
+
+        读取 hidden state #mi(`\mathbf x`) 和投影权重 #mi(`W`)，准备矩阵乘法的数据块；读取缩放 #mi(`\mathbf g`) 和偏置 #mi(`\mathbf b`) 供 Epilogue 使用。随后 MatMul 主循环累加得到 #mi(`\mathbf z=W\mathbf x`)。
+
+        #strong[Epilogue：归约、归一化、仿射变换、写出]
+
+        ① 在完整输出行上求均值 #mi(`\mu`)；② 求中心化平方偏差的均值 #mi(`\sigma^2`)；③ 计算倒数标准差 #mi(`\rho=\operatorname{rsqrt}(\sigma^2+\epsilon)`)；④ 逐元素计算 #mi(`y_a=(z_a-\mu)g_a\rho+b_a`)，直接写出最终结果，避免单独写回并重读未归一化的 #mi(`\mathbf z`)。跨 tile 的行归约、同步及数值稳定性仍需内核保证。
+
+        #strong[均值与方差取 MatMul 输出，而非输入 hidden state。] 本图取 #mi(`\mathbf x=\mathbf h_j,\ W=W^{IK},\ m=128`)、#mi(`\mathbf g=\boldsymbol\gamma^I,\ \mathbf b=\boldsymbol\beta^I,\ \epsilon=10^{-6}`)，输出为部分 RoPE 前的 #mi(`\widetilde{\mathbf k}_j^I`)。公式忽略浮点舍入；逻辑融合不等于声明官方已实现单个融合 kernel。
       ],
     ),
     (
@@ -1358,7 +1470,7 @@
     ),
     (
       key: "m_t",
-      "context": "complexity",
+      "context": "dsa",
       preview: [
         Query 位置 #mi(`t`) 实际选中 KV 数量 #mi(`|\mathcal{S}_{t}|=\operatorname{min}(t,k)`)。
       ],

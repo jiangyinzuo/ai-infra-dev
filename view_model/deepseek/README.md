@@ -19,3 +19,15 @@ HF_ENDPOINT=https://hf-mirror.com python deepseek_v31_class.py
 HF_HUB_OFFLINE=1 python deepseek_v31_class.py
 ```
 
+## 导出 SVG
+
+```bash
+typst compile diagrams/deepseek-mla.typ diagrams/deepseek-mla.svg
+for path in qk value; do
+  for stage in before after; do
+    typst compile --input path="$path" --input stage="$stage" diagrams/deepseek-absorption.typ "diagrams/deepseek-absorption-$path-$stage.svg"
+  done
+done
+typst compile diagrams/deepseek-dsa.typ diagrams/deepseek-dsa.svg
+```
+

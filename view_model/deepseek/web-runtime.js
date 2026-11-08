@@ -124,6 +124,11 @@
         symbol.setAttribute('tabindex', '0');
       }
     }
+    const diagrams = [...document.querySelectorAll('.model-diagram svg')];
+    if (diagrams.length) {
+      document.getElementById('document-content').style.setProperty('--diagram-reference-width', diagrams[0].viewBox.baseVal.width);
+      for (const svg of diagrams) svg.style.setProperty('--diagram-width', svg.viewBox.baseVal.width);
+    }
     const diagramPreviews = new WeakMap();
     for (const region of document.querySelectorAll('.model-diagram svg a')) {
       const href = region.getAttribute('href') || region.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
@@ -201,9 +206,18 @@
       }
       tooltip.hidden = false;
       symbol.setAttribute('aria-describedby', tooltip.id);
+      tooltip.style.maxHeight = '';
+      const naturalBox = tooltip.getBoundingClientRect();
+      const anchor = symbol.getBoundingClientRect();
+      const top = Math.min(y, anchor.top);
+      const bottom = Math.max(y, anchor.bottom);
+      const spaceBelow = Math.max(0, innerHeight - bottom - 24);
+      const spaceAbove = Math.max(0, top - 20);
+      const below = naturalBox.height <= spaceBelow || (naturalBox.height > spaceAbove && spaceBelow >= spaceAbove);
+      tooltip.style.maxHeight = (below ? spaceBelow : spaceAbove) + 'px';
       const box = tooltip.getBoundingClientRect();
       tooltip.style.left = Math.max(8, Math.min(x + 12, innerWidth - box.width - 8)) + 'px';
-      tooltip.style.top = (y + box.height + 20 < innerHeight ? y + 16 : Math.max(8, y - box.height - 12)) + 'px';
+      tooltip.style.top = (below ? bottom + 16 : Math.max(8, top - box.height - 12)) + 'px';
     }
     document.addEventListener('pointerover', event => {
       const symbol = event.target.closest?.('[data-symbol], [data-diagram-node]');

@@ -2,6 +2,8 @@
 #import "web-template.typ": web-document, vbold, boxed, horizontalrule, Red, Green, Blue, TextRed
 #import "deepseek-symbols.typ": symbols
 #import "diagrams/deepseek-mla.typ": mla-diagram
+#import "diagrams/deepseek-absorption.typ": absorption-diagram
+#import "diagrams/deepseek-dsa.typ": dsa-diagram
 #show: web-document.with(symbols: symbols)
 
 == DeepSeek MLA
@@ -13,6 +15,10 @@
 === 结构图
 
 #html.elem("div", attrs: (class: "model-diagram"), html.frame(mla-diagram()))
+
+框图将下投影与实际实现的 RMSNorm 合并为 `MatMulRMSNorm`，三个输入分别是 hidden state、下投影权重、RMSNorm 缩放参数，输出沿用报告的 $vbold(c)_t^Q$、$vbold(c)_j^(K V)$ 记号。图中的输出实际已归一化；DSA 正文仍用 $macron(vbold(c))_t^Q$ 明确区分归一化前后。报告公式省略 RMSNorm；独立 RoPE Key 分支不经过 KV RMSNorm。融合框是逻辑计算表示，不声明官方或 HF 已使用单个融合 kernel；实际顺序与另一种 RMSNorm → MatMul 融合的数学变换见悬浮提示。输入 $vbold(h)$ 已过 MLA 模块外的 attention 前置 RMSNorm。
+
+实现对照：#link("https://github.com/deepseek-ai/DeepSeek-V3/blob/main/inference/model.py")[官方 `MLA.forward`、`Block.forward`];；#link("https://github.com/huggingface/transformers/blob/main/src/transformers/models/deepseek_v3/modeling_deepseek_v3.py")[Transformers `DeepseekV3Attention`];。
 
 
 === 公式
@@ -423,6 +429,33 @@ MLA 将每个 token 的 KV Cache 从标准多头注意力下的 $n_h \( 2 d_h + 
 
 ==== MLA 矩阵吸收
 <mla-矩阵吸收>
+
+只摘取受吸收影响的两条路径；每组左图为吸收前，右图为吸收后。保留第一张 MLA 图的原节点位置、形状和尺寸，RoPE 分支不变，此处不重复绘制。
+
+#html.elem("div", attrs: (class: "model-diagram diagram-comparison"), {
+  html.elem("figure", {
+    html.elem("figcaption", [内容分数路径 · 吸收前])
+    html.frame(absorption-diagram(path: "qk", stage: "before"))
+  })
+  html.elem("figure", {
+    html.elem("figcaption", [内容分数路径 · 吸收后])
+    html.frame(absorption-diagram(path: "qk", stage: "after"))
+  })
+})
+
+#html.elem("div", attrs: (class: "model-diagram diagram-comparison"), {
+  html.elem("figure", {
+    html.elem("figcaption", [Value / 输出路径 · 吸收前])
+    html.frame(absorption-diagram(path: "value", stage: "before"))
+  })
+  html.elem("figure", {
+    html.elem("figcaption", [Value / 输出路径 · 吸收后])
+    html.frame(absorption-diagram(path: "value", stage: "after"))
+  })
+})
+
+图示按本节代数关系预合并线性权重；官方实现也可保留权重分解，在运行时依次执行等价乘法。源潜向量已经过 RMSNorm；归一化依赖激活，不参与静态矩阵吸收。
+
 先约定记号。忽略 batch 和层号，固定一个 query 位置 $t$，历史 key 位置 $j lt.eq t$。DeepSeek-V3 中：
 
 按头分块：
@@ -1042,6 +1075,9 @@ all buffers meta: True
 
 == DeepSeek Sparse Attention
 <deepseek-sparse-attention>
+
+#html.elem("div", attrs: (class: "model-diagram"), html.frame(dsa-diagram()))
+
 稀疏注意力，改变的是每个Query token在计算注意力时，所能访问的Key Value候选集合的大小。
 
 Dense Attention 可以看到全部历史 KV，注意力矩阵是稠密的，计算复杂度为 $cal(O) \( n^2 \)$。
