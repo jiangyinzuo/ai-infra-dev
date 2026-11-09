@@ -19,8 +19,6 @@
     index-k-normalized: ("tilde_k_j^I", "d_h^I", "j"),
     index-k-rope: ("RoPE", "P_p^I", "k_j^I", "tilde_k_j^I", "d_h^R", "d_h^I", "j"),
     index-k: ("k_j^I", "d_h^I", "n_h^I", "j"),
-    index-a: ("a_ti^I", "n_h^I", "t", "i"),
-    index-scale: ("w_ti^I", "a_ti^I", "sqrt", "n_h^I", "d_h^I"),
     index-w: ("w_ti^I", "n_h^I", "t", "i"),
     index-score: ("I_tj", "w_ti^I", "q_ti^I", "k_j^I", "ReLU", "n_h^I", "T", "t", "j", "i"),
     index-scores: ("I_tj", "t", "j"),
@@ -30,10 +28,8 @@
   let layout = mla-layout(scope: "dsa", symbols: symbols,
     title: [DSA · 选中位置上的 MLA 等价展开],
     note: [
-      *Indexer · MatMul 内固定缩放折叠* \
-      #mi(`\mathbf a_t^I=W^{IW}\mathbf h_t,\quad \mathbf w_t^I=\mathbf a_t^I/\sqrt{n_h^I d_h^I}`) \
-      #mi(`\bar W^{IW}=W^{IW}/\sqrt{n_h^I d_h^I},\quad \mathbf w_t^I=\bar W^{IW}\mathbf h_t`) \
-      #mi(`w_{t,i}^{I,\mathrm{orig}}=\frac{[W^{IW}\mathbf h_t]_i}{\sqrt{n_h^I d_h^I}}=\left[\bar W^{IW}\mathbf h_t\right]_i=w_{t,i}^{I,\mathrm{fold}}`) \
+      *Lightning Indexer · 位置选择* \
+      #mi(`\mathcal S_t=\operatorname{TopK}_{1\le j\le t}(I_{t,j},m_t),\quad m_t=\min(t,2048)`) \
       部分 RoPE 仅旋转前 64 维，后 64 维直通；Key 为全部 64 个 indexer 头共享。 \
       本图展开未量化评分；官方额外 Hadamard / FP8 路径见正文，量化后不保证精确等价。
     ])
@@ -47,12 +43,12 @@
     cq: tensor(at(195, 1025), "cq", `\mathrm{Latent}\ `.text + colored(`\mathbf c_t^Q\in\mathbb R^{d_c^{\prime}}`, "ff0000").text,
       colored(`d_c^{\prime}=1536`, "ff0000"), width: query-latent-width),
     q-down: matmul-rmsnorm(195, 1115, "q-down", colored(`W^{DQ}`, "ff0000"), 1536, 7168, colored(`d_c^{\prime}\times d`, "ff0000"),
-      colored(`\boldsymbol\gamma^Q`, "ff0000"), colored(`d_c^{\prime}=1536`, "ff0000")),
+      colored(`\boldsymbol{\gamma}^Q`, "ff0000"), colored(`d_c^{\prime}=1536`, "ff0000"), title: [MatMulRMSNorm（压缩）]),
     attention-core: operator(at(415, attention-row), "attention-core", [Sparse Attention],
       formula: `\sum_{j\in\mathcal S_t}\operatorname{Softmax}_{j\in\mathcal S_t}\!\left(\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}\right)\mathbf v_{j,i}^C`, width: 340pt),
   )
   // Left to right: dynamic head weights, Query, Key.
-  let columns = (weights: 1075, query: 1390, key: 1700)
+  let columns = (weights: 1075, query: 1280, key: 1590)
   // Both operators' activation inputs use attention-input-row; derive earlier Indexer stages from it.
   let rows = (projection: attention-input-row + 250, latent: attention-input-row + 160, transform: attention-input-row + 80, ready: attention-input-row)
   let extra = {
@@ -66,14 +62,16 @@
     ], width: 980pt, stroke: none, inset: 4pt, snap: false)
 
     // CSS named green is #008000; MiTeX's named green is the brighter #00ff00.
-    projection(columns.query, rows.projection, "index-q-proj", colored(`W^{IQ}`, "008000"), 8192, 1536,
-      `n_h^I d_h^I\times d_c^{\prime}`, weight-offset: (-145, 0), weight-width: 130pt)
+    parameter(at(columns.query - 90, rows.projection), "w-index-q-proj", colored(`W^{IQ}`, "008000"),
+      `\begin{gathered}n_h^I d_h^I\times d_c^{\prime}\\8192\times1536\end{gathered}`, width: 90pt)
+    operator(at(columns.query, rows.projection), "index-q-proj", [MatMul], width: 68pt, keys: ("MatMul",))
+    edge(<w-index-q-proj.east>, <index-q-proj.west>, "--|>", stroke: rgb("79517d") + 0.8pt)
     operator(at(columns.query, rows.latent), "index-reshape", [按头 Reshape],
       formula: `\tilde{\mathbf{q}}_{t,i}^I=[\operatorname{reshape}_{64\times128}(\cdot)]_{i,:}`, width: 260pt)
     operator(at(columns.query, rows.transform), "index-q-rope", [部分 RoPE · 前 64 维],
       formula: `\mathbf{q}_{t,i}^I=P_t^I\tilde{\mathbf{q}}_{t,i}^I`, width: 220pt)
     tensor(at(columns.query, rows.ready), "index-q", `\mathbf{q}_{t,i}^I\in\mathbb{R}^{128}`,
-      `i=1,\ldots,n_h^I=64`, width: 210pt)
+      `d_h^I=128`, width: 210pt, head-count: `n_h^I=64`)
 
     parameter(at(columns.key - 175, rows.projection - 35), "w-index-k-proj", colored(`W^{IK}`, "008000"), `128\times7168`, width: 130pt)
     parameter(at(columns.key - 175, rows.projection), "g-index-k-proj", colored(`\boldsymbol\gamma^I`, "008000"),
@@ -90,12 +88,13 @@
     tensor(at(columns.key, rows.ready), "index-k", `\mathbf{k}_j^I\in\mathbb{R}^{128}`,
       `\text{全部 }64\text{ 个 indexer 头共享，类似MQA但没有Value}`, cache: true, width: 225pt)
 
-    parameter(at(columns.weights - 145, rows.projection + 135), "w-index-weight-proj", colored(`W^{IW}`, "008000"),
+    parameter(at(columns.weights - 130, rows.projection + 90), "w-index-weight-proj", colored(`W^{IW}`, "008000"),
       `n_h^I\times d=64\times7168`, width: 130pt)
     operator(at(columns.weights, rows.projection), "index-weight-proj", [MatMul / #mi(`\sqrt{n_h^I d_h^I}`)],
       width: 130pt, keys: ("MatMul", "n_h^I", "d_h^I", "IndexerWeightScaleFold"))
-    edge(<w-index-weight-proj.east>, at(columns.weights - 75, rows.projection + 135), <index-weight-proj.west>, "--|>", stroke: rgb("79517d") + 0.8pt)
-    tensor(at(columns.weights, rows.ready), "index-w", `[w_{t,i}^I]_{i=1}^{64}`, `\in\mathbb{R}^{64}\quad\text{（激活，非参数）}`, width: 180pt)
+    edge(<w-index-weight-proj.north>, at(columns.weights - 130, rows.projection + 40),
+      at(columns.weights - 65, rows.projection + 40), <index-weight-proj.west>, "--|>", stroke: rgb("79517d") + 0.8pt)
+    tensor(at(columns.weights, rows.ready), "index-w", `w_{t,i}^I\in\mathbb R`, `i=1,\ldots,n_h^I`, width: 136pt, head-count: `n_h^I=64`)
 
     operator(at(columns.query, attention-row), "index-score", [Indexer 评分 · 对全部因果历史候选],
       formula: `I_{t,j}=\sum_{i=1}^{64}w_{t,i}^I\operatorname{ReLU}\!\left((\mathbf{q}_{t,i}^I)^T\mathbf{k}_j^I\right)`, width: 600pt)
@@ -137,55 +136,20 @@
     let change = mla-absorption-changes(layout, paths: ("qk", "value"), sparse: true)
     let caption = (layout.nodes.note + []).children.first().value
     caption.label = align(left)[
-      *DSA · MLA 矩阵吸收；Indexer 固定标量折叠* \
+      *DSA · MLA 矩阵吸收* \
       #mi(`W_i^{QK}=(W_i^{UQ})^TW_i^{UK}`) \
       #mi(`W^{O,UV}=W^O\operatorname{diag}(W_i^{UV})`) \
       MLA 的 QK 内容投影与 Value / 输出投影在潜空间中合并。 \
-      Indexer 仅将固定的 #mi(`1/\sqrt{n_h^I d_h^I}`) 折叠到权重投影。 \
       选中位置仍由 Indexer 输入 Sparse Attention。 \
       RoPE 不变，Softmax 缩放仍为 #mi(`1/\sqrt{192}`)。
     ]
     change.replace.insert("note", metadata(caption))
     change.focus += ("note",)
-    // Only fixed head-weight scaling can be preabsorbed here; do not cross LayerNorm or RoPE.
-    let objects = (extra + []).children
-    let removed = ("index-a", "preview-index-a", "index-scale", "preview-index-scale")
-    let weight-names = ("w-index-weight-proj", "preview-w-index-weight-proj")
-    let original-weight = objects.filter(item => item.value.class == "node" and item.value.name in weight-names.map(label)).join() + []
-    let scaled-weight = parameter(at(columns.weights - 145, rows.projection + 135), "w-index-weight-proj",
-      `\color[HTML]{008000}{\bar{W}^{IW}}`, `64\times7168`, width: 130pt, keys: ("Wbar^IW", "n_h^I", "d"))
-    let transformed = {
-      for item in objects {
-        let record = item.value
-        if record.class == "node" {
-          if record.name not in (removed + weight-names).map(label) {
-            let source = item
-            let changed-caption = record.name == none and record.size.at(0) == 980pt
-            if changed-caption {
-              record.label = align(left)[
-                *Lightning Indexer · 固定标量缩放折叠（等价重参数化）* \
-                #mi(`\bar{W}^{IW}=W^{IW}/\sqrt{n_h^I d_h^I}`) \
-                #mi(`\mathbf w_t^I=\bar{W}^{IW}\mathbf h_t`)；将固定标量乘入权重。 \
-                这不是相邻线性层的矩阵乘法合并，不改变 GEMM 形状或复杂度。 \
-                LayerNorm、部分 RoPE、ReLU 保持不变；运行时也可在投影激活上乘该常量。 \
-                本图忽略浮点舍入与量化误差。
-              ]
-              source = mla-restyle(metadata(record), reference: item)
-            }
-            if record.name == label("index-weight-proj") {
-              record.label = align(center, text(weight: "bold", [MatMul]))
-            }
-            if changed-caption { source } else { mla-restyle(source, faded: true) }
-          }
-        } else if not record.vertices.any(vertex => vertex in (label("index-a"), label("index-scale"))) {
-          mla-restyle(item, faded: true)
-        }
-      }
-      mla-restyle(scaled-weight, reference: original-weight, faded: true)
-    }
+    // Fixed Indexer scaling is already fused in the original diagram; only MLA changes here.
+    let transformed = mla-restyle(extra, faded: true)
     mla-render(layout, ids: change.ids, replace: replace + change.replace, routes: change.routes,
       extra: transformed, focus: change.focus, bounds-y: (mla-output-shift - 14.5, 1223))
-  }
+}
 }
 
 #dsa-diagram()

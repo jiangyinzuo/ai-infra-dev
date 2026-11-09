@@ -33,15 +33,16 @@
   let replace = (:)
   let routes = layout.routes
   let focus = ("attention-core",)
+  // Focus both endpoints of every rerouted or absorbed path so its connections remain opaque.
 
   if qk {
     // Eliminate W_i^UK and the historical content Key; all heads read the shared latent.
     ids = ids.filter(id => id not in ("k-up", "kc"))
-    focus += ("q-up", "qc", "k-up", "kc", "q", "k")
+    focus += ("q-up", "qc", "k-up", "kc", "q-concat", "k-concat", "q", "k")
     replace.insert("q-up", projection(95, 935, "q-up", `(W_i^{QK})^T`, 512, 1536, `d_c\times d_c^{\prime}`))
-    replace.insert("qc", tensor(at(95, 800), "qc", `\widehat{\mathbf q}_{t,i}^C\in\mathbb R^{d_c}`, `d_c=512`))
+    replace.insert("qc", tensor(at(95, 800), "qc", `\widehat{\mathbf q}_{t,i}^C\in\mathbb R^{d_c}`, `d_c=512`, head-count: `n_h=128`))
     replace.insert("q", tensor(at(185, attention-input-row), "q",
-      `[\widehat{\mathbf q}_{t,i}^C;\mathbf q_{t,i}^R]`, `\in\mathbb R^{d_c+d_h^R}=\mathbb R^{576}`, width: 230pt))
+      `[\widehat{\mathbf q}_{t,i}^C;\mathbf q_{t,i}^R]`, `\in\mathbb R^{d_c+d_h^R}=\mathbb R^{576}`, width: 230pt, head-count: `n_h=128`))
     replace.insert("k", tensor(at(645, attention-input-row), "k",
       `[\mathbf c_j^{KV};\mathbf k_j^R]`, `\in\mathbb R^{d_c+d_h^R}=\mathbb R^{576}`, width: 230pt))
     routes += ((from: "ckv", to: "k-concat", body:
@@ -50,11 +51,11 @@
   if value {
     // Move Value aggregation into latent space and precombine W^O with the head-wise W_i^UV.
     ids = ids.filter(id => id != "v-up")
-    focus += ("v-up", "v", "head-out", "heads", "out-proj")
+    focus += ("v-up", "v", "head-out", "heads-concat", "heads", "out-proj")
     replace.insert("v", tensor(at(900, attention-input-row), "v", `\mathbf c_j^{KV}\in\mathbb R^{d_c}`, `d_c=512`))
-    replace.insert("head-out", tensor(at(415, 260 + mla-output-shift), "head-out", `\widetilde{\mathbf o}_{t,i}\in\mathbb R^{d_c}`, `d_c=512`))
+    replace.insert("head-out", tensor(at(415, 260 + mla-output-shift), "head-out", `\widetilde{\mathbf o}_{t,i}\in\mathbb R^{d_c}`, `d_c=512`, head-count: `n_h=128`))
     replace.insert("heads", tensor(at(415, 130 + mla-output-shift), "heads",
-      `[\widetilde{\mathbf o}_{t,1};\ldots;\widetilde{\mathbf o}_{t,n_h}]`, `\in\mathbb R^{n_h d_c}=\mathbb R^{65536}`, width: 200pt))
+      `[\widetilde{\mathbf o}_{t,1};\ldots;\widetilde{\mathbf o}_{t,n_h}]`, `\in\mathbb R^{n_h d_c}=\mathbb R^{65536},\quad n_h=128`, width: 200pt))
     replace.insert("out-proj", projection(415, 65 + mla-output-shift, "out-proj", `W^{O,UV}`, 7168, 65536,
       `d\times(n_h d_c)`, weight-offset: (-155, 0), weight-width: 155pt))
     routes += ((from: "ckv", to: "v", body:

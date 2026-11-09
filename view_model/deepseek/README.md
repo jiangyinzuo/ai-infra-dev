@@ -29,6 +29,10 @@ typst watch --features html --port 3000 deepseek-v3-v32-glm5-2.typ deepseek-v3-v
 
 ## 导出 SVG
 
+图形共用 `diagrams/mla-common.typ`：按头独立的激活用三层圆角框表示，框内以 `n_h=128` 或 `n_h^I=64` 标注头数；共享 KV 和拼接后的向量使用单框。降维和上投影算子分别标注“压缩”与“解压”。
+
+矩阵吸收对比中，未变化的模块半透明显示；只要连线任一端参与吸收或改变表示，连线就保持实色。DSA 两图共用相同的 Indexer 布局，固定缩放推导仅保留在算子悬浮说明中。
+
 ```bash
 typst compile diagrams/deepseek-mla.typ diagrams/deepseek-mla.svg
 for path in qk value; do

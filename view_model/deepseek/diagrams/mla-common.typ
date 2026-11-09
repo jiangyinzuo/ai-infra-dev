@@ -55,14 +55,31 @@
       #styled(body)]
     (body: body, height: calc.max(29pt, measure(box(width: width - 2 * inset, body)).height + 2 * inset))
   }
-  let tensor(pos, id, symbol, dimension, cache: false, width: 136pt, keys: none) = {
-    let caption = compact-label(mi(symbol), text(9pt, mi(dimension)), width, 5pt)
+  let tensor(pos, id, symbol, dimension, cache: false, width: 136pt, keys: none, head-count: none) = {
+    let detail = if head-count == none { text(9pt, mi(dimension)) }
+      else { [#text(9pt, mi(dimension)) \ #text(9pt, mi(head-count))] }
+    let caption = compact-label(mi(symbol), detail, width, 5pt)
+    let fill = if cache { rgb("e4f2ff") } else { rgb("f1f7fc") }
+    let border = if cache { rgb("1665ac") } else { rgb("245e91") }
+    if head-count != none {
+      for offset in (2, 1) {
+        node((pos.at(0) + offset * 4pt, pos.at(1) - offset * 4pt), [],
+          name: label("stack-" + id + "-" + str(offset)), shape: rect,
+          width: width, height: caption.height, corner-radius: 7pt, inset: 0pt,
+          fill: none, stroke: (paint: border, thickness: if cache { 1.3pt } else { 0.85pt }))
+      }
+    }
     node(pos, align(center, caption.body),
       name: label(id), shape: rect, width: width, height: caption.height, corner-radius: 7pt, inset: 5pt,
-      fill: if cache { rgb("e4f2ff") } else { rgb("f1f7fc") },
-      stroke: (paint: if cache { rgb("1665ac") } else { rgb("245e91") }, thickness: if cache { 1.3pt } else { 0.85pt }),
+      fill: fill,
+      stroke: (paint: border, thickness: if cache { 1.3pt } else { 0.85pt }),
       extrude: if cache { (0, 2.5) } else { (0,) })
-    preview-region(pos, id, width, caption.height, keys: keys)
+    let preview-keys = if keys == none { keys-by-node.at(id, default: ()) } else { keys }
+    if head-count != none {
+      let count-key = if head-count.text.contains("^I") { "n_h^I" } else { "n_h" }
+      if count-key not in preview-keys { preview-keys += (count-key,) }
+    }
+    preview-region(pos, id, width, caption.height, keys: preview-keys)
   }
   let operator(pos, id, title, formula: none, width: 90pt, keys: none) = {
     let caption = compact-label(text(weight: "bold", title), if formula == none { none } else { text(9pt, mi(formula)) }, width, 5pt)
@@ -79,14 +96,14 @@
       fill: rgb("faf4fa"), stroke: (paint: color, thickness: 0.85pt, dash: "dashed"))
     preview-region(pos, id, width, caption.height, keys: keys)
   }
-  let projection(x, y, id, weight, rows, cols, shape, weight-offset: (-108, 0), weight-width: 100pt, color: parameter-ink) = {
+  let projection(x, y, id, weight, rows, cols, shape, weight-offset: (-108, 0), weight-width: 100pt, color: parameter-ink, title: [MatMul], operator-width: 68pt) = {
     parameter(at(x + weight-offset.at(0), y + weight-offset.at(1)), "w-" + id, weight,
       shape.text + "=" + str(rows) + "\\times" + str(cols), width: weight-width, color: color)
-    operator(at(x, y), id, [MatMul], width: 68pt, keys: ("MatMul",))
+    operator(at(x, y), id, title, width: operator-width, keys: ("MatMul",))
     if weight-offset.at(0) != 0 and weight-offset.at(1) != 0 {
       // Vertically offset weights still enter through an orthogonal side connection.
       let left = weight-offset.at(0) < 0
-      let inlet-x = x + if left { -34 } else { 34 }
+      let inlet-x = x + if left { -operator-width / 2pt } else { operator-width / 2pt }
       edge(label("w-" + id + if left { ".east" } else { ".west" }),
         at(inlet-x, y + weight-offset.at(1)), label(id + if left { ".west" } else { ".east" }),
         "--|>", stroke: color + 0.8pt)
@@ -95,11 +112,11 @@
     }
   }
   // Three inputs: hidden state, down-projection weight, and RMSNorm scale. One normalized output.
-  let matmul-rmsnorm(x, y, id, weight, rows, cols, shape, gamma, gamma-dimension, weight-offset: (-150, 0), gamma-offset: (-150, -55)) = {
+  let matmul-rmsnorm(x, y, id, weight, rows, cols, shape, gamma, gamma-dimension, weight-offset: (-150, 0), gamma-offset: (-150, -55), title: [MatMulRMSNorm（压缩）], operator-width: 152pt) = {
     parameter(at(x + weight-offset.at(0), y + weight-offset.at(1)), "w-" + id, weight,
       shape.text + "=" + str(rows) + "\\times" + str(cols))
     parameter(at(x + gamma-offset.at(0), y + gamma-offset.at(1)), "g-" + id, gamma, gamma-dimension)
-    operator(at(x, y), id, [MatMulRMSNorm], width: 110pt, keys: ("MatMulRMSNorm",))
+    operator(at(x, y), id, title, width: operator-width, keys: ("MatMulRMSNorm",))
     edge(label("w-" + id), label(id), "--|>", stroke: parameter-ink + 0.8pt)
     edge(label("g-" + id + ".east"), at(x - 25, y + gamma-offset.at(1)), at(x - 25, y - 14.5), "--|>", stroke: parameter-ink + 0.8pt)
   }
@@ -144,33 +161,33 @@
     ], stroke: none, width: 290pt, inset: 4pt, snap: false),
     output: tensor(at(415, mla-output-shift), "output", `\mathbf{u}_t\in\mathbb{R}^{d}`.text, `d=`.text + str(d.hidden)),
     out-proj: projection(415, 65 + mla-output-shift, "out-proj", `W^O`, d.hidden, all-values, `d\times(n_h d_h)`, weight-offset: (-155, 0), weight-width: 155pt),
-    heads: tensor(at(415, 130 + mla-output-shift), "heads", `[\mathbf{o}_{t,1};\ldots;\mathbf{o}_{t,n_h}]`.text, `\in\mathbb{R}^{n_h d_h}=\mathbb{R}^{`.text + str(all-values) + `}`.text, width: 200pt),
+    heads: tensor(at(415, 130 + mla-output-shift), "heads", `[\mathbf{o}_{t,1};\ldots;\mathbf{o}_{t,n_h}]`.text, `\in\mathbb{R}^{n_h d_h}=\mathbb{R}^{`.text + str(all-values) + `},\quad n_h=128`.text, width: 200pt),
     heads-concat: operator(at(415, 195 + mla-output-shift), "heads-concat", [Concat · 全部头], width: 136pt),
-    head-out: tensor(at(415, 260 + mla-output-shift), "head-out", `\mathbf{o}_{t,i}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content)),
+    head-out: tensor(at(415, 260 + mla-output-shift), "head-out", `\mathbf{o}_{t,i}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content), head-count: `n_h=128`),
     attention-core: operator(at(415, attention-row), "attention-core", [Attention],
       formula: `\sum_{j\le t}\operatorname{Softmax}_{j\le t}\!\left(\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}\right)\mathbf v_{j,i}^C`, width: 340pt),
-    q: tensor(at(185, attention-input-row), "q", `\mathbf{q}_{t,i}=[\mathbf{q}_{t,i}^{C};\mathbf{q}_{t,i}^{R}]`.text, `\in\mathbb{R}^{d_h+d_h^R}=\mathbb{R}^{`.text + str(full-head) + `}`.text, width: 230pt),
-    k: tensor(at(645, attention-input-row), "k", `\mathbf{k}_{j,i}=[\mathbf{k}_{j,i}^{C};\mathbf{k}_{j}^{R}]`.text, `\in\mathbb{R}^{d_h+d_h^R}=\mathbb{R}^{`.text + str(full-head) + `}`.text, width: 230pt),
+    q: tensor(at(185, attention-input-row), "q", `\mathbf{q}_{t,i}=[\mathbf{q}_{t,i}^{C};\mathbf{q}_{t,i}^{R}]`.text, `\in\mathbb{R}^{d_h+d_h^R}=\mathbb{R}^{`.text + str(full-head) + `}`.text, width: 230pt, head-count: `n_h=128`),
+    k: tensor(at(645, attention-input-row), "k", `\mathbf{k}_{j,i}=[\mathbf{k}_{j,i}^{C};\mathbf{k}_{j}^{R}]`.text, `\in\mathbb{R}^{d_h+d_h^R}=\mathbb{R}^{`.text + str(full-head) + `}`.text, width: 230pt, head-count: `n_h=128`),
     q-concat: operator(at(185, 730), "q-concat", [Concat], width: 90pt),
     k-concat: operator(at(645, 730), "k-concat", [Concat], width: 90pt),
-    qc: tensor(at(95, 800), "qc", `\mathbf{q}_{t,i}^{C}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content)),
-    qr: tensor(at(280, 800), "qr", `\mathbf{q}_{t,i}^{R}\in\mathbb{R}^{d_h^R}`.text, `d_h^R=`.text + str(d.rope)),
-    kc: tensor(at(560, 800), "kc", `\mathbf{k}_{j,i}^{C}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content)),
-    v: tensor(at(900, attention-input-row), "v", `\mathbf{v}_{j,i}^{C}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content)),
+    qc: tensor(at(95, 800), "qc", `\mathbf{q}_{t,i}^{C}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content), head-count: `n_h=128`),
+    qr: tensor(at(280, 800), "qr", `\mathbf{q}_{t,i}^{R}\in\mathbb{R}^{d_h^R}`.text, `d_h^R=`.text + str(d.rope), head-count: `n_h=128`),
+    kc: tensor(at(560, 800), "kc", `\mathbf{k}_{j,i}^{C}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content), head-count: `n_h=128`),
+    v: tensor(at(900, attention-input-row), "v", `\mathbf{v}_{j,i}^{C}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content), head-count: `n_h=128`),
     q-rope: operator(at(280, 865), "q-rope", [RoPE], formula: `\mathrm{position}\ t`, width: 90pt),
-    q-up: projection(95, 935, "q-up", `W_i^{UQ}`, d.content, d.query-latent, `d_h\times d_c^{\prime}`),
-    qr-proj: projection(280, 935, "qr-proj", `W_i^{QR}`, d.rope, d.query-latent, `d_h^R\times d_c^{\prime}`, weight-offset: (-95, 0), weight-width: 90pt),
-    k-up: projection(560, 935, "k-up", `W_i^{UK}`, d.content, d.kv-latent, `d_h\times d_c`),
-    v-up: projection(900, 935, "v-up", `W_i^{UV}`, d.content, d.kv-latent, `d_h\times d_c`, weight-offset: (-108, -45)),
+    q-up: projection(95, 935, "q-up", `W_i^{UQ}`, d.content, d.query-latent, `d_h\times d_c^{\prime}`, title: [MatMul（解压）], operator-width: 90pt),
+    qr-proj: projection(280, 935, "qr-proj", `W_i^{QR}`, d.rope, d.query-latent, `d_h^R\times d_c^{\prime}`, weight-offset: (-95, 0), weight-width: 90pt, title: [MatMul（解压）], operator-width: 90pt),
+    k-up: projection(560, 935, "k-up", `W_i^{UK}`, d.content, d.kv-latent, `d_h\times d_c`, title: [MatMul（解压）], operator-width: 90pt),
+    v-up: projection(900, 935, "v-up", `W_i^{UV}`, d.content, d.kv-latent, `d_h\times d_c`, weight-offset: (-108, -45), title: [MatMul（解压）], operator-width: 90pt),
     kr: tensor(at(730, 935), "kr", `\mathbf{k}_{j}^{R}\in\mathbb{R}^{d_h^R}`.text, `d_h^R=`.text + str(d.rope) + `\quad\text{（所有头共享）}`.text, cache: true, width: 150pt),
     cq: tensor(at(195, 1025), "cq", `\mathrm{Latent}\ \mathbf{c}_t^{Q}\in\mathbb{R}^{d_c^{\prime}}`.text, `d_c^{\prime}=`.text + str(d.query-latent), width: query-latent-width),
     ckv: tensor(at(560, 1025), "ckv", `\mathrm{Latent}\ \mathbf{c}_j^{KV}\in\mathbb{R}^{d_c}`.text, `d_c=`.text + str(d.kv-latent), cache: true),
     k-rope: operator(at(730, 1025), "k-rope", [RoPE], formula: `\mathrm{position}\ j`, width: 90pt),
     q-down: matmul-rmsnorm(195, 1115, "q-down", `W^{DQ}`, d.query-latent, d.hidden, `d_c^{\prime}\times d`,
-      `\boldsymbol{\gamma}^{Q}`, `d_c^{\prime}=1536`),
+      `\boldsymbol{\gamma}^{Q}`, `d_c^{\prime}=1536`, title: [MatMulRMSNorm（压缩）]),
     kv-down: matmul-rmsnorm(560, 1115, "kv-down", `W^{DKV}`, d.kv-latent, d.hidden, `d_c\times d`,
-      `\boldsymbol{\gamma}^{KV}`, `d_c=512`),
-    kr-proj: projection(730, 1115, "kr-proj", `W^{KR}`, d.rope, d.hidden, `d_h^R\times d`, weight-offset: (108, 0)),
+      `\boldsymbol{\gamma}^{KV}`, `d_c=512`, title: [MatMulRMSNorm（压缩）]),
+    kr-proj: projection(730, 1115, "kr-proj", `W^{KR}`, d.rope, d.hidden, `d_h^R\times d`, weight-offset: (108, 0), title: [MatMul（压缩）], operator-width: 90pt),
     input-q: tensor(at(195, 1200), "input-q", `\mathbf{h}_t\in\mathbb{R}^{d}`.text, `d=`.text + str(d.hidden)),
     input-kv: tensor(at(645, 1200), "input-kv", `\mathbf{h}_j\in\mathbb{R}^{d}`.text, `d=`.text + str(d.hidden) + `,\quad j\le t`.text),
   )
@@ -280,7 +297,8 @@
     }
     for route in if routes == none { layout.routes } else { routes } {
       if route.from in ids and route.to in ids {
-        if focus != none and (route.from not in focus or route.to not in focus) {
+        // A changed endpoint changes this connection even if its other endpoint is shared.
+        if focus != none and route.from not in focus and route.to not in focus {
           mla-restyle(route.body, faded: true)
         } else { route.body }
       }

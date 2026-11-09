@@ -303,7 +303,7 @@
       key: "n_h",
       "context": "mla",
       preview: [
-        MLA/MHA 注意力头数；Llama 2-7B 为 32，DeepSeek-V3 为 128；不是 indexer 头数。
+        注意力头数；DeepSeek-V3 中 #mi(`n_h=128`)，Llama 2-7B 中 #mi(`n_h=32`)；区别于 Indexer 头数 #mi(`n_h^I=64`)。
       ],
     ),
     (
@@ -578,100 +578,72 @@
     (
       key: "q_ti^C",
       "context": "mla",
-      preview: [
-        token #mi(`t`)、第 #mi(`i`) 个头的内容 Query，维度 #mi(`d_{h}`)。
-      ],
+      preview: [DeepSeek-V3 第 #mi(`i`) 个头的内容 Query，维度 #mi(`d_{h}`)；堆叠框表示 #mi(`n_h=128`) 个头。],
     ),
     (
       key: "k_ti^C",
       "context": "mla",
-      preview: [
-        token #mi(`t`)、第 #mi(`i`) 个头的内容 Key，维度 #mi(`d_{h}`)。
-      ],
+      preview: [第 #mi(`i`) 个头的内容 Key，维度 #mi(`d_{h}`)；DeepSeek-V3 堆叠框表示 #mi(`n_h=128`) 个头。],
     ),
     (
       key: "k_ji^C",
       "context": "mla",
-      preview: [
-        历史位置 #mi(`j`)、第 #mi(`i`) 个头的内容 Key，维度 #mi(`d_{h}`)。
-      ],
+      preview: [DeepSeek-V3 历史位置 #mi(`j`) 第 #mi(`i`) 个头的内容 Key，维度 #mi(`d_{h}`)；#mi(`n_h=128`) 个头堆叠显示。],
     ),
     (
       key: "v_ti^C",
       "context": "mla",
-      preview: [
-        token #mi(`t`)、第 #mi(`i`) 个头的 Value，维度 #mi(`d_{h}`)；仅含内容部分。
-      ],
+      preview: [第 #mi(`i`) 个头的 Value，维度 #mi(`d_{h}`)，仅含内容部分；DeepSeek-V3 #mi(`n_h=128`) 个头堆叠显示。],
     ),
     (
       key: "v_ji^C",
       "context": "mla",
-      preview: [
-        历史位置 #mi(`j`)、第 #mi(`i`) 个头的 Value，维度 #mi(`d_{h}`)；由 #mi(`c_{j}^{KV}`) 上投影生成。
-      ],
+      preview: [历史位置 #mi(`j`) 第 #mi(`i`) 个头的 Value，维度 #mi(`d_{h}`)，由 #mi(`c_{j}^{KV}`) 上投影生成；堆叠头数 #mi(`n_h=128`)。],
     ),
     (
       key: "q_ti^R",
       "context": "mla",
-      preview: [
-        token #mi(`t`)、第 #mi(`i`) 个头的 RoPE Query，维度 #mi(`d_{h}^{R}`)。
-      ],
+      preview: [第 #mi(`i`) 个头的 RoPE Query，维度 #mi(`d_{h}^{R}`)；DeepSeek-V3 堆叠头数 #mi(`n_h=128`)。],
     ),
     (
       key: "q_ti",
       "context": "mla",
-      preview: [
-        token #mi(`t`)、第 #mi(`i`) 个头的完整 Query；MLA 为 #mi(`[q_{t,i}^{C};q_{t,i}^{R}]`)，维度 #mi(`d_{h}+d_{h}^{R}`)；Llama MHA 为 #mi(`d_{h}`)。
-      ],
+      preview: [MLA 的第 #mi(`i`) 个完整 Query 为 #mi(`[q_{t,i}^{C};q_{t,i}^{R}]`)，单头维度为 #mi(`d_h+d_h^R`)；DeepSeek-V3 图中按 #mi(`n_h=128`) 个头堆叠表示。Llama MHA 头维为 #mi(`d_h`)。],
     ),
     (
       key: "k_ti",
       "context": "mla",
-      preview: [
-        token #mi(`t`)、第 #mi(`i`) 个头的完整 Key；MLA 为 #mi(`[k_{t,i}^{C};k_{t}^{R}]`)，维度 #mi(`d_{h}+d_{h}^{R}`)。
-      ],
+      preview: [MLA 的第 #mi(`i`) 个完整 Key 为 #mi(`[k_{t,i}^{C};k_{t}^{R}]`)，单头维度为 #mi(`d_h+d_h^R`)；DeepSeek-V3 图中按 #mi(`n_h=128`) 个头堆叠表示。],
     ),
     (
       key: "k_ji",
       "context": "mla",
-      preview: [
-        历史位置 #mi(`j`)、第 #mi(`i`) 个头的完整 Key；MLA 维度 #mi(`d_{h}+d_{h}^{R}`)，Llama MHA 为 #mi(`d_{h}`)。
-      ],
+      preview: [历史位置 #mi(`j`) 的第 #mi(`i`) 个完整 Key，维度 #mi(`d_h+d_h^R`)；DeepSeek-V3 图中按 #mi(`n_h=128`) 个头堆叠表示。],
     ),
     (
       key: "v_ji",
       "context": "mla",
-      preview: [
-        Llama MHA 历史位置 #mi(`j`)、第 #mi(`i`) 个头的 Value，维度 #mi(`d_{h}`)，不施加 RoPE。
-      ],
+      preview: [Llama MHA 历史位置 #mi(`j`) 的第 #mi(`i`) 个头 Value，维度 #mi(`d_h`)，不施加 RoPE。],
     ),
     (
       key: "o_ti",
       "context": "mla",
-      preview: [
-        token #mi(`t`)、第 #mi(`i`) 个头的注意力输出，维度 #mi(`d_{h}`)；由历史 Value 按注意力权重加权求和。
-      ],
+      preview: [单头注意力输出向量 #mi(`\mathbf{o}_{t,i}\in\mathbb{R}^{d_h}`)；所有 #mi(`n_h=128`) 个头先拼接，再经 #mi(`W^O`) 投影。],
     ),
     (
       key: "tilde_o_ti",
       "context": "mla",
-      preview: [
-        第 #mi(`i`) 个头在压缩潜空间的中间输出 Σ\_j #mi(`A_{t,j,i} c_{j}^{KV}`)，维度 #mi(`d_{c}`)。
-      ],
+      preview: [压缩潜空间中的第 #mi(`i`) 个头中间输出 #mi(`\widetilde{\mathbf o}_{t,i}`)，维度 #mi(`d_c`)。],
     ),
     (
       key: "u_t",
       "context": "mla",
-      preview: [
-        多头注意力经输出投影后的结果，维度 #mi(`d`)；后文用作 FFN 输入。
-      ],
+      preview: [多头注意力经输出投影后的结果，维度 #mi(`d`)；后文用作 FFN 输入。],
     ),
     (
       key: "O_t",
       "context": "mla",
-      preview: [
-        比较表中的 token #mi(`t`) 多头注意力最终输出，维度 #mi(`d`)；由 #mi(`W^{O}`) 投影得到。
-      ],
+      preview: [比较表中的 token #mi(`t`) 多头注意力最终输出，维度 #mi(`d`)；由 #mi(`W^{O}`) 投影得到。],
     ),
     (
       key: "S_tji",
