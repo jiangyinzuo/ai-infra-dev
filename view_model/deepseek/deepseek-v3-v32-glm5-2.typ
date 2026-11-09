@@ -511,60 +511,60 @@ $
 
 ===== 第三步：V 侧的吸收------消掉显式 $vbold(v)^C$
 <第三步v-侧的吸收消掉显式-mathbfvc>
-第 $i$ 个头的输出：
+第 $i$ 个头对位置 $j$ 的注意力权重 $A_(t \, j \, i) in RR$ 是标量；$vbold(c)_j^(K V), tilde(vbold(o))_(t \, i) in RR^(d_c)$ 是压缩空间向量，$W_i^(U V) in RR^(d_h times d_c)$ 是上投影矩阵，$vbold(v)_(j \, i)^C, vbold(o)_(t \, i) in RR^(d_h)$。本模型维度为 $n_h=128,d_h=128,d_c=512,d=7168$。
 
 $
-  vbold(o)_(t \, i) = sum_(j lt.eq t) A_(t \, j \, i) thin vbold(v)_(j \, i)^C = sum_(j lt.eq t) A_(t \, j \, i) thin W_i^(U V) vbold(c)_j^(K V)
+vbold(o)_(t \, i) &= sum_(j=1)^t underbrace(A_(t \, j \, i), in RR) thin underbrace(vbold(v)_(j \, i)^C, in RR^(d_h)) \
+&= sum_(j=1)^t A_(t \, j \, i) thin underbrace(W_i^(U V), in RR^(d_h times d_c)) thin underbrace(vbold(c)_j^(K V), in RR^(d_c)) \
+&= sum_(j=1)^t W_i^(U V) (A_(t \, j \, i) thin vbold(c)_j^(K V)) \
+&= W_i^(U V) underbrace(sum_(j=1)^t A_(t \, j \, i) thin vbold(c)_j^(K V), in RR^(d_c)) in RR^(d_h).
 $
 
-因为 $W_i^(U V)$ 与 $j$ 无关，可以提出求和号：
+$A_(t \, j \, i)$ 是标量，所以可与矩阵 $W_i^(U V)$ 交换相乘顺序；固定头 $i$ 后，同一个 $W_i^(U V)$ 用于所有位置 $j$，因此可由线性分配律提出求和号。维度链为 $(d_h times d_c)(d_c times 1)=d_h times 1$；这不是交换两个矩阵的顺序。
+
+#strong[压缩空间中的中间输出];
 
 $
-  vbold(o)_(t \, i) = W_i^(U V) underbrace(sum_(j lt.eq t) A_(t \, j \, i) thin vbold(c)_j^(K V), tilde(vbold(o))_(t \, i) in RR^(d_c))
-$
-
-定义#strong[压缩空间中的中间输出];：
-
-$
-  #boxed[$ tilde(vbold(o))_(t \, i) = sum_(j lt.eq t) A_(t \, j \, i) thin vbold(c)_j^(K V) $]
+#boxed[$ tilde(vbold(o))_(t \, i) = sum_(j=1)^t A_(t \, j \, i) thin underbrace(vbold(c)_j^(K V), in RR^(d_c)) in RR^(d_c) $]
 $
 
 则：
 
 $
-  vbold(o)_(t \, i) = W_i^(U V) tilde(vbold(o))_(t \, i)
+vbold(o)_(t \, i) = underbrace(W_i^(U V), in RR^(d_h times d_c)) underbrace(tilde(vbold(o))_(t \, i), in RR^(d_c)) in RR^(d_h).
 $
 
 把所有头拼起来：
 
 $
-  \[ vbold(o)_(t \, 1) ; dots.h ; vbold(o)_(t \, n_h) \] = W_(upright("blk"))^(U V) thin \[ tilde(vbold(o))_(t \, 1) ; dots.h ; tilde(vbold(o))_(t \, n_h) \]
+underbrace(mat(delim: "[", vbold(o)_(t \, 1);dots.v;vbold(o)_(t \, n_h)), in RR^(n_h d_h)) = underbrace(W_(upright("blk"))^(U V), in RR^(n_h d_h times n_h d_c)) underbrace(mat(delim: "[", tilde(vbold(o))_(t \, 1);dots.v;tilde(vbold(o))_(t \, n_h)), in RR^(n_h d_c)).
 $
 
 其中：
 
 $
-  W_(upright("blk"))^(U V) = "diag" \( W_1^(U V) \, dots.h \, W_(n_h)^(U V) \) in RR^(n_h d_h times n_h d_c)
+W_(upright("blk"))^(U V) = upright("diag") (W_1^(U V),dots.c,W_(n_h)^(U V)) in RR^(n_h d_h times n_h d_c), quad W_i^(U V) in RR^(d_h times d_c).
 $
 
-$"diag"$是分块对角矩阵。
+$upright("diag")$ 是分块对角矩阵。
 
 再乘输出投影 $W^O$：
 
 $
-  vbold(u)_t = W^O \[ vbold(o)_(t \, 1) ; dots.h ; vbold(o)_(t \, n_h) \] = W^O W_(upright("blk"))^(U V) thin \[ tilde(vbold(o))_(t \, 1) ; dots.h ; tilde(vbold(o))_(t \, n_h) \]
+vbold(u)_t &= underbrace(W^O, in RR^(d times n_h d_h)) underbrace(mat(delim: "[", vbold(o)_(t \, 1);dots.v;vbold(o)_(t \, n_h)), in RR^(n_h d_h)) \
+&= W^O W_(upright("blk"))^(U V) underbrace(mat(delim: "[", tilde(vbold(o))_(t \, 1);dots.v;tilde(vbold(o))_(t \, n_h)), in RR^(n_h d_c)) in RR^d.
 $
 
 定义#strong[吸收后的输出投影];：
 
 $
-  #boxed[$ W^(O \, U V) = W^O W_(upright("blk"))^(U V) in RR^(d times n_h d_c) $]
+#boxed[$ W^(O \, U V) = W^O W_(upright("blk"))^(U V) in RR^(d times n_h d_c) $]
 $
 
 于是：
 
 $
-  vbold(u)_t = W^(O \, U V) thin \[ tilde(vbold(o))_(t \, 1) ; dots.h ; tilde(vbold(o))_(t \, n_h) \]
+vbold(u)_t = W^(O \, U V) mat(delim: "[", tilde(vbold(o))_(t \, 1);dots.v;tilde(vbold(o))_(t \, n_h)) in RR^d.
 $
 
 #strong[关键变化];：推理时不再需要显式构造 $vbold(v)_(j \, i)^C = W_i^(U V) vbold(c)_j^(K V)$。注意力加权直接在压缩潜空间完成，得到 $tilde(vbold(o))_(t \, i)$，最后用预计算的 $W^(O \, U V)$ 一次性投影回模型维度。
@@ -1290,6 +1290,8 @@ $
 
 $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个头进行 QK 点积的有效维度];，由 $512$ 维 KV 潜向量与 $64$ 维 RoPE 分量拼接而成；不是未吸收时的 $d_h + d_h^R = 128 + 64 = 192$。吸收后的 Value 聚合维度为 $d_V = d_c = 512$。
 
+下表每次乘加计 $2$ FLOPs。每个位置 $t$ 只有 $1$ 条 Query，可见 KV 数为 $t$（稀疏时为 $m_t$）；Prefill 将 $t=1,dots.h,n$ 的开销相加，Decode 只计算当前 $t=n$ 一步。
+
 #table(
   columns: (25%, 25%, 25%, 25%),
   align: (auto,auto,auto,auto,),
@@ -1303,12 +1305,15 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $B_t in RR^(n_h^I times t) = RR^(64 times t)$
   ],
   [
-    $2 P n_h^I d_h^I$ \
+    $sum_(t=1)^n 2 n_h^I (1 times t) d_h^I$ \
+    $= 2 n_h^I d_h^I sum_(t=1)^n t$ \
+    $= 2 P n_h^I d_h^I$ \
     $= 2 P times 64 times 128$ \
     $= 16384 P tilde.eq #boxed[$ 8192 thin n^2 $]$
   ],
   [
-    $2 n n_h^I d_h^I$ \
+    $2 n_h^I (1 times n) d_h^I$ \
+    $= 2 n n_h^I d_h^I$ \
     $= 2 n times 64 times 128$ \
     $= #boxed[$ 16384 thin n $]$
   ],
@@ -1324,13 +1329,16 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $S_t in RR^(n_h times t) = RR^(128 times t)$
   ],
   [
-    $2 P n_h d_K$ \
+    $sum_(t=1)^n 2 n_h (1 times t) d_K$ \
+    $= 2 n_h d_K sum_(t=1)^n t$ \
+    $= 2 P n_h d_K$ \
     $= 2 P times 128 times \( 512 + 64 \)$ \
     $= 147456 P$ \
     $tilde.eq #boxed[$ 73728 thin n^2 $]$
   ],
   [
-    $2 n n_h d_K$ \
+    $2 n_h (1 times n) d_K$ \
+    $= 2 n n_h d_K$ \
     $= 2 n times 128 times \( 512 + 64 \)$ \
     $= #boxed[$ 147456 thin n $]$
   ],
@@ -1343,13 +1351,16 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $tilde(O)_t in RR^(n_h times d_V) = RR^(128 times 512)$
   ],
   [
-    $2 P n_h d_V$ \
+    $sum_(t=1)^n 2 n_h (1 times t) d_V$ \
+    $= 2 n_h d_V sum_(t=1)^n t$ \
+    $= 2 P n_h d_V$ \
     $= 2 P times 128 times 512$ \
     $= 131072 P$ \
     $tilde.eq #boxed[$ 65536 thin n^2 $]$
   ],
   [
-    $2 n n_h d_V$ \
+    $2 n_h (1 times n) d_V$ \
+    $= 2 n n_h d_V$ \
     $= 2 n times 128 times 512$ \
     $= #boxed[$ 131072 thin n $]$
   ],
@@ -1357,12 +1368,15 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
   [#strong[Full MLA 合计];],
   [Full QK 点积 + Full Value 聚合],
   [
-    $\( 147456 + 131072 \) P$ \
+    $sum_(t=1)^n 2 n_h (1 times t) (d_K + d_V)$ \
+    $= 2 n_h (d_K + d_V) P$ \
+    $= (147456 + 131072) P$ \
     $= 278528 P$ \
     $tilde.eq #boxed[$ 139264 thin n^2 $]$
   ],
   [
-    $\( 147456 + 131072 \) n$ \
+    $2 n_h (1 times n) (d_K + d_V)$ \
+    $= (147456 + 131072) n$ \
     $= #boxed[$ 278528 thin n $]$
   ],
 
@@ -1377,13 +1391,16 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $S_t in RR^(n_h times m_t) = RR^(128 times m_t)$
   ],
   [
-    $2 S n_h d_K$ \
+    $sum_(t=1)^n 2 n_h m_t d_K$ \
+    $= 2 n_h d_K sum_(t=1)^n m_t$ \
+    $= 2 S n_h d_K$ \
     $= 2 S times 128 times \( 512 + 64 \)$ \
     $= 147456 S$ \
     $tilde.eq #boxed[$ 147456 thin n k $]$
   ],
   [
-    $2 m n_h d_K$ \
+    $2 n_h (1 times m) d_K$ \
+    $= 2 m n_h d_K$ \
     $= 2 m times 128 times \( 512 + 64 \)$ \
     $= 147456 m$ \
     $=^(m = k) #boxed[$ 147456 thin k $]$
@@ -1397,13 +1414,16 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $tilde(O)_t in RR^(n_h times d_V) = RR^(128 times 512)$
   ],
   [
-    $2 S n_h d_V$ \
+    $sum_(t=1)^n 2 n_h m_t d_V$ \
+    $= 2 n_h d_V sum_(t=1)^n m_t$ \
+    $= 2 S n_h d_V$ \
     $= 2 S times 128 times 512$ \
     $= 131072 S$ \
     $tilde.eq #boxed[$ 131072 thin n k $]$
   ],
   [
-    $2 m n_h d_V$ \
+    $2 n_h (1 times m) d_V$ \
+    $= 2 m n_h d_V$ \
     $= 2 m times 128 times 512$ \
     $= 131072 m$ \
     $=^(m = k) #boxed[$ 131072 thin k $]$
@@ -1416,12 +1436,15 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     \+ Sparse Value 聚合
   ],
   [
-    $16384 P + 147456 S + 131072 S$ \
+    $sum_(t=1)^n 2 (n_h^I t d_h^I + n_h m_t (d_K + d_V))$ \
+    $= 2 P n_h^I d_h^I + 2 S n_h (d_K + d_V)$ \
+    $= 16384 P + 147456 S + 131072 S$ \
     $= 16384 P + 278528 S$ \
     $tilde.eq #boxed[$ 8192 thin n^2 + 278528 thin n k $]$
   ],
   [
-    $16384 n + 147456 m + 131072 m$ \
+    $2 (n_h^I n d_h^I + n_h m (d_K + d_V))$ \
+    $= 16384 n + 147456 m + 131072 m$ \
     $= 16384 n + 278528 m$ \
     $=^(m = k) #boxed[$ 16384 thin n + 278528 thin k $]$
   ],
