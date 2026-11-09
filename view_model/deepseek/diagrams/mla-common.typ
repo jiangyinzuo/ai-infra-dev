@@ -15,7 +15,7 @@
 #let query-latent-width = 220pt
 #let mla-node-symbols = (
   output: ("u_t", "d", "t"), heads: ("o_ti", "n_h", "d_h", "t"),
-  head-out: ("o_ti", "d_h", "t", "i"), attention: ("A_tji", "t", "j", "i"), scores: ("S_tji", "t", "j", "i"),
+  head-out: ("o_ti", "d_h", "t", "i"),
   attention-core: ("Attention", "q_ti", "k_ji", "v_ji^C", "d_h", "d_h^R", "t", "j", "i"),
   q: ("q_ti", "q_ti^C", "q_ti^R", "d_h", "d_h^R", "t", "i"), k: ("k_ji", "k_ji^C", "k_j^R", "d_h", "d_h^R", "j", "i"),
   qc: ("q_ti^C", "d_h", "t", "i"), qr: ("q_ti^R", "d_h^R", "t", "i"), kc: ("k_ji^C", "d_h", "j", "i"),
@@ -23,8 +23,6 @@
   cq: ("c_t^Q", "d_c'", "t"), ckv: ("c_j^KV", "d_c", "j"),
   input-q: ("h_t", "d", "t"), input-kv: ("h_j", "d", "j", "t"),
   heads-concat: ("concat", "n_h"), q-concat: ("concat",), k-concat: ("concat",),
-  weighted-sum: ("A_tji", "v_ji^C", "j", "t", "i"),
-  qk: ("q_ti", "k_ji", "T", "d_h", "d_h^R", "sqrt", "t", "j", "i"),
   q-rope: ("RoPE", "t"), k-rope: ("RoPE", "j"),
   w-out-proj: ("W^O", "d", "n_h", "d_h"), w-q-up: ("W_i^UQ", "d_h", "d_c'", "i"),
   w-qr-proj: ("W_i^QR", "d_h^R", "d_c'", "i"), w-k-up: ("W_i^UK", "d_h", "d_c", "i"),
@@ -151,10 +149,6 @@
     head-out: tensor(at(415, 260 + mla-output-shift), "head-out", `\mathbf{o}_{t,i}\in\mathbb{R}^{d_h}`.text, `d_h=`.text + str(d.content)),
     attention-core: operator(at(415, attention-row), "attention-core", [Attention],
       formula: `\sum_{j\le t}\operatorname{Softmax}_{j\le t}\!\left(\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}\right)\mathbf v_{j,i}^C`, width: 340pt),
-    weighted-sum: operator(at(415, 325 + mla-output-shift), "weighted-sum", [Value 加权聚合], formula: `\sum_{j=1}^{t}A_{t,j,i}\mathbf{v}_{j,i}^{C}`, width: 240pt),
-    attention: tensor(at(415, 395 + mla-output-shift), "attention", `[A_{t,1,i},\ldots,A_{t,t,i}]`, `\in\mathbb{R}^{t}`, width: 190pt),
-    scores: tensor(at(415, 525), "scores", `[S_{t,1,i},\ldots,S_{t,t,i}]`, `\in\mathbb{R}^{t}`, width: 190pt),
-    qk: operator(at(415, 595), "qk", [QK 点积与缩放], formula: `\frac{\mathbf{q}_{t,i}^{T}\mathbf{k}_{j,i}}{\sqrt{d_h+d_h^R}}`, width: 240pt),
     q: tensor(at(185, attention-input-row), "q", `\mathbf{q}_{t,i}=[\mathbf{q}_{t,i}^{C};\mathbf{q}_{t,i}^{R}]`.text, `\in\mathbb{R}^{d_h+d_h^R}=\mathbb{R}^{`.text + str(full-head) + `}`.text, width: 230pt),
     k: tensor(at(645, attention-input-row), "k", `\mathbf{k}_{j,i}=[\mathbf{k}_{j,i}^{C};\mathbf{k}_{j}^{R}]`.text, `\in\mathbb{R}^{d_h+d_h^R}=\mathbb{R}^{`.text + str(full-head) + `}`.text, width: 230pt),
     q-concat: operator(at(185, 730), "q-concat", [Concat], width: 90pt),
@@ -204,10 +198,6 @@
     route("kc", "k-concat", edge(<kc.north>, at(560, 760), at(620, 760), at(620, 744.5), "-|>")),
     route("kr", "k-concat", edge(<kr.north>, at(730, 760), at(670, 760), at(670, 744.5), "-|>")),
     route("k-concat", "k", edge(<k-concat>, <k>, "-|>")),
-    route("qk", "scores", edge(<qk>, <scores>, "-|>")),
-    route("attention", "weighted-sum", edge(<attention>, <weighted-sum>, "-|>")),
-    route("v", "weighted-sum", edge(<v.north>, at(900, 325 + mla-output-shift), <weighted-sum.east>, "-|>")),
-    route("weighted-sum", "head-out", edge(<weighted-sum>, <head-out>, "-|>")),
     route("q", "attention-core", edge(<q.north>, at(185, attention-row), <attention-core.west>, "-|>")),
     route("k", "attention-core", edge(<k.north>, at(645, attention-input-row - 40), at(415, attention-input-row - 40), <attention-core.south>, "-|>")),
     route("v", "attention-core", edge(<v.north>, at(900, attention-row), <attention-core.east>, "-|>")),
@@ -220,15 +210,80 @@
   (paint: paint, nodes: nodes, routes: routes)
 }
 
+// Restyle Fletcher metadata, not a second set of drawn nodes. Geometry and hit regions stay shared.
+#let mla-restyle(body, reference: none, faded: false) = {
+  let source = if reference == none { () } else { (reference + []).children }
+  let fade-stroke(value) = {
+    if value == none { return none }
+    let spec = if value == auto { (paint: rgb("485466"), thickness: 0.9pt) }
+      else if type(value) == dictionary { value }
+      else if type(value) == stroke { (paint: value.paint, thickness: value.thickness, cap: value.cap,
+        join: value.join, dash: value.dash, miter-limit: value.miter-limit) }
+      else { (paint: value, thickness: 0.9pt) }
+    spec.paint = spec.at("paint", default: rgb("485466")).transparentize(60%)
+    stroke(..spec)
+  }
+  for item in (body + []).children {
+    assert(item.func() == metadata)
+    let record = item.value
+    if record.class == "node" and reference != none {
+      let original = source.find(item => item.value.class == "node" and item.value.name == record.name)
+      assert(original != none, message: "Replacement must reuse an existing MLA node name")
+      for key in ("pos", "size", "radius", "shape", "corner-radius", "inset", "outset", "extrude", "snap", "layer") {
+        record.insert(key, original.value.at(key))
+      }
+      if auto in record.size {
+        let inset = original.value.inset
+        let inner = original.value.size.map(size => if size == auto { auto } else { size - 2 * inset })
+        let measure-original() = {
+          let label = [#set text(font: ("Noto Sans CJK SC", "New Computer Modern"), size: 10pt)
+            #set par(leading: 4pt)
+            #original.value.label]
+          measure(box(width: inner.at(0), height: inner.at(1), label))
+        }
+        let measured = measure-original()
+        record.size = (if record.size.at(0) == auto { measured.width + 2 * inset } else { record.size.at(0) },
+          if record.size.at(1) == auto { measured.height + 2 * inset } else { record.size.at(1) })
+      }
+      if record.label.func() == link {
+        record.label = link(record.label.dest, box(width: record.size.at(0), height: record.size.at(1)))
+      }
+    }
+    if faded {
+      if record.class == "node" {
+        if type(record.fill) == color { record.fill = record.fill.transparentize(60%) }
+        record.stroke = fade-stroke(record.stroke)
+        let label = record.label
+        record.label = [#show text: it => context {
+          let paint = text.fill
+          // Explicit MiTeX math colors may already carry the comparison alpha.
+          text(fill: if paint.components().last() <= 40% { paint } else { paint.transparentize(60%) }, it)
+        }
+          #label]
+      } else if not record.is-crossing-background {
+        record.stroke = fade-stroke(record.stroke)
+      }
+    }
+    metadata(record)
+  }
+}
+
 // Horizontal bounds keep extracted paths aligned with the original, even when most nodes are absent.
 // Existing nodes occupy x=-63..1058; adding a right-hand branch expands the SVG without moving them.
-#let mla-render(layout, ids: none, replace: (:), extra: [], routes: none, bounds-y: none) = {
-  // Decomposed attention nodes remain available only to explicit absorption-path excerpts.
-  let ids = if ids == none { layout.nodes.keys().filter(id => id not in ("qk", "scores", "attention", "weighted-sum")) } else { ids }
+#let mla-render(layout, ids: none, replace: (:), extra: [], routes: none, bounds-y: none, focus: none) = {
+  let ids = if ids == none { layout.nodes.keys() } else { ids }
   mla-figure({
-    for id in ids { replace.at(id, default: layout.nodes.at(id)) }
+    for id in ids {
+      let original = layout.nodes.at(id)
+      let body = if id in replace { mla-restyle(replace.at(id), reference: original) } else { original }
+      if focus != none and id not in focus { mla-restyle(body, faded: true) } else { body }
+    }
     for route in if routes == none { layout.routes } else { routes } {
-      if route.from in ids and route.to in ids { route.body }
+      if route.from in ids and route.to in ids {
+        if focus != none and (route.from not in focus or route.to not in focus) {
+          mla-restyle(route.body, faded: true)
+        } else { route.body }
+      }
     }
     if bounds-y != none {
       let at = layout.paint.at

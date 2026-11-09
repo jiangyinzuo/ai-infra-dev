@@ -430,7 +430,7 @@ MLA 将每个 token 的 KV Cache 从标准多头注意力下的 $n_h \( 2 d_h + 
 ==== MLA 矩阵吸收
 <mla-矩阵吸收>
 
-只摘取受吸收影响的两条路径；每组左图为吸收前，右图为吸收后。保留第一张 MLA 图的原节点位置、形状和尺寸，RoPE 分支不变，此处不重复绘制。
+每组左图为吸收前，右图为吸收后，均复用完整 MLA 图。实色突出本组比较路径；其余模块（包括 RoPE）以原色半透明显示，坐标、尺寸、形状及布局与未吸收图完全一致。吸收后只替换相关权重、激活和连线，已消去的上投影不再绘制。
 
 #html.elem("div", attrs: (class: "model-diagram diagram-comparison"), {
   html.elem("figure", {
@@ -569,7 +569,7 @@ $
 
 #strong[关键变化];：推理时不再需要显式构造 $vbold(v)_(j \, i)^C = W_i^(U V) vbold(c)_j^(K V)$。注意力加权直接在压缩潜空间完成，得到 $tilde(vbold(o))_(t \, i)$，最后用预计算的 $W^(O \, U V)$ 一次性投影回模型维度。
 
-===== 第四步：NoPE 情形下的完全吸收
+===== 第四步：NoPE 情形下的完全吸收（实际都是RoPE）
 <第四步nope-情形下的完全吸收>
 若无 RoPE（即去掉 $vbold(q)_t^R \, vbold(k)_j^R$），注意力权重为：
 
@@ -1077,6 +1077,10 @@ all buffers meta: True
 <deepseek-sparse-attention>
 
 #html.elem("div", attrs: (class: "model-diagram"), html.frame(dsa-diagram()))
+
+矩阵吸收后：MLA 同时吸收 QK 内容投影与 Value / 输出投影；Indexer 将固定缩放吸收到头权重投影。半透明模块保持原图位置与尺寸。LayerNorm、部分 RoPE、ReLU 不参与静态矩阵合并。
+
+#html.elem("div", attrs: (class: "model-diagram"), html.frame(dsa-diagram(absorbed: true)))
 
 稀疏注意力，改变的是每个Query token在计算注意力时，所能访问的Key Value候选集合的大小。
 

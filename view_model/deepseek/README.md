@@ -19,6 +19,14 @@ HF_ENDPOINT=https://hf-mirror.com python deepseek_v31_class.py
 HF_HUB_OFFLINE=1 python deepseek_v31_class.py
 ```
 
+## HTML 实时预览
+
+```bash
+typst watch --features html --port 3000 deepseek-v3-v32-glm5-2.typ deepseek-v3-v32-glm5-2.html
+```
+
+服务启动后访问 `http://localhost:3000`。
+
 ## 导出 SVG
 
 ```bash
@@ -29,5 +37,6 @@ for path in qk value; do
   done
 done
 typst compile diagrams/deepseek-dsa.typ diagrams/deepseek-dsa.svg
+typst compile diagrams/deepseek-dsa-absorption.typ diagrams/deepseek-dsa-absorption.svg
 ```
 

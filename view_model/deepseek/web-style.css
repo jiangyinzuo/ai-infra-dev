@@ -22,7 +22,7 @@ blockquote { margin-inline: 0; padding-inline: 16px; border-inline-start: 3px so
 .model-diagram { margin: 1.2em 0; max-width: 100%; overflow-x: auto; background: white; container-type: inline-size; }
 /* One scale for every SVG: wide additions scroll rather than shrinking existing MLA nodes. */
 .model-diagram svg { display: block; width: calc(var(--diagram-width) * max(1100px, 100cqw) / var(--diagram-reference-width)) !important; max-width: none; height: auto !important; }
-.diagram-comparison { display: flex; align-items: flex-start; gap: 24px; }
+.diagram-comparison { display: flex; align-items: flex-start; gap: 8px; }
 .diagram-comparison > figure { flex: 0 0 auto; margin: 0; }
 .diagram-comparison figcaption { margin-bottom: 12px; font-weight: 650; }
 .model-diagram [data-diagram-node] { cursor: help; }

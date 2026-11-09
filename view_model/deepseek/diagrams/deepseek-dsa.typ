@@ -1,10 +1,11 @@
 #import "@preview/fletcher:0.5.8": node, edge
 #import "@preview/mitex:0.2.7": mi
-#import "mla-common.typ": mla-layout, mla-render, attention-row, attention-input-row, query-latent-width, mla-output-shift
+#import "mla-common.typ": mla-layout, mla-render, mla-restyle, attention-row, attention-input-row, query-latent-width, mla-output-shift
+#import "deepseek-absorption.typ": mla-absorption-changes
 
 #set page(width: auto, height: auto, margin: 14pt, fill: white)
 
-#let dsa-diagram() = context {
+#let dsa-diagram(absorbed: false) = context {
   let symbols = (
     attention-core: ("SparseAttention", "q_ti", "k_ji", "v_ji^C", "d_h", "d_h^R", "calS_t", "t", "j", "i"),
     w-index-q-proj: ("W^IQ", "n_h^I", "d_h^I", "d_c'"),
@@ -37,12 +38,15 @@
     ])
   let p = layout.paint
   let (at, tensor, operator, parameter, projection, matmul-rmsnorm, wire) = (p.at, p.tensor, p.operator, p.parameter, p.projection, p.matmul-rmsnorm, p.wire)
+  // MiTeX's explicit math colors need their alpha before conversion; metadata handles the frames.
+  let colored(tex, hex) = raw("\\color[HTML]{" + hex + if absorbed { "66" } else { "" } + "}{" + tex.text + "}")
   let replace = (
-    input-q: tensor(at(195, 1200), "input-q", `\color{red}{\mathbf{h}_t\in\mathbb{R}^{d}}`, `\color{red}{d=7168}`),
-    input-kv: tensor(at(645, 1200), "input-kv", `\color{red}{\mathbf{h}_j\in\mathbb{R}^{d}}`, `\color{red}{d=7168,\quad j\le t}`),
-    cq: tensor(at(195, 1025), "cq", `\mathrm{Latent}\ {\color{red}\mathbf{c}_t^Q\in\mathbb{R}^{d_c^{\prime}}}`, `\color{red}{d_c^{\prime}=1536}`, width: query-latent-width),
-    q-down: matmul-rmsnorm(195, 1115, "q-down", `\color{red}{W^{DQ}}`, 1536, 7168, `\color{red}{d_c^{\prime}\times d}`,
-      `\color{red}{\boldsymbol{\gamma}^{Q}}`, `\color{red}{d_c^{\prime}=1536}`),
+    input-q: tensor(at(195, 1200), "input-q", colored(`\mathbf h_t\in\mathbb R^d`, "ff0000"), colored(`d=7168`, "ff0000")),
+    input-kv: tensor(at(645, 1200), "input-kv", colored(`\mathbf h_j\in\mathbb R^d`, "ff0000"), colored(`d=7168,\quad j\le t`, "ff0000")),
+    cq: tensor(at(195, 1025), "cq", `\mathrm{Latent}\ `.text + colored(`\mathbf c_t^Q\in\mathbb R^{d_c^{\prime}}`, "ff0000").text,
+      colored(`d_c^{\prime}=1536`, "ff0000"), width: query-latent-width),
+    q-down: matmul-rmsnorm(195, 1115, "q-down", colored(`W^{DQ}`, "ff0000"), 1536, 7168, colored(`d_c^{\prime}\times d`, "ff0000"),
+      colored(`\boldsymbol\gamma^Q`, "ff0000"), colored(`d_c^{\prime}=1536`, "ff0000")),
     attention-core: operator(at(415, attention-row), "attention-core", [Sparse Attention],
       formula: `\sum_{j\in\mathcal S_t}\operatorname{Softmax}_{j\in\mathcal S_t}\!\left(\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}\right)\mathbf v_{j,i}^C`, width: 340pt),
   )
@@ -61,7 +65,7 @@
     ], width: 980pt, stroke: none, inset: 4pt, snap: false)
 
     // CSS named green is #008000; MiTeX's named green is the brighter #00ff00.
-    projection(columns.query, rows.projection, "index-q-proj", `\color[HTML]{008000}{W^{IQ}}`, 8192, 1536,
+    projection(columns.query, rows.projection, "index-q-proj", colored(`W^{IQ}`, "008000"), 8192, 1536,
       `n_h^I d_h^I\times d_c^{\prime}`, weight-offset: (-145, 0), weight-width: 130pt)
     operator(at(columns.query, rows.latent), "index-reshape", [按头 Reshape],
       formula: `\tilde{\mathbf{q}}_{t,i}^I=[\operatorname{reshape}_{64\times128}(\cdot)]_{i,:}`, width: 260pt)
@@ -70,10 +74,10 @@
     tensor(at(columns.query, rows.ready), "index-q", `\mathbf{q}_{t,i}^I\in\mathbb{R}^{128}`,
       `i=1,\ldots,n_h^I=64`, width: 210pt)
 
-    parameter(at(columns.key - 175, rows.projection - 35), "w-index-k-proj", `\color[HTML]{008000}{W^{IK}}`, `128\times7168`, width: 130pt)
-    parameter(at(columns.key - 175, rows.projection), "g-index-k-proj", `\color[HTML]{008000}{\boldsymbol{\gamma}^{I}}`,
+    parameter(at(columns.key - 175, rows.projection - 35), "w-index-k-proj", colored(`W^{IK}`, "008000"), `128\times7168`, width: 130pt)
+    parameter(at(columns.key - 175, rows.projection), "g-index-k-proj", colored(`\boldsymbol\gamma^I`, "008000"),
       `d_h^I=128`, width: 130pt)
-    parameter(at(columns.key - 175, rows.projection + 35), "b-index-k-proj", `\color[HTML]{008000}{\boldsymbol{\beta}^{I}}`,
+    parameter(at(columns.key - 175, rows.projection + 35), "b-index-k-proj", colored(`\boldsymbol\beta^I`, "008000"),
       `d_h^I=128`, width: 130pt)
     operator(at(columns.key, rows.projection), "index-k-proj", [MatMulLayerNorm], width: 135pt, keys: ("MatMulLayerNorm",))
     edge(<w-index-k-proj.east>, at(columns.key - 67.5, rows.projection - 35), <index-k-proj.north-west>, "--|>", stroke: rgb("79517d") + 0.8pt)
@@ -83,10 +87,10 @@
     operator(at(columns.key, rows.transform), "index-k-rope", [部分 RoPE · 前 64 维],
       formula: `\mathbf{k}_j^I=P_j^I\tilde{\mathbf{k}}_j^I`, width: 220pt)
     tensor(at(columns.key, rows.ready), "index-k", `\mathbf{k}_j^I\in\mathbb{R}^{128}`,
-      `\text{全部 }64\text{ 个 indexer 头共享}`, cache: true, width: 225pt)
+      `\text{全部 }64\text{ 个 indexer 头共享，类似MQA但没有Value}`, cache: true, width: 225pt)
 
     // Place this weight below the projection to clear MLA's Value path as Indexer moves left.
-    parameter(at(columns.weights - 145, rows.projection + 135), "w-index-weight-proj", `\color[HTML]{008000}{W^{IW}}`,
+    parameter(at(columns.weights - 145, rows.projection + 135), "w-index-weight-proj", colored(`W^{IW}`, "008000"),
       `n_h^I\times d=64\times7168`, width: 130pt)
     operator(at(columns.weights, rows.projection), "index-weight-proj", [MatMul], width: 68pt, keys: ("MatMul",))
     edge(<w-index-weight-proj.east>, at(columns.weights - 34, rows.projection + 135), <index-weight-proj.west>, "--|>", stroke: rgb("79517d") + 0.8pt)
@@ -131,7 +135,60 @@
     // Selected positions are an ordinary fourth input, not a separate K/V control bus.
     wire(<index-selected.west>, at(585, attention-row - 240), <attention-core.north-east>, "-|>")
   }
-  mla-render(layout, replace: replace, extra: extra, bounds-y: (mla-output-shift - 14.5, 1223))
+  if not absorbed {
+    mla-render(layout, replace: replace, extra: extra, bounds-y: (mla-output-shift - 14.5, 1223))
+  } else {
+    let change = mla-absorption-changes(layout, paths: ("qk", "value"), sparse: true)
+    let caption = (layout.nodes.note + []).children.first().value
+    caption.label = align(left)[
+      *DSA · MLA 矩阵吸收后* \
+      #mi(`W_i^{QK}=(W_i^{UQ})^TW_i^{UK}`) \
+      #mi(`W^{O,UV}=W^O\operatorname{diag}(W_i^{UV})`) \
+      内容打分与 Value 聚合均在 512 维潜空间完成。 \
+      选中位置仍由 Indexer 输入 Sparse Attention。 \
+      RoPE 不变，Softmax 缩放仍为 #mi(`1/\sqrt{192}`)。
+    ]
+    change.replace.insert("note", metadata(caption))
+    change.focus += ("note",)
+    // Only fixed head-weight scaling can be preabsorbed here; do not cross LayerNorm or RoPE.
+    let objects = (extra + []).children
+    let removed = ("index-a", "preview-index-a", "index-scale", "preview-index-scale")
+    let weight-names = ("w-index-weight-proj", "preview-w-index-weight-proj")
+    let focus = ("w-index-weight-proj", "preview-w-index-weight-proj", "index-weight-proj", "preview-index-weight-proj", "index-w", "preview-index-w")
+    let original-weight = objects.filter(item => item.value.class == "node" and item.value.name in weight-names.map(label)).join() + []
+    let scaled-weight = parameter(at(columns.weights - 145, rows.projection + 135), "w-index-weight-proj",
+      `\color[HTML]{008000}{\bar{W}^{IW}}`, `64\times7168`, width: 130pt, keys: ("Wbar^IW", "n_h^I", "d"))
+    let transformed = {
+      for item in objects {
+        let record = item.value
+        if record.class == "node" {
+          if record.name not in (removed + weight-names).map(label) {
+            let source = item
+            let changed-caption = record.name == none and record.size.at(0) == 980pt
+            if changed-caption {
+              record.label = align(left)[
+                *Lightning Indexer · 固定缩放吸收* \
+                #mi(`\bar{W}^{IW}=W^{IW}/\sqrt{n_h^I d_h^I}`) \
+                #mi(`\mathbf w_t^I=\bar{W}^{IW}\mathbf h_t`)；移除独立缩放步骤。 \
+                LayerNorm、部分 RoPE、ReLU 保持不变。 \
+                不能把 Query / Key 投影跨这些步骤静态合并。 \
+                本图忽略浮点舍入与量化误差。
+              ]
+              source = mla-restyle(metadata(record), reference: item)
+            }
+            if changed-caption or record.name in focus.map(label) { source } else { mla-restyle(source, faded: true) }
+          }
+        } else if not record.vertices.any(vertex => vertex in (label("index-a"), label("index-scale"))) {
+          if record.vertices.any(vertex => vertex == <w-index-weight-proj.east>) { item }
+          else { mla-restyle(item, faded: true) }
+        }
+      }
+      mla-restyle(scaled-weight, reference: original-weight)
+      edge(<index-weight-proj>, <index-w>, "-|>")
+    }
+    mla-render(layout, ids: change.ids, replace: replace + change.replace, routes: change.routes,
+      extra: transformed, focus: change.focus, bounds-y: (mla-output-shift - 14.5, 1223))
+  }
 }
 
 #dsa-diagram()

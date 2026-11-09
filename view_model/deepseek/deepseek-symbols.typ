@@ -66,6 +66,36 @@
       ],
     ),
     (
+      key: "AttentionQKAbsorbed",
+      "context": "mla",
+      label: [Attention],
+      preview: [
+        QK 内容矩阵吸收后的注意力：#mi(`W_i^{QK}=(W_i^{UQ})^TW_i^{UK}`)，不再显式构造历史内容 Key。
+
+        #mi(`\widehat{\mathbf q}_{t,i}^C=(W_i^{QK})^T\mathbf c_t^Q`)
+        \ #mi(`\widehat{\mathbf q}_{t,i}=[\widehat{\mathbf q}_{t,i}^C;\mathbf q_{t,i}^R]`)
+        \ #mi(`\widehat{\mathbf k}_j=[\mathbf c_j^{KV};\mathbf k_j^R]`)
+        \ #mi(`s_j=\frac{(\widehat{\mathbf q}_{t,i}^C)^T\mathbf c_j^{KV}+(\mathbf q_{t,i}^R)^T\mathbf k_j^R}{\sqrt{d_h+d_h^R}}`)
+        \ #mi(`\mathbf o_{t,i}=\sum_{j\le t}\operatorname{Softmax}_{j\le t}(s_j)\mathbf v_{j,i}^C`)
+
+        内容维度由 128 变为 512，拼接 RoPE 后为 576；缩放仍为原模型的 #mi(`1/\sqrt{192}`)，不是 #mi(`1/\sqrt{576}`)。RoPE 与 Value 分支不变。
+      ],
+    ),
+    (
+      key: "AttentionValueAbsorbed",
+      "context": "mla",
+      label: [Attention],
+      preview: [
+        Value / 输出矩阵吸收后的注意力：QK 与 RoPE 不变，聚合输入换成 512 维 KV latent。
+
+        #mi(`s_j=\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}`)
+        \ #mi(`\widetilde{\mathbf o}_{t,i}=\sum_{j\le t}\operatorname{Softmax}_{j\le t}(s_j)\mathbf c_j^{KV}`)
+        \ #mi(`\mathbf u_t=W^{O,UV}[\widetilde{\mathbf o}_{t,1};\ldots;\widetilde{\mathbf o}_{t,n_h}]`)
+
+        #mi(`W^{O,UV}=W^O\operatorname{diag}(W_1^{UV},\ldots,W_{n_h}^{UV})`)；不再为每个历史位置显式构造 128 维 Value。
+      ],
+    ),
+    (
       key: "SparseAttention",
       "context": "dsa",
       label: [Sparse Attention],
@@ -79,6 +109,33 @@
         仅对 #mi(`\mathcal S_t`) 中的位置计算注意力。
 
         #link("https://docs.flashinfer.ai/api/sparse.html#flashinfer.sparse.BlockSparseAttentionWrapper")[FlashInfer `BlockSparseAttentionWrapper`] 支持索引驱动的稀疏注意力：`plan(indptr, indices, ...)` 指定稀疏块，`run(q, k, v)` 执行计算。
+      ],
+    ),
+    (
+      key: "SparseAttentionAbsorbed",
+      "context": "dsa",
+      label: [Sparse Attention],
+      preview: [
+        同时完成 MLA 的 QK 内容吸收与 Value / 输出吸收。输入为 #mi(`\widehat{\mathbf q}_{t,i}=[\widehat{\mathbf q}_{t,i}^C;\mathbf q_{t,i}^R]`)、#mi(`[\mathbf c_j^{KV};\mathbf k_j^R]`)、聚合用 KV latent 和选中位置 #mi(`\mathcal S_t`)。
+
+        #mi(`s_j=\frac{(\widehat{\mathbf q}_{t,i}^C)^T\mathbf c_j^{KV}+(\mathbf q_{t,i}^R)^T\mathbf k_j^R}{\sqrt{192}}`)
+        \ #mi(`\widetilde{\mathbf o}_{t,i}=\sum_{j\in\mathcal S_t}\operatorname{Softmax}_{j\in\mathcal S_t}(s_j)\mathbf c_j^{KV}`)
+        \ #mi(`\mathbf u_t=W^{O,UV}[\widetilde{\mathbf o}_{t,1};\ldots;\widetilde{\mathbf o}_{t,n_h}]`)
+
+        Query / Key 点积维度为 576，Value 聚合维度为 512；缩放仍为原模型的 #mi(`1/\sqrt{192}`)。
+      ],
+    ),
+    (
+      key: "Wbar^IW",
+      "context": "dsa",
+      label: [#mi(`\bar{W}^{IW}`)],
+      preview: [
+        吸收固定头权重缩放后的投影矩阵：
+
+        #mi(`\bar{W}^{IW}=W^{IW}/\sqrt{n_h^I d_h^I}`)
+        \ #mi(`\mathbf w_t^I=\bar{W}^{IW}\mathbf h_t`)
+
+        尺寸仍为 #mi(`64\times7168`)，不再单独计算 #mi(`1/\sqrt{64\times128}`) 的缩放。它只吸收常量；Indexer 的 LayerNorm、部分 RoPE 和 ReLU 均保留，不能将 Query / Key 投影直接合成静态矩阵。等式忽略浮点舍入与量化误差。
       ],
     ),
     (
