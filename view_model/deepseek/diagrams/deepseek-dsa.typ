@@ -30,11 +30,12 @@
   let layout = mla-layout(scope: "dsa", symbols: symbols,
     title: [DSA · 选中位置上的 MLA 等价展开],
     note: [
-      左侧保留未吸收 MLA 的全部原始框位。 \
-      实际推理使用前文的权重吸收路径；此处仅作等价展开。 \
-      Sparse Attention 直接接收 Q、K、V 和选中位置索引。 \
-      算子内部按索引访问 KV；本图是逻辑接口示意。 \
-      #mi(`j\in\mathcal{S}_t,\quad m_t=\min(t,2048)`)
+      *Indexer · MatMul 内固定缩放折叠* \
+      #mi(`\mathbf a_t^I=W^{IW}\mathbf h_t,\quad \mathbf w_t^I=\mathbf a_t^I/\sqrt{n_h^I d_h^I}`) \
+      #mi(`\bar W^{IW}=W^{IW}/\sqrt{n_h^I d_h^I},\quad \mathbf w_t^I=\bar W^{IW}\mathbf h_t`) \
+      #mi(`w_{t,i}^{I,\mathrm{orig}}=\frac{[W^{IW}\mathbf h_t]_i}{\sqrt{n_h^I d_h^I}}=\left[\bar W^{IW}\mathbf h_t\right]_i=w_{t,i}^{I,\mathrm{fold}}`) \
+      部分 RoPE 仅旋转前 64 维，后 64 维直通；Key 为全部 64 个 indexer 头共享。 \
+      本图展开未量化评分；官方额外 Hadamard / FP8 路径见正文，量化后不保证精确等价。
     ])
   let p = layout.paint
   let (at, tensor, operator, parameter, projection, matmul-rmsnorm, wire) = (p.at, p.tensor, p.operator, p.parameter, p.projection, p.matmul-rmsnorm, p.wire)
@@ -89,14 +90,11 @@
     tensor(at(columns.key, rows.ready), "index-k", `\mathbf{k}_j^I\in\mathbb{R}^{128}`,
       `\text{全部 }64\text{ 个 indexer 头共享，类似MQA但没有Value}`, cache: true, width: 225pt)
 
-    // Place this weight below the projection to clear MLA's Value path as Indexer moves left.
     parameter(at(columns.weights - 145, rows.projection + 135), "w-index-weight-proj", colored(`W^{IW}`, "008000"),
       `n_h^I\times d=64\times7168`, width: 130pt)
-    operator(at(columns.weights, rows.projection), "index-weight-proj", [MatMul], width: 68pt, keys: ("MatMul",))
-    edge(<w-index-weight-proj.east>, at(columns.weights - 34, rows.projection + 135), <index-weight-proj.west>, "--|>", stroke: rgb("79517d") + 0.8pt)
-    tensor(at(columns.weights, rows.latent), "index-a", `[a_{t,i}^I]_{i=1}^{64}`, `\in\mathbb{R}^{64}`, width: 190pt)
-    operator(at(columns.weights, rows.transform), "index-scale", [动态头权重缩放],
-      formula: `w_{t,i}^I=\frac{a_{t,i}^I}{\sqrt{64\times128}}`, width: 220pt)
+    operator(at(columns.weights, rows.projection), "index-weight-proj", [MatMul / #mi(`\sqrt{n_h^I d_h^I}`)],
+      width: 130pt, keys: ("MatMul", "n_h^I", "d_h^I", "IndexerWeightScaleFold"))
+    edge(<w-index-weight-proj.east>, at(columns.weights - 75, rows.projection + 135), <index-weight-proj.west>, "--|>", stroke: rgb("79517d") + 0.8pt)
     tensor(at(columns.weights, rows.ready), "index-w", `[w_{t,i}^I]_{i=1}^{64}`, `\in\mathbb{R}^{64}\quad\text{（激活，非参数）}`, width: 180pt)
 
     operator(at(columns.query, attention-row), "index-score", [Indexer 评分 · 对全部因果历史候选],
@@ -122,9 +120,7 @@
     edge(<index-k-proj>, <index-k-normalized>, "-|>")
     edge(<index-k-normalized>, <index-k-rope>, "-|>")
     edge(<index-k-rope>, <index-k>, "-|>")
-    edge(<index-weight-proj>, <index-a>, "-|>")
-    edge(<index-a>, <index-scale>, "-|>")
-    edge(<index-scale>, <index-w>, "-|>")
+    edge(<index-weight-proj>, <index-w>, "-|>")
     wire(<index-w.north>, at(columns.weights, attention-row + 45), at(columns.query - 200, attention-row + 45), at(columns.query - 200, attention-row + 14.5), "-|>")
     edge(<index-q.north>, <index-score.south>, "-|>")
     wire(<index-k.north>, at(columns.key, attention-row + 45), at(columns.query + 200, attention-row + 45), at(columns.query + 200, attention-row + 14.5), "-|>")
@@ -141,10 +137,11 @@
     let change = mla-absorption-changes(layout, paths: ("qk", "value"), sparse: true)
     let caption = (layout.nodes.note + []).children.first().value
     caption.label = align(left)[
-      *DSA · MLA 矩阵吸收后* \
+      *DSA · MLA 矩阵吸收；Indexer 固定标量折叠* \
       #mi(`W_i^{QK}=(W_i^{UQ})^TW_i^{UK}`) \
       #mi(`W^{O,UV}=W^O\operatorname{diag}(W_i^{UV})`) \
-      内容打分与 Value 聚合均在 512 维潜空间完成。 \
+      MLA 的 QK 内容投影与 Value / 输出投影在潜空间中合并。 \
+      Indexer 仅将固定的 #mi(`1/\sqrt{n_h^I d_h^I}`) 折叠到权重投影。 \
       选中位置仍由 Indexer 输入 Sparse Attention。 \
       RoPE 不变，Softmax 缩放仍为 #mi(`1/\sqrt{192}`)。
     ]
@@ -154,7 +151,6 @@
     let objects = (extra + []).children
     let removed = ("index-a", "preview-index-a", "index-scale", "preview-index-scale")
     let weight-names = ("w-index-weight-proj", "preview-w-index-weight-proj")
-    let focus = ("w-index-weight-proj", "preview-w-index-weight-proj", "index-weight-proj", "preview-index-weight-proj", "index-w", "preview-index-w")
     let original-weight = objects.filter(item => item.value.class == "node" and item.value.name in weight-names.map(label)).join() + []
     let scaled-weight = parameter(at(columns.weights - 145, rows.projection + 135), "w-index-weight-proj",
       `\color[HTML]{008000}{\bar{W}^{IW}}`, `64\times7168`, width: 130pt, keys: ("Wbar^IW", "n_h^I", "d"))
@@ -167,24 +163,25 @@
             let changed-caption = record.name == none and record.size.at(0) == 980pt
             if changed-caption {
               record.label = align(left)[
-                *Lightning Indexer · 固定缩放吸收* \
+                *Lightning Indexer · 固定标量缩放折叠（等价重参数化）* \
                 #mi(`\bar{W}^{IW}=W^{IW}/\sqrt{n_h^I d_h^I}`) \
-                #mi(`\mathbf w_t^I=\bar{W}^{IW}\mathbf h_t`)；移除独立缩放步骤。 \
-                LayerNorm、部分 RoPE、ReLU 保持不变。 \
-                不能把 Query / Key 投影跨这些步骤静态合并。 \
+                #mi(`\mathbf w_t^I=\bar{W}^{IW}\mathbf h_t`)；将固定标量乘入权重。 \
+                这不是相邻线性层的矩阵乘法合并，不改变 GEMM 形状或复杂度。 \
+                LayerNorm、部分 RoPE、ReLU 保持不变；运行时也可在投影激活上乘该常量。 \
                 本图忽略浮点舍入与量化误差。
               ]
               source = mla-restyle(metadata(record), reference: item)
             }
-            if changed-caption or record.name in focus.map(label) { source } else { mla-restyle(source, faded: true) }
+            if record.name == label("index-weight-proj") {
+              record.label = align(center, text(weight: "bold", [MatMul]))
+            }
+            if changed-caption { source } else { mla-restyle(source, faded: true) }
           }
         } else if not record.vertices.any(vertex => vertex in (label("index-a"), label("index-scale"))) {
-          if record.vertices.any(vertex => vertex == <w-index-weight-proj.east>) { item }
-          else { mla-restyle(item, faded: true) }
+          mla-restyle(item, faded: true)
         }
       }
-      mla-restyle(scaled-weight, reference: original-weight)
-      edge(<index-weight-proj>, <index-w>, "-|>")
+      mla-restyle(scaled-weight, reference: original-weight, faded: true)
     }
     mla-render(layout, ids: change.ids, replace: replace + change.replace, routes: change.routes,
       extra: transformed, focus: change.focus, bounds-y: (mla-output-shift - 14.5, 1223))

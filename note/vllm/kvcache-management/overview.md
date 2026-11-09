@@ -1,3 +1,5 @@
+https://kvcache.ai/tools/kv-cache-size-calculator/
+
 # 和kvcache management相关的vllm的代码
 
 **主要分散在 `v1/core/`、`v1/worker/`、`v1/attention/` 和 KV transfer/offload 相关目录。** 原因是 KV cache management 横跨了**调度、逻辑 block 管理、实际存储、设备寻址和数据搬运**，不是一个单独模块。

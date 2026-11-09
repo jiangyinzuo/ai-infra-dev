@@ -65,14 +65,21 @@ i=4095        [ WQ[4095,0] ... WQ[4095,4095] | WK[4095,0] ... WK[4095,4095] | WV
 ## 单头注意力
 
 $$
-\text{Attn}(Q,K,V) =
-\text{softmax}\left(\frac{QK^T}{\sqrt{d}}+M\right)V
+ A=\operatorname{softmax}_{\mathrm{row}}\!\left(\frac{QK^T}{\sqrt d}+M\right)\in\mathbb{R}^{n\times n},
+ \qquad \mathrm{Attn}(Q,K,V)=AV=O\in\mathbb{R}^{n\times d}.
 $$
 
-其中
+其中 $A_{tj}=\alpha_{tj}$；矩阵乘法 $AV$ 的第 $t$ 行就是当前 token 的加权和输出。
+
+对当前 Query 位置 $t$，Softmax 得到各个可见 Value 的权重，再加权求和得到输出：
+
 $$
-\mathrm{Attn}(Q,K,V)\in\mathbb{R}^{n\times d}
+\alpha_{tj}=\frac{\exp\!\left(q_t^Tk_j/\sqrt d\right)}{\sum_{\ell=1}^{t}\exp\!\left(q_t^Tk_\ell/\sqrt d\right)}\in[0,1]\subset\mathbb{R},\quad j=1,\ldots,t,
+\qquad
+o_t=\sum_{j=1}^{t}\alpha_{tj}v_j\in\mathbb{R}^{d}.
 $$
+
+因此整段序列的输出为 $O=[o_1;o_2;\ldots;o_n]\in\mathbb{R}^{n\times d}$。
 
 $M$ 是 causal mask：
 $$

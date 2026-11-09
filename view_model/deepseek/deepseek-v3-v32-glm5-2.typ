@@ -1078,7 +1078,7 @@ all buffers meta: True
 
 #html.elem("div", attrs: (class: "model-diagram"), html.frame(dsa-diagram()))
 
-矩阵吸收后：MLA 同时吸收 QK 内容投影与 Value / 输出投影；Indexer 将固定缩放吸收到头权重投影。半透明模块保持原图位置与尺寸。LayerNorm、部分 RoPE、ReLU 不参与静态矩阵合并。
+固定缩放折叠后：MLA 执行 QK 内容投影与 Value / 输出投影的矩阵吸收；Indexer 仅把固定标量缩放重参数化到头权重投影。半透明模块保持原图位置与尺寸。LayerNorm、部分 RoPE、ReLU 不参与静态合并。
 
 #html.elem("div", attrs: (class: "model-diagram"), html.frame(dsa-diagram(absorbed: true)))
 

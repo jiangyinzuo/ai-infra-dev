@@ -130,12 +130,24 @@
       "context": "dsa",
       label: [#mi(`\bar{W}^{IW}`)],
       preview: [
-        吸收固定头权重缩放后的投影矩阵：
+        固定标量缩放后的 Indexer 投影权重（等价重参数化）：
 
         #mi(`\bar{W}^{IW}=W^{IW}/\sqrt{n_h^I d_h^I}`)
         \ #mi(`\mathbf w_t^I=\bar{W}^{IW}\mathbf h_t`)
 
-        尺寸仍为 #mi(`64\times7168`)，不再单独计算 #mi(`1/\sqrt{64\times128}`) 的缩放。它只吸收常量；Indexer 的 LayerNorm、部分 RoPE 和 ReLU 均保留，不能将 Query / Key 投影直接合成静态矩阵。等式忽略浮点舍入与量化误差。
+        尺寸仍为 #mi(`64\times7168`)，只是把固定标量 #mi(`1/\sqrt{64\times128}`) 乘入 #mi(`W^{IW}`) 的每个元素；也可在投影激活上逐元素乘该常量。它不是相邻线性层的矩阵乘法合并，不改变 GEMM 形状或复杂度。Indexer 的 LayerNorm、部分 RoPE 和 ReLU 均保留，不能将 Query / Key 投影直接合成静态矩阵。等式忽略浮点舍入与量化误差。
+      ],
+    ),
+    (
+      key: "IndexerWeightScaleFold",
+      "context": "dsa",
+      label: [#mi(`w_{t,i}^{I,\mathrm{orig}}\to w_{t,i}^{I,\mathrm{fold}}`)],
+      preview: [
+        #strong[MatMul / #mi(`\sqrt{n_h^I d_h^I}`)：折叠前与折叠后]
+
+        #mi(`w_{t,i}^{I,\mathrm{orig}}=\frac{[W^{IW}\mathbf h_t]_i}{\sqrt{n_h^I d_h^I}}=\left[\frac{W^{IW}}{\sqrt{n_h^I d_h^I}}\mathbf h_t\right]_i=w_{t,i}^{I,\mathrm{fold}}`)
+
+        #mi(`\bar W^{IW}=W^{IW}/\sqrt{n_h^I d_h^I}`)；仅将固定标量并入权重，GEMM 形状和计算量不变。
       ],
     ),
     (
@@ -1275,7 +1287,7 @@
       key: "w_ti^I",
       "context": "dsa",
       preview: [
-        动态头权重激活 #mi(`a_{t,i}^I/\sqrt{n_h^I d_h^I}`)，为随 token 改变的标量；不是可学习权重矩阵。
+        Indexer MatMul / #mi(`\sqrt{n_h^I d_h^I}`) 的标量激活 #mi(`w_{t,i}^I=[W^{IW}\mathbf h_t]_i/\sqrt{n_h^I d_h^I}`)；固定缩放可等价折叠到权重 #mi(`\bar W^{IW}=W^{IW}/\sqrt{n_h^I d_h^I}`)。不是可学习权重。
       ],
     ),
     (
