@@ -1,11 +1,24 @@
 vllm/vllm:docs/design/hisparse.md
 
+针对稀疏注意力模型（如DSA）的KVCache offload。
+
+使用稀疏注意力后，计算量减了，但decode节点仍然保存大量KV。
+
+主要针对decode优化：
+
+| decode | prefill |
+| -------------- | --------------- |
+| 历史 KV 很大，但每一步实际读取的 KV 很少 | 一次处理大量 Query，不能直接把整个请求的工作集压成一份很小的 Top‑k。 |
+| 连续decode具有时间局部性 | |
+| 历史KV | KV是刚刚在GPU中产生的 |
+
+index cache仍然全部存在HBM
+
+节省的容量可以换取更大的decode并发。
+
 # HiSparse local KV offload architecture
 
----
-generated-by: DeepSeek-V4.1-flash
-
-vLLM 中的 **HiSparse** 是一个**实验性**的、针对稀疏注意力模型（如 GLM 5.3、DeepSeek 系列等使用 DSA/MLA 架构的模型）的**分层 KV 缓存管理架构**。其核心思想是：既然稀疏注意力在解码时只读取 Top-K 个 token 的 KV，那么就没必要把完整的 KV 历史都留在宝贵的 GPU 显存（HBM）里，可以将完整历史放在 CPU 主机内存，GPU 只保留一个小型的“热”缓存，按需取用。
+稀疏注意力在解码时只读取 Top-K 个 token 的 KV，那么就没必要把完整的 KV 历史都留在宝贵的 GPU 显存（HBM）里，可以将完整历史放在 CPU 主机内存，GPU 只保留一个小型的“热”缓存，按需取用。
 
 ### 🎯 核心机制：按需取用，而非全量驻留
 
