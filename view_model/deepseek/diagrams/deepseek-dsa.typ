@@ -7,7 +7,7 @@
 
 #let dsa-diagram(absorbed: false) = context {
   let symbols = (
-    attention-core: ("SparseAttention", "q_ti", "k_ji", "v_ji^C", "d_h", "d_h^R", "calS_t", "t", "j", "i"),
+    attention-core: ("SparseAttention", "o_ti", "q_ti", "k_ji", "v_ji^C", "d_h", "d_h^R", "calS_t", "t", "j", "i"),
     w-index-q-proj: ("W^IQ", "n_h^I", "d_h^I", "d_c'"),
     w-index-k-proj: ("W^IK", "d_h^I", "d"),
     w-index-weight-proj: ("W^IW", "n_h^I", "d"),
@@ -45,7 +45,7 @@
     q-down: matmul-rmsnorm(195, 1115, "q-down", colored(`W^{DQ}`, "ff0000"), 1536, 7168, colored(`d_c^{\prime}\times d`, "ff0000"),
       colored(`\boldsymbol{\gamma}^Q`, "ff0000"), colored(`d_c^{\prime}=1536`, "ff0000"), title: [MatMulRMSNorm（压缩）]),
     attention-core: operator(at(415, attention-row), "attention-core", [Sparse Attention],
-      formula: `\sum_{j\in\mathcal S_t}\operatorname{Softmax}_{j\in\mathcal S_t}\!\left(\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}\right)\mathbf v_{j,i}^C`, width: 340pt),
+      formula: `\mathbf o_{t,i}=\sum_{j\in\mathcal S_t}\operatorname{Softmax}_{j\in\mathcal S_t}\!\left(\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}\right)\mathbf v_{j,i}^C\in\mathbb R^{d_h}=\mathbb R^{128}`, width: 340pt),
   )
   // Left to right: dynamic head weights, Query, Key.
   let columns = (weights: 1075, query: 1280, key: 1590)
@@ -88,16 +88,16 @@
     tensor(at(columns.key, rows.ready), "index-k", `\mathbf{k}_j^I\in\mathbb{R}^{128}`,
       `\text{全部 }64\text{ 个 indexer 头共享，类似MQA但没有Value}`, cache: true, width: 225pt)
 
-    parameter(at(columns.weights - 130, rows.projection + 90), "w-index-weight-proj", colored(`W^{IW}`, "008000"),
+    parameter(at(columns.weights - 100, rows.projection - 45), "w-index-weight-proj", colored(`W^{IW}`, "008000"),
       `n_h^I\times d=64\times7168`, width: 130pt)
     operator(at(columns.weights, rows.projection), "index-weight-proj", [MatMul / #mi(`\sqrt{n_h^I d_h^I}`)],
       width: 130pt, keys: ("MatMul", "n_h^I", "d_h^I", "IndexerWeightScaleFold"))
-    edge(<w-index-weight-proj.north>, at(columns.weights - 130, rows.projection + 40),
-      at(columns.weights - 65, rows.projection + 40), <index-weight-proj.west>, "--|>", stroke: rgb("79517d") + 0.8pt)
+    edge(<w-index-weight-proj.south>, at(columns.weights - 100, rows.projection),
+      <index-weight-proj.west>, "--|>", stroke: rgb("79517d") + 0.8pt)
     tensor(at(columns.weights, rows.ready), "index-w", `w_{t,i}^I\in\mathbb R`, `i=1,\ldots,n_h^I`, width: 136pt, head-count: `n_h^I=64`)
 
     operator(at(columns.query, attention-row), "index-score", [Indexer 评分 · 对全部因果历史候选],
-      formula: `I_{t,j}=\sum_{i=1}^{64}w_{t,i}^I\operatorname{ReLU}\!\left((\mathbf{q}_{t,i}^I)^T\mathbf{k}_j^I\right)`, width: 600pt)
+      formula: `I_{t,j}=\sum_{i=1}^{64}w_{t,i}^I\operatorname{ReLU}\!\left((\mathbf{q}_{t,i}^I)^T\mathbf{k}_j^I\right)\in\mathbb R`, width: 600pt)
     tensor(at(columns.query, attention-row - 80), "index-scores", `[I_{t,j}]_{j=1}^{t}`, `\in\mathbb{R}^{t}`, width: 220pt)
     operator(at(columns.query, attention-row - 160), "index-topk", [因果 Top-k · 上限 2048],
       formula: `\mathcal{S}_t=\operatorname{TopK}_{1\le j\le t}(I_{t,j},m_t)`, width: 300pt)
@@ -120,7 +120,7 @@
     edge(<index-k-normalized>, <index-k-rope>, "-|>")
     edge(<index-k-rope>, <index-k>, "-|>")
     edge(<index-weight-proj>, <index-w>, "-|>")
-    wire(<index-w.north>, at(columns.weights, attention-row + 45), at(columns.query - 200, attention-row + 45), at(columns.query - 200, attention-row + 14.5), "-|>")
+    wire(<index-w.north>, at(columns.weights, attention-row + 14.5), "-|>")
     edge(<index-q.north>, <index-score.south>, "-|>")
     wire(<index-k.north>, at(columns.key, attention-row + 45), at(columns.query + 200, attention-row + 45), at(columns.query + 200, attention-row + 14.5), "-|>")
     edge(<index-score>, <index-scores>, "-|>")

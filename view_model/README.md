@@ -36,6 +36,19 @@ TP + X特性
 按官方配置的真实维度构建单个 `DeepseekV32Indexer`，以 BF16 随机权重和随机输入执行 forward，打印模块、参数形状与 token 索引。不下载配置或模型权重；需安装支持 `deepseek_v32` 的 Transformers。默认输入为 8 个 token，可修改脚本中的 `SEQUENCE_LENGTH`；`index_topk` 保持官方值 2048。
 
 
+## LLaMA Attention 文档
+
+`llama2_7b/llama_attention.typ` 保留原 Markdown 的全部文字、公式、代码和链接，与 DeepSeek 文档共同引用 `typst_template/web-template.typ`；样式和交互代码统一维护在该目录，不在各文档中复制。
+
+在 `view_model` 目录编译或启动实时预览：
+
+```bash
+typst compile --root . --features html llama2_7b/llama_attention.typ llama2_7b/llama_attention.html
+typst watch --root . --features html --port 3000 llama2_7b/llama_attention.typ llama2_7b/llama_attention.html
+```
+
+从 `llama2_7b` 或 `deepseek` 子目录构建时使用 `--root ..`，以允许引用公共模板。
+
 ## Attention 静态图
 
 图中蓝色圆角框表示激活／张量，紫色直角框表示算子，橙色小卡片表示权重参数。权重从侧面接入 MatMul，浅灰透明的 Head 外框只表示分组；右上角图例与成品一起生成。布局采用紧凑间距，保留三列及输出链对齐，不缩小公式字号。

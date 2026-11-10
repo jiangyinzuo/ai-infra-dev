@@ -66,7 +66,7 @@
         node((pos.at(0) + offset * 4pt, pos.at(1) - offset * 4pt), [],
           name: label("stack-" + id + "-" + str(offset)), shape: rect,
           width: width, height: caption.height, corner-radius: 7pt, inset: 0pt,
-          fill: none, stroke: (paint: border, thickness: if cache { 1.3pt } else { 0.85pt }))
+          fill: fill, stroke: (paint: border, thickness: if cache { 1.3pt } else { 0.85pt }))
       }
     }
     node(pos, align(center, caption.body),
@@ -268,7 +268,8 @@
     }
     if faded {
       if record.class == "node" {
-        if type(record.fill) == color { record.fill = record.fill.transparentize(60%) }
+        // Figures have a white background: precompose the faded fill so it still occludes lower layers.
+        if type(record.fill) == color { record.fill = color.mix((record.fill, 40%), (white, 60%), space: rgb) }
         record.stroke = fade-stroke(record.stroke)
         let label = record.label
         record.label = [#show text: it => context {

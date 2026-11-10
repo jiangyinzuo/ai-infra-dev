@@ -29,8 +29,9 @@ blockquote { margin-inline: 0; padding-inline: 16px; border-inline-start: 3px so
 .model-diagram [data-diagram-node]:is(:hover, :focus-visible) > rect { stroke: #245e91; stroke-width: 1.2px; vector-effect: non-scaling-stroke; }
 math[display="block"] { overflow-x: auto; padding-block: 8px; }
 math { white-space: nowrap; font-size: 1.08em; }
+[data-term] { text-decoration: underline dashed; text-underline-offset: 0.2em; cursor: help; }
 math [data-symbol] { cursor: help; }
-math [data-symbol]:hover,math [data-symbol]:focus { outline: 1px dotted currentColor; outline-offset: 2px; }
+math [data-symbol]:hover,math [data-symbol]:focus,[data-term]:focus-visible { outline: 1px dotted currentColor; outline-offset: 2px; }
 #symbol-tooltip { position: fixed; z-index: 100; box-sizing: border-box; max-width: min(520px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow-y: auto; padding: 10px 14px; border: 1px solid #8888; border-radius: 6px; color: CanvasText; background: Canvas; box-shadow: 0 4px 18px #0003; font: 14px/1.6 system-ui, sans-serif; pointer-events: auto; }
 #symbol-tooltip img { max-width: 100%; height: auto; }
 #symbol-tooltip[hidden] { display: none; }

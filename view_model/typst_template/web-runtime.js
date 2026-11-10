@@ -102,11 +102,20 @@
   function initialize() {
     buildTableOfContents();
     let context = configuration.defaultContext;
-    for (const node of document.querySelectorAll('h1,h2,h3,h4,h5,h6,math')) {
+    for (const node of document.querySelectorAll('h1,h2,h3,h4,h5,h6,math,[data-term]')) {
       if (/^H[1-6]$/.test(node.tagName)) {
         const heading = node.textContent;
         for (const section of configuration.sections) {
           if (heading.includes(section.heading)) context = section.context;
+        }
+        continue;
+      }
+      if (node.hasAttribute('data-term')) {
+        const entry = lookup(node.dataset.term, context);
+        if (entry) {
+          node.dataset.symbol = entry.key;
+          node.dataset.definitionTemplate = entry.templateId;
+          node.setAttribute('tabindex', '0');
         }
         continue;
       }

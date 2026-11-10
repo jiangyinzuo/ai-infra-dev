@@ -24,7 +24,7 @@
       w-out-proj: ("W^O,UV", "d", "n_h", "d_c"),
     )
   }
-  symbols.insert("attention-core", if sparse { ("SparseAttentionAbsorbed", "calS_t", "tilde_o_ti") }
+  symbols.insert("attention-core", if sparse { ("SparseAttentionAbsorbed", "calS_t", "tilde_o_ti", "d_c") }
     else if qk { ("AttentionQKAbsorbed", "hat_q_ti^C", "q_ti^R", "c_j^KV", "k_j^R", "v_ji^C") }
     else { ("AttentionValueAbsorbed", "q_ti", "k_ji", "c_j^KV", "tilde_o_ti") })
   let p = mla-paint(scope: if sparse { "dsa" } else { "mla" }, symbols: symbols)
@@ -64,8 +64,10 @@
   let candidates = if sparse { `j\in\mathcal S_t`.text } else { `j\le t`.text }
   let dot = if qk { `\widehat{\mathbf q}_{t,i}^T\widehat{\mathbf k}_j`.text } else { `\mathbf q_{t,i}^T\mathbf k_{j,i}`.text }
   let values = if value { `\mathbf c_j^{KV}`.text } else { `\mathbf v_{j,i}^C`.text }
+  let output = if not sparse { "" } else if value { `\widetilde{\mathbf o}_{t,i}=`.text } else { `\mathbf o_{t,i}=`.text }
+  let dimension = if not sparse { "" } else if value { `\in\mathbb R^{d_c}=\mathbb R^{512}`.text } else { `\in\mathbb R^{d_h}=\mathbb R^{128}`.text }
   replace.insert("attention-core", operator(at(415, attention-row), "attention-core", if sparse { [Sparse Attention] } else { [Attention] },
-    formula: "\\sum_{" + candidates + "}\\operatorname{Softmax}_{" + candidates + "}\\!\\left(\\frac{" + dot + "}{\\sqrt{d_h+d_h^R}}\\right)" + values,
+    formula: output + "\\sum_{" + candidates + "}\\operatorname{Softmax}_{" + candidates + "}\\!\\left(\\frac{" + dot + "}{\\sqrt{d_h+d_h^R}}\\right)" + values + dimension,
     width: 340pt))
   (ids: ids, replace: replace, routes: routes, focus: focus)
 }

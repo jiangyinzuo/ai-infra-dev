@@ -19,19 +19,33 @@ HF_ENDPOINT=https://hf-mirror.com python deepseek_v31_class.py
 HF_HUB_OFFLINE=1 python deepseek_v31_class.py
 ```
 
-## HTML 实时预览
+## HTML 编译与实时预览
+
+以下命令均在 `deepseek/` 目录执行。
 
 ```bash
-typst watch --features html --port 3000 deepseek-v3-v32-glm5-2.typ deepseek-v3-v32-glm5-2.html
+# 一次性导出 HTML
+typst compile --root .. --features html deepseek-v3-v32-glm5-2.typ deepseek-v3-v32-glm5-2.html
+
+# 实时预览
+typst watch --root .. --features html --port 3000 deepseek-v3-v32-glm5-2.typ deepseek-v3-v32-glm5-2.html
 ```
 
 服务启动后访问 `http://localhost:3000`。
+
+文档通过 `../typst_template/web-template.typ` 复用公共样式与交互；CSS、JavaScript 同样位于 `typst_template/`。`--root ..` 允许访问这个共享目录。
+
+正文术语通过 `#html.elem("span", attrs: ("data-term": "词条 key"), [术语])` 引用 `symbols.definitions`；共享模板提供虚线下划线，以及鼠标悬浮、键盘聚焦时的公式说明。
 
 ## 导出 SVG
 
 图形共用 `diagrams/mla-common.typ`：按头独立的激活用三层圆角框表示，框内以 `n_h=128` 或 `n_h^I=64` 标注头数；共享 KV 和拼接后的向量使用单框。降维和上投影算子分别标注“压缩”与“解压”。
 
 矩阵吸收对比中，未变化的模块半透明显示；只要连线任一端参与吸收或改变表示，连线就保持实色。DSA 两图共用相同的 Indexer 布局，固定缩放推导仅保留在算子悬浮说明中。
+
+图形底色固定为白色；淡化框体使用与白底预合成的浅色不透明填充，各层依次遮住下层边线，避免逐层透明填充造成透线。
+
+Indexer 的 `W^IW` 位于对应 `MatMul / sqrt(...)` 算子左上方，权重连线只转一个直角；`w_t,i^I` 到评分算子的输入线保持竖直。
 
 ```bash
 typst compile diagrams/deepseek-mla.typ diagrams/deepseek-mla.svg

@@ -52,6 +52,26 @@
       ],
     ),
     (
+      key: "MatrixVectorLinearity",
+      "context": "any",
+      label: [线性分配律],
+      preview: [
+        #strong[矩阵左乘向量的线性性]
+
+        $ W in RR^(m times n), quad x,y,x_j in RR^n, quad a,b,a_j in RR. $
+
+        $ [W(a x+b y)]_r &= sum_(s=1)^n W_(r s)(a x_s+b y_s) \
+          &= a(W x)_r+b(W y)_r, quad r=1,dots,m. $
+
+        $ W(a x+b y) &= a W x+b W y, \
+          W sum_(j=1)^t a_j x_j &= sum_(j=1)^t a_j W x_j. $
+
+        固定 $i$：
+        $ W &= W_i^(U V), quad (m,n)=(d_h,d_c), \
+          x_j &= upright(bold(c))_j^(K V), quad a_j=A_(t \, j \, i). $
+      ],
+    ),
+    (
       key: "Attention",
       "context": "mla",
       label: [Attention],
@@ -100,11 +120,10 @@
       "context": "dsa",
       label: [Sparse Attention],
       preview: [
-        输入：Query、Key、Value、选中位置索引 #mi(`\mathcal S_t`)；输出：每头结果 #mi(`\mathbf o_{t,i}`)。
+        输入：Query、Key、Value、选中位置索引 #mi(`\mathcal S_t`)；输出：每头结果 #mi(`\mathbf o_{t,i}\in\mathbb R^{d_h}=\mathbb R^{128}`)。
 
         #mi(`s_j=\frac{\mathbf q_{t,i}^T\mathbf k_{j,i}}{\sqrt{d_h+d_h^R}}`)
-        \ #mi(`\operatorname{SparseAttention}(\mathbf q,K,V,\mathcal S_t)`)
-        \ #mi(`=\sum_{j\in\mathcal S_t}\frac{\exp(s_j)}{\sum_{\ell\in\mathcal S_t}\exp(s_\ell)}\mathbf v_{j,i}^C`)
+        \ #mi(`\mathbf o_{t,i}=\sum_{j\in\mathcal S_t}\operatorname{Softmax}_{j\in\mathcal S_t}(s_j)\mathbf v_{j,i}^C\in\mathbb R^{d_h}=\mathbb R^{128}`)
 
         仅对 #mi(`\mathcal S_t`) 中的位置计算注意力。
 
@@ -119,7 +138,7 @@
         同时完成 MLA 的 QK 内容吸收与 Value / 输出吸收。输入为 #mi(`\widehat{\mathbf q}_{t,i}=[\widehat{\mathbf q}_{t,i}^C;\mathbf q_{t,i}^R]`)、#mi(`[\mathbf c_j^{KV};\mathbf k_j^R]`)、聚合用 KV latent 和选中位置 #mi(`\mathcal S_t`)。
 
         #mi(`s_j=\frac{(\widehat{\mathbf q}_{t,i}^C)^T\mathbf c_j^{KV}+(\mathbf q_{t,i}^R)^T\mathbf k_j^R}{\sqrt{192}}`)
-        \ #mi(`\widetilde{\mathbf o}_{t,i}=\sum_{j\in\mathcal S_t}\operatorname{Softmax}_{j\in\mathcal S_t}(s_j)\mathbf c_j^{KV}`)
+        \ #mi(`\widetilde{\mathbf o}_{t,i}=\sum_{j\in\mathcal S_t}\operatorname{Softmax}_{j\in\mathcal S_t}(s_j)\mathbf c_j^{KV}\in\mathbb R^{d_c}=\mathbb R^{512}`)
         \ #mi(`\mathbf u_t=W^{O,UV}[\widetilde{\mathbf o}_{t,1};\ldots;\widetilde{\mathbf o}_{t,n_h}]`)
 
         Query / Key 点积维度为 576，Value 聚合维度为 512；缩放仍为原模型的 #mi(`1/\sqrt{192}`)。
@@ -1273,7 +1292,7 @@
       key: "I_tj",
       "context": "dsa",
       preview: [
-        Query #mi(`t`) 对历史位置 #mi(`j`) 的标量索引分数：各 indexer 头的 #mi(`\operatorname{ReLU}(Q\cdot K)`) 乘动态头权重后求和。
+        Query #mi(`t`) 对历史位置 #mi(`j`) 的标量索引分数 #mi(`I_{t,j}\in\mathbb R`)：各 indexer 头的 #mi(`\operatorname{ReLU}(Q\cdot K)`) 乘动态头权重后求和。
       ],
     ),
     (
@@ -1528,6 +1547,38 @@
       "context": "complexity",
       preview: [
         稀疏主注意力的 Prefill 位置对总数 #mi(`\sum_t\min(t,k)=nm-\frac{m(m-1)}{2}`)；不是矩阵 #mi(`S_t`) 或集合 #mi(`\mathcal{S}_t`)。
+      ],
+    ),
+    (
+      key: "F_MM",
+      "context": "complexity",
+      label: $F_(upright(M M))$,
+      preview: [
+        $X in RR^(a times b), quad Y in RR^(b times c)$
+        $F_(upright(M M))(X,Y) := 2a b c$
+        $1 " MAC" = 1 " 次乘法" + 1 " 次加法" = 2 " FLOPs"$
+        矩阵乘法 $X Y$ 的 FLOPs 主项；不是省略常系数的大 $O$。一次 FMA 指令仍计 $2$ FLOPs。
+      ],
+    ),
+    (
+      key: "Q_t",
+      "context": "complexity",
+      preview: [
+        #mi(`Q_t=[Q_t^{QK}\;Q_t^R]\in\mathbb R^{n_h\times d_K}`)。内容查询与 RoPE 查询按列拼接，吸收后每行 $d_K=576$ 维；各行对应不同头。
+      ],
+    ),
+    (
+      key: "K_le_t",
+      "context": "complexity",
+      preview: [
+        #mi(`K_{\le t}=[C_{\le t}^{KV}\;K_{\le t}^R]\in\mathbb R^{t\times d_K}`)。历史 KV 潜向量与 RoPE Key 按列拼接；各行对应一个可见位置，所有头共享。
+      ],
+    ),
+    (
+      key: "K_calS_t",
+      "context": "complexity",
+      preview: [
+        #mi(`K_{\mathcal S_t}=[C_{\mathcal S_t}^{KV}\;K_{\mathcal S_t}^R]\in\mathbb R^{m_t\times d_K}`)。仅保留 Indexer 所选位置的拼接 Key 行。
       ],
     ),
     (

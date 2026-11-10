@@ -2,7 +2,7 @@
 title: MHA、MQA、GQA 通用计算流程
 ---
 
-沿用 [LLaMA Attention](./llama2_7b/llama_attention.md) 中的 $X,n,d,H,d_k,d_v,Q,K,V,M,W_O$ 等符号。三种 attention 的计算流程相同，区别在于：**多少个 Query 头共享同一组 Key、Value 头**。
+沿用 [LLaMA Attention](./llama2_7b/llama_attention.typ) 中的 $X,n,d,H,d_k,d_v,Q,K,V,M,W_O$ 等符号。三种 attention 的计算流程相同，区别在于：**多少个 Query 头共享同一组 Key、Value 头**。
 
 ## 统一符号
 

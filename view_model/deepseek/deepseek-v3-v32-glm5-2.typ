@@ -1,5 +1,5 @@
-// Compile HTML: typst compile --features html deepseek-v3-v32-glm5-2.typ deepseek-v3-v32-glm5-2.html
-#import "web-template.typ": web-document, vbold, boxed, horizontalrule, Red, Green, Blue, TextRed
+// Compile HTML: typst compile --root .. --features html deepseek-v3-v32-glm5-2.typ deepseek-v3-v32-glm5-2.html
+#import "../typst_template/web-template.typ": web-document, vbold, boxed, horizontalrule, Red, Green, Blue, TextRed
 #import "deepseek-symbols.typ": symbols
 #import "diagrams/deepseek-mla.typ": mla-diagram
 #import "diagrams/deepseek-absorption.typ": absorption-diagram
@@ -520,7 +520,7 @@ vbold(o)_(t \, i) &= sum_(j=1)^t underbrace(A_(t \, j \, i), in RR) thin underbr
 &= W_i^(U V) underbrace(sum_(j=1)^t A_(t \, j \, i) thin vbold(c)_j^(K V), in RR^(d_c)) in RR^(d_h).
 $
 
-$A_(t \, j \, i)$ 是标量，所以可与矩阵 $W_i^(U V)$ 交换相乘顺序；固定头 $i$ 后，同一个 $W_i^(U V)$ 用于所有位置 $j$，因此可由线性分配律提出求和号。维度链为 $(d_h times d_c)(d_c times 1)=d_h times 1$；这不是交换两个矩阵的顺序。
+$A_(t \, j \, i)$ 是标量，所以可与矩阵 $W_i^(U V)$ 交换相乘顺序；固定头 $i$ 后，同一个 $W_i^(U V)$ 用于所有位置 $j$，因此可由#html.elem("span", attrs: ("data-term": "MatrixVectorLinearity"), [线性分配律])提出求和号。维度链为 $(d_h times d_c)(d_c times 1)=d_h times 1$；这不是交换两个矩阵的顺序。
 
 #strong[压缩空间中的中间输出];
 
@@ -1290,13 +1290,61 @@ $
 
 $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个头进行 QK 点积的有效维度];，由 $512$ 维 KV 潜向量与 $64$ 维 RoPE 分量拼接而成；不是未吸收时的 $d_h + d_h^R = 128 + 64 = 192$。吸收后的 Value 聚合维度为 $d_V = d_c = 512$。
 
-下表每次乘加计 $2$ FLOPs。每个位置 $t$ 只有 $1$ 条 Query，可见 KV 数为 $t$（稀疏时为 $m_t$）；Prefill 将 $t=1,dots.h,n$ 的开销相加，Decode 只计算当前 $t=n$ 一步。
+为将内容项与 RoPE 项的成本合写，按列拼接：
+
+$
+  Q_t &= \[ Q_t^(Q K) quad Q_t^R \] in RR^(n_h times d_K), \
+  K_(lt.eq t) &= \[ C_(lt.eq t)^(K V) quad K_(lt.eq t)^R \] in RR^(t times d_K), \
+  K_(cal(S)_t) &= \[ C_(cal(S)_t)^(K V) quad K_(cal(S)_t)^R \] in RR^(m_t times d_K).
+$
+
+#strong[矩阵乘法的 FLOPs 计数]：设 $X in RR^(a times b)$、$Y in RR^(b times c)$。
+
+$
+  "单个点积：" underbrace(b, "乘法") + underbrace(b-1, "加法") = 2b-1 tilde.eq 2b, \
+  "本表约定：" 1 " MAC" = 1 " 次乘法" + 1 " 次加法" = 2 " FLOPs".
+$
+
+$
+  F_(upright(M M))(X,Y) := underbrace(a c, "输出元素数") underbrace(2b, "每个点积的 FLOPs 主项") = 2a b c.
+$
+
+$F_(upright(M M))$ 表示乘法 $X Y$ 的 FLOPs 主项，不是会省略常系数的大 $O$；一次 FMA 指令仍计 $2$ FLOPs。每个位置 $t$、每个头只有 $1$ 条 Query，各头按行堆叠；Prefill 累加 $t=1,dots.h,n$ 的开销，Decode 列统一取 $t=n$、$m_t=m=min(n,k)$。
+
+新增 Query 生成行按预合并 $W_i^(Q K)$ 的路径计投影乘法，包含内容和 RoPE 两部分；不含共享 Query 下投影、RMSNorm 与 RoPE 旋转。Full / Sparse 共用此成本；下方“Full MLA 合计”“DSA 合计”及节省比例仍仅统计位置对上的点积与 Value 聚合，不含本行。
 
 #table(
   columns: (25%, 25%, 25%, 25%),
   align: (auto,auto,auto,auto,),
-  table.header([计算部分], [主项对应的计算公式（含激活尺寸）], [完整因果 Prefill 主项（FLOPs）], [单 token Decode 主项（FLOPs）],),
+  table.header([计算部分], [主项对应的计算公式（含激活尺寸）], [完整因果 Prefill 主项（FLOPs）], [单 token Decode 主项（FLOPs） \ $t=n, quad m_t=m$],),
   table.hline(),
+  [#strong[MLA：生成 Query]; \ Full / Sparse 共用],
+  [
+    $[Q_t^(Q K)]_(i,:)=(macron(vbold(c))_t^Q)^T W_i^(Q K)$ \
+    $macron(vbold(c))_t^Q in RR^(1536)$ \
+    $W_i^(Q K) in RR^(1536 times 512)$ \
+    $Q_t^(Q K) in RR^(128 times 512)$ \
+    $vbold(q)_(t,i)^R="RoPE"(W_i^(Q R) macron(vbold(c))_t^Q)$ \
+    $W_i^(Q R) in RR^(64 times 1536)$ \
+    $Q_t^R in RR^(128 times 64)$ \
+    $Q_t in RR^(128 times 576)$
+  ],
+  [
+    $sum_(t=1)^n sum_(i=1)^(n_h) [$ \
+    $F_(upright(M M))((macron(vbold(c))_t^Q)^T,W_i^(Q K))$ \
+    $+ F_(upright(M M))(W_i^(Q R),macron(vbold(c))_t^Q)]$ \
+    $=2 n n_h d_(c') (d_c+d_h^R)$ \
+    $=2n times 128 times 1536 times 576$ \
+    $= #boxed[$226492416 n$]$
+  ],
+  [
+    $sum_(i=1)^(n_h) [$ \
+    $F_(upright(M M))((macron(vbold(c))_t^Q)^T,W_i^(Q K))$ \
+    $+ F_(upright(M M))(W_i^(Q R),macron(vbold(c))_t^Q)]$ \
+    $=2 n_h d_(c') (d_c+d_h^R)$ \
+    $=2 times 128 times 1536 times 576$ \
+    $= #boxed[$226492416$]$
+  ],
   [#strong[Indexer：QK 点积];],
   [
     $B_t = Q_t^I \( K_(lt.eq t)^I \)^T$ \
@@ -1305,14 +1353,16 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $B_t in RR^(n_h^I times t) = RR^(64 times t)$
   ],
   [
-    $sum_(t=1)^n 2 n_h^I (1 times t) d_h^I$ \
+    $sum_(t=1)^n F_(upright(M M))(Q_t^I, \( K_(lt.eq t)^I \)^T)$ \
+    $= sum_(t=1)^n 2 n_h^I d_h^I t$ \
     $= 2 n_h^I d_h^I sum_(t=1)^n t$ \
     $= 2 P n_h^I d_h^I$ \
     $= 2 P times 64 times 128$ \
     $= 16384 P tilde.eq #boxed[$ 8192 thin n^2 $]$
   ],
   [
-    $2 n_h^I (1 times n) d_h^I$ \
+    $F_(upright(M M))(Q_t^I, \( K_(lt.eq t)^I \)^T)$ \
+    $= 2 n_h^I d_h^I n$ \
     $= 2 n n_h^I d_h^I$ \
     $= 2 n times 64 times 128$ \
     $= #boxed[$ 16384 thin n $]$
@@ -1320,16 +1370,16 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
 
   [#strong[Full MLA：QK 点积];],
   [
-    $S_t = Q_t^(Q K) \( C_(lt.eq t)^(K V) \)^T$ \
+    $S_t = Q_t \( K_(lt.eq t) \)^T$ \
+    $= Q_t^(Q K) \( C_(lt.eq t)^(K V) \)^T$ \
     $quad + Q_t^R \( K_(lt.eq t)^R \)^T$ \
-    $Q_t^(Q K) in RR^(n_h times d_c) = RR^(128 times 512)$ \
-    $Q_t^R in RR^(n_h times d_h^R) = RR^(128 times 64)$ \
-    $C_(lt.eq t)^(K V) in RR^(t times d_c) = RR^(t times 512)$ \
-    $K_(lt.eq t)^R in RR^(t times d_h^R) = RR^(t times 64)$ \
+    $Q_t in RR^(n_h times d_K) = RR^(128 times 576)$ \
+    $K_(lt.eq t) in RR^(t times d_K) = RR^(t times 576)$ \
     $S_t in RR^(n_h times t) = RR^(128 times t)$
   ],
   [
-    $sum_(t=1)^n 2 n_h (1 times t) d_K$ \
+    $sum_(t=1)^n F_(upright(M M))(Q_t, \( K_(lt.eq t) \)^T)$ \
+    $= sum_(t=1)^n 2 n_h d_K t$ \
     $= 2 n_h d_K sum_(t=1)^n t$ \
     $= 2 P n_h d_K$ \
     $= 2 P times 128 times \( 512 + 64 \)$ \
@@ -1337,7 +1387,8 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $tilde.eq #boxed[$ 73728 thin n^2 $]$
   ],
   [
-    $2 n_h (1 times n) d_K$ \
+    $F_(upright(M M))(Q_t, \( K_(lt.eq t) \)^T)$ \
+    $= 2 n_h d_K n$ \
     $= 2 n n_h d_K$ \
     $= 2 n times 128 times \( 512 + 64 \)$ \
     $= #boxed[$ 147456 thin n $]$
@@ -1351,7 +1402,8 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $tilde(O)_t in RR^(n_h times d_V) = RR^(128 times 512)$
   ],
   [
-    $sum_(t=1)^n 2 n_h (1 times t) d_V$ \
+    $sum_(t=1)^n F_(upright(M M))(A_t, C_(lt.eq t)^(K V))$ \
+    $= sum_(t=1)^n 2 n_h t d_V$ \
     $= 2 n_h d_V sum_(t=1)^n t$ \
     $= 2 P n_h d_V$ \
     $= 2 P times 128 times 512$ \
@@ -1359,7 +1411,8 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $tilde.eq #boxed[$ 65536 thin n^2 $]$
   ],
   [
-    $2 n_h (1 times n) d_V$ \
+    $F_(upright(M M))(A_t, C_(lt.eq t)^(K V))$ \
+    $= 2 n_h n d_V$ \
     $= 2 n n_h d_V$ \
     $= 2 n times 128 times 512$ \
     $= #boxed[$ 131072 thin n $]$
@@ -1368,30 +1421,30 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
   [#strong[Full MLA 合计];],
   [Full QK 点积 + Full Value 聚合],
   [
-    $sum_(t=1)^n 2 n_h (1 times t) (d_K + d_V)$ \
+    $sum_(t=1)^n 2 n_h t (d_K + d_V)$ \
     $= 2 n_h (d_K + d_V) P$ \
     $= (147456 + 131072) P$ \
     $= 278528 P$ \
     $tilde.eq #boxed[$ 139264 thin n^2 $]$
   ],
   [
-    $2 n_h (1 times n) (d_K + d_V)$ \
+    $2 n_h n (d_K + d_V)$ \
     $= (147456 + 131072) n$ \
     $= #boxed[$ 278528 thin n $]$
   ],
 
   [#strong[Sparse MLA：QK 点积];],
   [
-    $S_t = Q_t^(Q K) \( C_(cal(S)_t)^(K V) \)^T$ \
+    $S_t = Q_t \( K_(cal(S)_t) \)^T$ \
+    $= Q_t^(Q K) \( C_(cal(S)_t)^(K V) \)^T$ \
     $quad + Q_t^R \( K_(cal(S)_t)^R \)^T$ \
-    $Q_t^(Q K) in RR^(n_h times d_c) = RR^(128 times 512)$ \
-    $Q_t^R in RR^(n_h times d_h^R) = RR^(128 times 64)$ \
-    $C_(cal(S)_t)^(K V) in RR^(m_t times d_c) = RR^(m_t times 512)$ \
-    $K_(cal(S)_t)^R in RR^(m_t times d_h^R) = RR^(m_t times 64)$ \
+    $Q_t in RR^(n_h times d_K) = RR^(128 times 576)$ \
+    $K_(cal(S)_t) in RR^(m_t times d_K) = RR^(m_t times 576)$ \
     $S_t in RR^(n_h times m_t) = RR^(128 times m_t)$
   ],
   [
-    $sum_(t=1)^n 2 n_h m_t d_K$ \
+    $sum_(t=1)^n F_(upright(M M))(Q_t, \( K_(cal(S)_t) \)^T)$ \
+    $= sum_(t=1)^n 2 n_h d_K m_t$ \
     $= 2 n_h d_K sum_(t=1)^n m_t$ \
     $= 2 S n_h d_K$ \
     $= 2 S times 128 times \( 512 + 64 \)$ \
@@ -1399,7 +1452,8 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $tilde.eq #boxed[$ 147456 thin n k $]$
   ],
   [
-    $2 n_h (1 times m) d_K$ \
+    $F_(upright(M M))(Q_t, \( K_(cal(S)_t) \)^T)$ \
+    $= 2 n_h d_K m$ \
     $= 2 m n_h d_K$ \
     $= 2 m times 128 times \( 512 + 64 \)$ \
     $= 147456 m$ \
@@ -1414,7 +1468,8 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $tilde(O)_t in RR^(n_h times d_V) = RR^(128 times 512)$
   ],
   [
-    $sum_(t=1)^n 2 n_h m_t d_V$ \
+    $sum_(t=1)^n F_(upright(M M))(A_t, C_(cal(S)_t)^(K V))$ \
+    $= sum_(t=1)^n 2 n_h m_t d_V$ \
     $= 2 n_h d_V sum_(t=1)^n m_t$ \
     $= 2 S n_h d_V$ \
     $= 2 S times 128 times 512$ \
@@ -1422,7 +1477,8 @@ $d_K = d_c + d_h^R = 512 + 64 = 576$ 表示 #strong[MLA 矩阵吸收后，每个
     $tilde.eq #boxed[$ 131072 thin n k $]$
   ],
   [
-    $2 n_h (1 times m) d_V$ \
+    $F_(upright(M M))(A_t, C_(cal(S)_t)^(K V))$ \
+    $= 2 n_h m d_V$ \
     $= 2 m n_h d_V$ \
     $= 2 m times 128 times 512$ \
     $= 131072 m$ \
