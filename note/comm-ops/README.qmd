@@ -1,0 +1,118 @@
+---
+format: gfm
+jupyter: python3
+execute:
+  cache: false
+  error: false
+---
+
+本文由 [README.qmd](README.qmd) 执行 Python 脚本后生成，请修改源文件后重新渲染，不要手改 `README.md`。
+
+```{python}
+#| include: false
+import re
+import subprocess
+import sys
+
+
+def run_script(script: str) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m", "torch.distributed.run",
+            "--standalone", "--nnodes=1", "--nproc-per-node=4",
+            script,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        encoding="utf-8",
+        timeout=90,
+    )
+    # 静态 Markdown 不使用终端颜色；保留所有日志和警告。
+    print(re.sub(r"\x1b\[[0-9;]*m", "", result.stdout), end="")
+    result.check_returncode()
+```
+
+## 安装环境
+
+```bash
+repo_root="$(git rev-parse --show-toplevel)" &&
+uv pip install --python "$repo_root/note/.venv/bin/python" \
+  torch --torch-backend=auto
+```
+
+## 运行 CPU 集合通信示例
+
+复用 `code/vllm-workspace/vllm/.venv`，不再为笔记单独创建环境或安装 PyTorch。以下命令从本仓库任意子目录执行，独立嵌套的 Git 仓库除外。
+
+先在当前终端激活虚拟环境：
+
+```bash
+repo_root="$(git rev-parse --show-toplevel)" &&
+source "$repo_root/code/vllm-workspace/vllm/.venv/bin/activate"
+```
+
+然后在同一终端运行。单机 4 个 CPU 进程（rank 0–3），依次运行全部算子：
+
+```bash
+python -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node=4 \
+  "$repo_root/note/comm-ops/cpu_collectives.py"
+```
+
+实际运行输出（渲染本文时执行）：
+
+```{python}
+#| echo: false
+run_script("cpu_collectives.py")
+```
+
+输出按算子分组，组内按 rank 从小到大排序。每个算子结束后额外汇总日志，由 rank 0 统一打印；单独运行一个算子也会汇总。这段演示流程不用于性能测量，显示顺序不代表实际完成顺序。
+
+`reduce`、`all_reduce`、`reduce_scatter` 使用相同输入，每个 rank 的向量包含 4 块、每块 2 个元素。`reduce` 仅 rank 0 得到完整结果 `[10, 100, 20, 200, 30, 300, 40, 400]`，`all_reduce` 的所有 rank 都得到该完整结果，`reduce_scatter` 的每个 rank 只得到其中对应的 2 元素块。
+
+只运行一个算子（例如 `all_to_all`）：
+
+```bash
+python -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node=4 \
+  "$repo_root/note/comm-ops/cpu_collectives.py" --op all_to_all
+```
+
+只运行 `reduce_scatter`：
+
+```bash
+python -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node=4 \
+  "$repo_root/note/comm-ops/cpu_collectives.py" --op reduce_scatter
+```
+
+该环境的 PyTorch 即使带 CUDA，也不会让本脚本使用 GPU。换环境时需确保 PyTorch 支持 `torch.distributed` 和 Gloo。
+
+## 验证 AllReduce = ReduceScatter + AllGather
+
+先按上文在当前终端设置 `repo_root` 并激活虚拟环境，再运行：
+
+```bash
+python -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node=4 \
+  "$repo_root/note/comm-ops/verify_all_reduce_decomposition.py"
+```
+
+脚本固定使用 4 个 CPU rank、Gloo 和 int64。输入按 rank 堆叠为 4×8 矩阵，每个 rank 只持有一行（长度为 8 的张量），行值依次为 `[1, …, 8]` 的 1、10、100、1000 倍。逐步按 rank 打印实际输入、分块与输出：AllReduce 得到完整的 8 元素按列求和结果；ReduceScatter 每个 rank 得到 2 个元素；AllGather 再拼成完整结果。最后逐 rank 检查两条路径相等，并校验结果为 `[1111, 2222, 3333, 4444, 5555, 6666, 7777, 8888]`；不相等时以异常退出。
+
+黄色文字是原理解释，算子日志是实际运行数据。日志复用 `cpu_collectives.py` 的汇总打印函数，额外日志通信不用于性能测量；整数验证不代表浮点规约一定逐位相等。
+
+实际运行输出（渲染本文时执行）：
+
+```{python}
+#| echo: false
+run_script("verify_all_reduce_decomposition.py")
+```
+
+## 重新生成本文
+
+在已设置 `repo_root` 的终端执行。Quarto 使用现有 PyTorch 虚拟环境，每次重新运行两个脚本，将结果写入同目录下的 `README.md`；任一脚本失败则渲染报错。
+
+```bash
+QUARTO_PYTHON="$repo_root/code/vllm-workspace/vllm/.venv/bin/python" \
+  quarto render "$repo_root/note/comm-ops/README.qmd"
+```
+
+

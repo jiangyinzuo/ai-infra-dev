@@ -7,6 +7,8 @@
 
 ## AllReduce = ReduceScatter + AllGather
 
+Scatter和Gatter互为逆运算可以抵消，所以剩下AllReduce
+
 \[
 \mathrm{AllReduce} \;=\; \mathrm{AllGather}\circ \mathrm{ReduceScatter}
 \]
@@ -91,6 +93,8 @@ T_{\mathrm{AllReduce}}\approx T_{\mathrm{ReduceScatter}}+T_{\mathrm{AllGather}}
 ## AllReduce = ReduceScatter + AllGather举例
 
 用 4 个进程、每个进程持有一个长度为 4 的向量来举例。
+
+扩展示例脚本：[verify_all_reduce_decomposition.py](verify_all_reduce_decomposition.py)，运行命令见 [README](README.md#验证-allreduce--reducescatter--allgather)。脚本将下面的例子扩展为 4×8 矩阵，每个 rank 只持有其中一行（长度为 8 的张量）；ReduceScatter 后各 rank 分别得到 `[1111, 2222]`、`[3333, 4444]`、`[5555, 6666]`、`[7777, 8888]`，AllGather 后还原完整的 8 元素规约结果。脚本实际运行两条通信路径并逐 rank 检查结果；下文保留长度为 4 的简化推导。
 
 设规约算子为 **sum**，4 个进程的输入为：
 

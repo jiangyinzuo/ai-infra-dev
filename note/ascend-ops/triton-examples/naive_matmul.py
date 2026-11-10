@@ -1,6 +1,6 @@
 """朴素 FP32 矩阵乘法：逐个 k 累加外积，不使用 tl.dot 或 Tensor Core。
 
-在 learn-triton/ 目录的 CUDA 或 Ascend Triton 环境中运行：
+在本脚本所在目录，使用已配置的 CUDA 或 Ascend Triton 环境运行：
     python naive_matmul.py
     python naive_matmul.py --device npu --m 65 --n 97 --k 33
     python naive_matmul.py --device cuda

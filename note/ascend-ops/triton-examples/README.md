@@ -1,6 +1,6 @@
 # Triton 学习环境
 
-使用 uv 创建独立虚拟环境，安装 PyTorch 及其配套的 Triton，不修改系统 Python 或 vLLM 环境。
+使用 uv 创建 `note/.venv` 共享虚拟环境，安装 PyTorch 及其配套的 Triton，不修改系统 Python 或 vLLM 环境。Triton 学习目录为 `note/triton/`，不再单独创建虚拟环境。
 
 ## 当前服务器
 
@@ -13,17 +13,20 @@
 
 ## 初始化与安装
 
-在仓库根目录执行：
+以下 Bash 命令可从本 Git 仓库的任意子目录复制执行。`git rev-parse --show-toplevel` 定位仓库根目录，不依赖示例所在目录的深度；独立嵌套的 Git 仓库除外。共享环境仍约定放在 `note/.venv`。
+
+首次创建环境时执行；已有环境则跳过此代码块：
 
 ```bash
-cd learn-triton
+repo_root="$(git rev-parse --show-toplevel)" &&
+uv venv --python 3.12 "$repo_root/note/.venv"
+```
 
-# 创建本目录专用的虚拟环境，不使用系统 site-packages。
-uv venv --python 3.12 .venv
+安装 PyTorch 及其配套的 Triton，无需先激活环境，也无需安装 pip：
 
-# 直接指定目标解释器；安装时无需先激活环境，也无需安装 pip。
-# Linux x86_64 下，PyTorch 会通过依赖安装配套的 Triton。
-uv pip install --python .venv/bin/python \
+```bash
+repo_root="$(git rev-parse --show-toplevel)" &&
+uv pip install --python "$repo_root/note/.venv/bin/python" \
   torch --default-index https://download.pytorch.org/whl/cu130
 ```
 
@@ -31,11 +34,11 @@ uv pip install --python .venv/bin/python \
 
 ## 激活与检查
 
-在 `learn-triton/` 目录执行：
+定位共享环境并激活，然后检查：
 
 ```bash
-source .venv/bin/activate
-
+repo_root="$(git rev-parse --show-toplevel)" &&
+source "$repo_root/note/.venv/bin/activate" &&
 python - <<'PY'
 import sys
 import torch
@@ -62,35 +65,39 @@ PY
 
 `naive_matmul.py` 使用标准 Triton kernel 语法，可在兼容的 CUDA Triton 或 Triton-Ascend 环境运行。默认 `--device auto` 优先选 CUDA，否则尝试 Ascend NPU；也可显式指定：
 
-```bash
-# CUDA；当前虚拟环境按上文安装
-.venv/bin/python naive_matmul.py --device cuda
+CUDA 环境，使用上文安装的共享虚拟环境：
 
-# Ascend；在已配置 CANN、torch_npu 和 Triton-Ascend 的环境运行
-python naive_matmul.py --device npu --m 65 --n 97 --k 33
+```bash
+repo_root="$(git rev-parse --show-toplevel)" &&
+source "$repo_root/note/.venv/bin/activate" &&
+python "$repo_root/note/ascend-ops/triton-examples/naive_matmul.py" --device cuda
+```
+
+Ascend 环境，先在当前终端配置好 CANN、torch_npu 和 Triton-Ascend；此命令保留该环境，不激活 CUDA 虚拟环境：
+
+```bash
+repo_root="$(git rev-parse --show-toplevel)" &&
+python "$repo_root/note/ascend-ops/triton-examples/naive_matmul.py" \
+  --device npu --m 65 --n 97 --k 33
 ```
 
 非整块尺寸示例用于验证边界 mask。脚本用 FP32 逐个 k 累加外积，每个 Triton program 计算一个 16 × 16 输出块，不使用 `tl.dot` 或 Tensor Core；运行后将结果复制到 CPU，与 PyTorch FP32 矩阵乘法校验并打印最大绝对误差。首次运行包含 JIT 编译。CUDA 环境安装说明仅适用于 NVIDIA；Ascend 需使用与硬件/CANN 匹配的 Triton-Ascend 软件栈。
 
 ## 日常使用
 
-每次打开终端后，在 `learn-triton/` 目录激活环境：
+每次打开终端后，从本仓库任意子目录激活共享环境：
 
 ```bash
-source .venv/bin/activate
-python your_kernel.py
+repo_root="$(git rev-parse --show-toplevel)" &&
+source "$repo_root/note/.venv/bin/activate"
 ```
 
-也可以不激活，直接使用环境内的解释器：
+也可以不激活，直接调用共享环境的解释器；例如仅对本次运行选择 GPU 0：
 
 ```bash
-.venv/bin/python your_kernel.py
-```
-
-需要指定一张 GPU 时，仅对当前命令设置：
-
-```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python your_kernel.py
+repo_root="$(git rev-parse --show-toplevel)" &&
+CUDA_VISIBLE_DEVICES=0 "$repo_root/note/.venv/bin/python" \
+  "$repo_root/note/ascend-ops/triton-examples/naive_matmul.py" --device cuda
 ```
 
 退出激活状态：
