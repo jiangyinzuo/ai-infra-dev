@@ -18,6 +18,3 @@ python3 ~/ai-infra-dev/code/update-vllm-and-vllm-ascend-repo.py
 
 已有主仓库必须位于 `main` 且 origin 为官方 HTTPS URL（可用 Git `insteadOf` 重写为镜像）。所有受管理仓库和 worktree 必须无本地修改，包括未跟踪文件。失败可能保留已完成的更新，修复原因后可重新运行，不会重置本地提交或覆盖本地修改。
 
-## 安装vLLM或vLLM Ascend
-
-见 ~/ai-infra-dev/code/dev/

@@ -55,7 +55,10 @@ def _select(options: list[str], prompt: str, *, multiple: bool = False) -> list[
     ):
         command = [str(fzf), "--prompt", prompt + ": "]
         if multiple:
-            command.append("--multi")
+            command.extend([
+                "--multi",
+                "--header", "↑/↓ 移动；Tab 选中/取消；Enter 提交；Esc 取消",
+            ])
         try:
             result = subprocess.run(
                 command,
@@ -192,7 +195,7 @@ def _ids(value: str, label: str) -> list[int]:
     return ids
 
 
-def _choose_npu_devices(devices: str | None) -> str:
+def _choose_npu_devices(devices: str | None, count: int | None) -> str:
     """Select only fully reported idle cards, returning global runtime device IDs.
 
     A busy or unreported sibling chip makes the entire card ineligible. No sudo,
@@ -231,7 +234,10 @@ def _choose_npu_devices(devices: str | None) -> str:
             for device in visible
             if device in available
         ]
-        selected = _select(choices, "Idle devices", multiple=True)
+        prompt = "Idle devices"
+        if count is not None:
+            prompt += f"（需选 {count} 个 device）"
+        selected = _select(choices, prompt, multiple=True)
         chosen = [int(value.split(":", 1)[0]) for value in selected]
     else:
         chosen = _ids(devices, "--devices")
@@ -380,7 +386,7 @@ def _gpu_visibility(mask: str | None, gpus: list[_Gpu]) -> list[str]:
     return _gpu_ids(",".join(tokens), gpus, "CUDA_VISIBLE_DEVICES")
 
 
-def _choose_gpu_devices(devices: str | None) -> str:
+def _choose_gpu_devices(devices: str | None, count: int | None) -> str:
     gpus, busy = _gpu_metrics()
     visible = _gpu_visibility(os.environ.get("CUDA_VISIBLE_DEVICES"), gpus)
     by_uuid = {gpu.uuid: gpu for gpu in gpus}
@@ -405,10 +411,13 @@ def _choose_gpu_devices(devices: str | None) -> str:
         print(description, file=sys.stderr)
         if uuid in available:
             choices.append(description)
+    prompt = "Idle GPUs"
+    if count is not None:
+        prompt += f"（需选 {count} 张卡）"
     chosen = (
         [
             value.split(":", 1)[0]
-            for value in _select(choices, "Idle GPUs", multiple=True)
+            for value in _select(choices, prompt, multiple=True)
         ]
         if devices is None else _gpu_ids(devices, gpus, "--devices")
     )
@@ -418,8 +427,10 @@ def _choose_gpu_devices(devices: str | None) -> str:
     return ",".join(chosen)
 
 
-def choose_devices(devices: str | None, resource: str) -> str:
+def choose_devices(
+    devices: str | None, resource: str, count: int | None = None
+) -> str:
     """Select idle visible devices only on the explicitly requested platform."""
     if device_visibility_variable(resource) == "CUDA_VISIBLE_DEVICES":
-        return _choose_gpu_devices(devices)
-    return _choose_npu_devices(devices)
+        return _choose_gpu_devices(devices, count)
+    return _choose_npu_devices(devices, count)

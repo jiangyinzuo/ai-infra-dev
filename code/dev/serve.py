@@ -10,6 +10,8 @@ import subprocess
 import shlex
 import time
 import importlib.util
+from urllib.error import URLError
+from urllib.request import urlopen
 from serve_config import ServeConfig
 
 
@@ -122,7 +124,7 @@ def select_resources(args, config):
         else choose_model(args.model)
     )
     visibility = device_visibility_variable(args.resource)
-    devices = choose_devices(args.devices, args.resource)
+    devices = choose_devices(args.devices, args.resource, config.device_count)
     if len(devices.split(",")) != config.device_count:
         raise ValueError(
             f"配置要求 {config.device_count} 个 device，所选数量不匹配"
@@ -218,16 +220,104 @@ def start_service(args, script, config, directory):
     return 0
 
 
+def command_option(command, option):
+    try:
+        return command[command.index(option) + 1]
+    except (ValueError, IndexError):
+        return None
+
+
+def child_service_status(pid):
+    try:
+        children = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
+    except FileNotFoundError:
+        return []
+    services = []
+    for child in children:
+        child_pid = int(child)
+        identity = process_identity(child_pid)
+        if identity is None:
+            continue
+        root = Path(f"/proc/{child}")
+        try:
+            command = root.joinpath("cmdline").read_bytes().decode().split("\0")
+            port = command_option(command, "--port")
+            if port is None:
+                continue
+            environment = dict(
+                entry.split("=", 1)
+                for entry in root.joinpath("environ").read_bytes().decode().split("\0")
+                if "=" in entry
+            )
+            log = str(root.joinpath("fd/1").readlink())
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        host = command_option(command, "--host") or "127.0.0.1"
+        host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
+        if ":" in host:
+            host = f"[{host}]"
+        address = f"http://{host}:{port}"
+        transfer = json.loads(command_option(command, "--kv-transfer-config") or "{}")
+        connectors = transfer.get("kv_connector_extra_config", {}).get(
+            "connectors", [transfer]
+        )
+        roles = {connector.get("kv_role") for connector in connectors}
+        name = "API"
+        if "kv_producer" in roles:
+            name = "Prefill"
+        elif "kv_consumer" in roles:
+            name = "Decode"
+        proxy = "--prefiller-ports" in command and "--decoder-ports" in command
+        if proxy:
+            name = "Proxy"
+        health_path = "/healthcheck" if proxy else "/health"
+        try:
+            with urlopen(address + health_path, timeout=0.5) as response:
+                ready = response.status == 200
+        except (OSError, URLError):
+            ready = False
+        alive = process_identity(child_pid) == identity
+        devices = environment.get("CUDA_VISIBLE_DEVICES") or environment.get(
+            "ASCEND_RT_VISIBLE_DEVICES"
+        )
+        services.append({
+            "name": name,
+            "pid": child_pid,
+            "alive": alive,
+            "ready": alive and ready,
+            "address": address,
+            "devices": "CPU" if proxy else (devices or "未设置可见设备"),
+            "log": log,
+        })
+    return services
+
+
 def service_status(directory):
     state_file = directory / "service.json"
     if not state_file.exists():
         print("当前没有本工具运行中的服务")
         return 0
     state = json.loads(state_file.read_text())
-    status = "运行中（不代表 API 已就绪）" if running(state) else "已退出（状态记录已过期）"
+    alive = running(state)
+    services = child_service_status(state["pid"]) if alive else []
+    status = "运行中（不代表 API 已就绪）" if alive else "已退出（状态记录已过期）"
+    if services:
+        status = "监管进程运行中（各 API 状态见下）"
     print(f"状态：{status}")
     for label, key in (("PID", "pid"), ("模型", "model"), ("设备", "devices"), ("配置", "script"), ("日志", "log")):
         print(f"{label}：{state[key]}")
+    if services:
+        print("子服务：")
+        for child in services:
+            lifecycle = "运行中" if child["alive"] else "已退出"
+            readiness = "就绪" if child["ready"] else "未就绪"
+            print(
+                f"  {child['name']}：PID={child['pid']}，"
+                f"进程={lifecycle}，API={readiness}"
+            )
+            print(f"    设备：{child['devices']}")
+            print(f"    地址：{child['address']}")
+            print(f"    日志：{child['log']}")
     return 0
 
 

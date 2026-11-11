@@ -3,7 +3,9 @@ import json
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -21,7 +23,7 @@ def service(monkeypatch, tmp_path):
         sys.modules,
         "serve_resources",
         SimpleNamespace(
-            choose_model=lambda value: "/model", choose_devices=lambda value, resource: "0",
+            choose_model=lambda value: "/model", choose_devices=lambda value, resource, count: "0",
             device_visibility_variable=lambda resource: "ASCEND_RT_VISIBLE_DEVICES",
         ),
     )
@@ -104,7 +106,7 @@ def test_device_count_mismatch_never_launches(service, monkeypatch, tmp_path):
         sys.modules,
         "serve_resources",
         SimpleNamespace(
-            choose_model=lambda value: "/model", choose_devices=lambda value, resource: "0,1",
+            choose_model=lambda value: "/model", choose_devices=lambda value, resource, count: "0,1",
             device_visibility_variable=lambda resource: "ASCEND_RT_VISIBLE_DEVICES",
         ),
     )
@@ -127,7 +129,7 @@ def test_gpu_launch_uses_config_model_and_cuda_visibility(service, monkeypatch, 
         "serve_resources",
         SimpleNamespace(
             choose_model=lambda value: pytest.fail("default model prompted"),
-            choose_devices=lambda value, resource: "GPU-selected",
+            choose_devices=lambda value, resource, count: "GPU-selected",
             device_visibility_variable=lambda resource: "CUDA_VISIBLE_DEVICES",
         ),
     )
@@ -209,3 +211,187 @@ def test_status_rejects_reused_pid_identity(service, tmp_path, capsys):
     assert service.execute(options("status")) == 0
     assert "已退出" in capsys.readouterr().out
     assert state_file.read_text() == original
+
+
+@pytest.mark.parametrize("child_failure", [False, True], ids=["stop", "child-exit"])
+def test_pd_shutdown_reaps_other_services_and_orphan_workers(
+    service, tmp_path, child_failure
+):
+    """停止部署或任一服务退出后，不能遗留独立进程组内的 GPU worker。"""
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "serve_config/deepseek-v3.2-hisparse-pd.py"
+    )
+    child = tmp_path / "child.py"
+    child.write_text('''
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+role = sys.argv[1]
+if role == "prefill":
+    worker = subprocess.Popen([sys.executable, "-c", """
+import os
+from pathlib import Path
+import signal
+import time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+Path("worker.ready").write_text(str(os.getpid()))
+time.sleep(120)
+"""])
+    while not Path("worker.ready").exists():
+        time.sleep(0.01)
+Path(role + ".ready").write_text(str(os.getpid()))
+while True:
+    if role == "decode" and Path("fail").exists():
+        sys.exit(7)
+    time.sleep(0.01)
+''')
+    driver = tmp_path / "driver.py"
+    driver.write_text(f'''
+from pathlib import Path
+import runpy
+import sys
+module = runpy.run_path({str(launcher)!r})
+commands = {{role: [sys.executable, {str(child)!r}, role]
+            for role in ("prefill", "decode", "proxy")}}
+sys.exit(module["run_services"](commands, ["GPU-P", "GPU-D"], Path.cwd()))
+''')
+    environment = dict(os.environ, PYTHONPATH=str(launcher.parent.parent))
+    ready = [tmp_path / (role + ".ready") for role in ("prefill", "decode", "proxy")]
+    worker_ready = tmp_path / "worker.ready"
+    with (tmp_path / "supervisor.log").open("w") as log:
+        process = subprocess.Popen(
+            [sys.executable, str(driver)],
+            cwd=tmp_path,
+            env=environment,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    try:
+        deadline = time.monotonic() + 5
+        while not all(path.exists() for path in [*ready, worker_ready]):
+            assert process.poll() is None, (tmp_path / "supervisor.log").read_text()
+            assert time.monotonic() < deadline, "服务未启动"
+            time.sleep(0.01)
+        pids = [int(path.read_text()) for path in [*ready, worker_ready]]
+        if child_failure:
+            (tmp_path / "fail").touch()
+        else:
+            service.stop({
+                "pid": process.pid,
+                "identity": service.process_identity(process.pid),
+            })
+        assert process.wait(timeout=5) == (7 if child_failure else 0)
+        deadline = time.monotonic() + 5
+        while any(service.process_identity(pid) is not None for pid in pids):
+            assert time.monotonic() < deadline, "停止后仍有服务或 worker 存活"
+            time.sleep(0.01)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        for path in ready:
+            if path.exists():
+                try:
+                    os.killpg(int(path.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+
+def test_status_checks_child_api_without_restarting_or_mutating_state(
+    service, tmp_path, capsys
+):
+    """子服务进程存活但健康检查失败时，不能报告 API 就绪。"""
+    child = tmp_path / "health_server.py"
+    child.write_text('''
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+import socket
+import sys
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200 if Path("healthy").exists() else 503)
+        self.end_headers()
+    def log_message(self, *args):
+        pass
+
+server = HTTPServer(("127.0.0.1", 0), Handler, bind_and_activate=False)
+server.socket.close()
+server.socket = socket.socket(fileno=int(sys.argv[1]))
+Path("child.ready").touch()
+server.serve_forever()
+''')
+    driver = tmp_path / "supervisor.py"
+    driver.write_text(f'''
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import time
+
+listener = socket.socket()
+listener.bind(("127.0.0.1", 0))
+listener.listen()
+port = listener.getsockname()[1]
+with Path("prefill.log").open("w") as log:
+    child = subprocess.Popen(
+        [sys.executable, {str(child)!r}, str(listener.fileno()),
+         "--host", "127.0.0.1", "--port", str(port),
+         "--kv-transfer-config", json.dumps({{"kv_role": "kv_producer"}})],
+        env=dict(os.environ, CUDA_VISIBLE_DEVICES="GPU-test-prefill"),
+        pass_fds=(listener.fileno(),), stdout=log, stderr=subprocess.STDOUT,
+    )
+listener.close()
+Path("child.json").write_text(json.dumps({{"pid": child.pid, "port": port}}))
+time.sleep(120)
+''')
+    process = subprocess.Popen(
+        [sys.executable, str(driver)], cwd=tmp_path, start_new_session=True
+    )
+    state_file = tmp_path / "service.json"
+    try:
+        deadline = time.monotonic() + 5
+        while not (tmp_path / "child.ready").exists() or not (
+            tmp_path / "child.json"
+        ).exists():
+            assert process.poll() is None
+            assert time.monotonic() < deadline, "健康检查服务未启动"
+            time.sleep(0.01)
+        child_info = json.loads((tmp_path / "child.json").read_text())
+        state_file.write_text(json.dumps({
+            "pid": process.pid,
+            "identity": service.process_identity(process.pid),
+            "model": "/model",
+            "devices": "GPU-test-prefill,GPU-test-decode",
+            "script": "pd.py",
+            "log": str(tmp_path / "supervisor.log"),
+        }))
+        original = state_file.read_bytes()
+        assert service.execute(options("status")) == 0
+        output = capsys.readouterr().out
+        assert "Prefill" in output and "API=未就绪" in output
+        assert str(child_info["pid"]) in output
+        assert f"http://127.0.0.1:{child_info['port']}" in output
+        assert "GPU-test-prefill" in output
+        assert str(tmp_path / "prefill.log") in output
+        (tmp_path / "healthy").touch()
+        assert service.execute(options("status")) == 0
+        assert "API=就绪" in capsys.readouterr().out
+        assert state_file.read_bytes() == original
+        assert process.poll() is None
+        assert service.process_identity(child_info["pid"]) is not None
+    finally:
+        state_file.unlink(missing_ok=True)
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=5)

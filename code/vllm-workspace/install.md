@@ -15,7 +15,7 @@ cd code/vllm-workspace/vllm
 uv venv --python 3.12 --seed --managed-python
 # 企业内网可能需要用系统证书
 uv venv --python 3.12 --seed --managed-python --system-certs
-source .venv/bin/activate
+source "$HOME/ai-infra-dev/code/vllm-workspace/vllm/.venv/bin/activate"
 python3 ~/ai-infra-dev/code/dev/ vllm install
 # 自动发现已发布的 CUDA wheel，失败时不会执行安装
 # env 输出同时固定 commit 和 CUDA variant，避免安装时选择不同索引

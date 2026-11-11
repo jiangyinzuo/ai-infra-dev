@@ -14,7 +14,7 @@ BASE_URL = "https://wheels.vllm.ai/"
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
 
 
-def detect_variant():
+def _detect_variant():
     """Match CUDA selection in the current vLLM setup.py (CUDA 12/13)."""
     override = os.environ.get("VLLM_PRECOMPILED_WHEEL_VARIANT")
     if override:
@@ -46,7 +46,7 @@ def detect_variant():
     return {12: "cu129", 13: "cu130"}.get(int(version.split(".")[0]), "cu130")
 
 
-def fetch_metadata(url, timeout):
+def _fetch_metadata(url, timeout):
     with urlopen(url, timeout=timeout) as response:
         metadata = json.load(response)
     if not isinstance(metadata, list) or not all(isinstance(w, dict) for w in metadata):
@@ -54,7 +54,7 @@ def fetch_metadata(url, timeout):
     return metadata
 
 
-def wheel_candidates(metadata, arch):
+def _wheel_candidates(metadata, arch):
     for wheel in metadata:
         if wheel.get("package_name") != "vllm":
             continue
@@ -63,7 +63,7 @@ def wheel_candidates(metadata, arch):
             yield wheel
 
 
-def published_commit(wheel_url):
+def _published_commit(wheel_url):
     url = urlsplit(wheel_url)
     if url.scheme != "https" or url.netloc != "wheels.vllm.ai":
         raise ValueError(f"非官方 wheel URL：{wheel_url}")
@@ -73,37 +73,37 @@ def published_commit(wheel_url):
     raise ValueError(f"wheel 路径中没有完整 commit：{wheel_url}")
 
 
-def check_download(url, timeout):
+def _check_download(url, timeout):
     # HEAD verifies the artifact without downloading a multi-GB wheel.
     with urlopen(Request(url, method="HEAD"), timeout=timeout) as response:
         if response.status != 200:
             raise ValueError(f"wheel 不可下载：HTTP {response.status} {url}")
 
 
-def discover(variant, arch, timeout):
+def _discover(variant, arch, timeout):
     variant_dir = "" if variant == "default" else variant + "/"
     nightly_repo = f"{BASE_URL}nightly/{variant_dir}vllm/"
-    nightly_metadata = fetch_metadata(nightly_repo + "metadata.json", timeout)
-    candidates = list(wheel_candidates(nightly_metadata, arch))
+    nightly_metadata = _fetch_metadata(nightly_repo + "metadata.json", timeout)
+    candidates = list(_wheel_candidates(nightly_metadata, arch))
     if not candidates:
         raise ValueError(f"nightly 没有 {variant}/{arch} 的 vllm wheel")
     for wheel in candidates:
         path = wheel.get("path")
         if not isinstance(path, str) or not path:
             raise ValueError("nightly wheel 元数据缺少 path")
-        commit = published_commit(urljoin(nightly_repo, path))
+        commit = _published_commit(urljoin(nightly_repo, path))
         # Verify the exact index that VLLM_PRECOMPILED_WHEEL_COMMIT will use.
         repo = f"{BASE_URL}{commit}/{variant_dir}vllm/"
         try:
-            metadata = fetch_metadata(repo + "metadata.json", timeout)
-            for pinned in wheel_candidates(metadata, arch):
+            metadata = _fetch_metadata(repo + "metadata.json", timeout)
+            for pinned in _wheel_candidates(metadata, arch):
                 pinned_path = pinned.get("path")
                 if not isinstance(pinned_path, str) or not pinned_path:
                     raise ValueError("commit wheel 元数据缺少 path")
                 wheel_url = urljoin(repo, pinned_path)
-                if published_commit(wheel_url) != commit:
+                if _published_commit(wheel_url) != commit:
                     raise ValueError("commit 索引指向了其他提交的 wheel")
-                check_download(wheel_url, timeout)
+                _check_download(wheel_url, timeout)
                 return commit, wheel_url
         except HTTPError as exc:
             if exc.code != 404:
@@ -114,11 +114,11 @@ def discover(variant, arch, timeout):
 
 def find_vllm_precompiled_commit() -> dict[str, str]:
     """Return the verified wheel environment; fail before installation on discovery errors."""
-    variant = detect_variant()
+    variant = _detect_variant()
     if not re.fullmatch(r"cu[0-9]+|default", variant):
         raise ValueError("VLLM_PRECOMPILED_WHEEL_VARIANT 必须为 cu 加版本号或 default")
     arch = platform.machine()
-    commit, wheel_url = discover(variant, arch, 20)
+    commit, wheel_url = _discover(variant, arch, 20)
     print(f"已验证 {variant}/{arch}：{wheel_url}", file=sys.stderr)
     environment = {
         "VLLM_USE_PRECOMPILED": "1",
