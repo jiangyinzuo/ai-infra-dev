@@ -43,6 +43,46 @@ def test_real_attach_threads_reattach_and_multi_pid(tmp_path: Path) -> None:
 
 
 @requires_remote_exec
+def test_process_label_uses_config_then_target_environment(tmp_path: Path) -> None:
+    result = real_attach(smoke.process_label_scenario, tmp_path / "labels")
+    assert len(result["reports"]) == 2
+
+
+@pytest.mark.parametrize("labels", [
+    ["missing-separator"], ["=P"], ["0=P"], ["-1=P"],
+    ["{pid}="], ["{pid}=  "], ["{unknown}=P"],
+    ["{pid}=P", "{pid}=D"],
+])
+def test_cli_rejects_invalid_duplicate_and_unknown_labels(tmp_path: Path, labels: list[str]) -> None:
+    from trace_python.call_stack_analysis.attach import main
+
+    pid = os.getpid() + 1
+    with pytest.raises(SystemExit) as caught:
+        main([
+            "--pid", str(pid), "--config", str(tmp_path / "unused.py"),
+            "--output-prefix", str(tmp_path / "unused"),
+            *(f"--process-label={value.format(pid=pid, unknown=pid + 1)}" for value in labels),
+        ])
+    assert caught.value.code == 2
+    assert not list(tmp_path.iterdir())
+
+
+@requires_remote_exec
+@pytest.mark.parametrize("case", ["unknown", "zero", "noninteger", "empty", "whitespace", "nonstring"])
+def test_api_rejects_invalid_labels_before_creating_requests(tmp_path: Path, case: str) -> None:
+    from trace_python.call_stack_analysis.attach import capture_processes
+
+    pid = os.getpid() + 1
+    labels = {
+        "unknown": {pid + 1: "P"}, "zero": {0: "P"}, "noninteger": {str(pid): "P"},
+        "empty": {pid: ""}, "whitespace": {pid: "  "}, "nonstring": {pid: None},
+    }[case]
+    with pytest.raises(ValueError, match="PID|进程标签"):
+        capture_processes([pid], tmp_path / "unused.py", tmp_path / "unused", process_labels=labels)
+    assert not list(tmp_path.iterdir())
+
+
+@requires_remote_exec
 def test_invalid_target_ack_keeps_business_alive(tmp_path: Path) -> None:
     report = real_attach(smoke.invalid_target_scenario, tmp_path / "invalid")
     assert report["errors"]
@@ -152,10 +192,11 @@ def test_duplicate_start_and_wrong_stop_preserve_active_capture(tmp_path: Path) 
         assert request("mismatch", "stop", "second")["status"] == "error"
         response = subject.batch("original-still-active")
         assert response["hooks"] == {"current": True, "future": True}
-        assert request("uninstall", "stop", "first")["status"] == "ok"
+        stop = request("uninstall", "stop", "first")
+        assert stop["status"] == "ok", stop
         installed = False
         subject.assert_detached()
-        smoke.check_capture({**start, "stopped": True}, {"run_id": "first"}, response)
+        smoke.check_capture({**stop, "stopped": True}, {"run_id": "first"}, response)
     finally:
         if installed:
             request("emergency-stop", "stop", "first")

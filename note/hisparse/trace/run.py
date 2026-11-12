@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""附加当前 P/D EngineCore，持续请求直到采集器卸载；不启动或重配服务。"""
+"""附加当前 P/D EngineCore 与 Proxy，持续请求直到采集器卸载；不启动或重配服务。"""
 
 import argparse
 import importlib
@@ -201,13 +201,18 @@ def main() -> int:
     if sys.version_info < (3, 14) or not hasattr(sys, "remote_exec"):
         parser.error("请使用 vLLM .venv 中的 CPython 3.14+")
     services = _services()
+    model = _read_json(services["Decode"]["address"] + "/v1/models")["data"][0]["id"]
     roles = {
         "Prefill": _engine_pid(services["Prefill"]["pid"]),
         "Decode": _engine_pid(services["Decode"]["pid"]),
         "Proxy": services["Proxy"]["pid"],
     }
-    pids = [roles["Prefill"], roles["Decode"]]
-    model = _read_json(services["Decode"]["address"] + "/v1/models")["data"][0]["id"]
+    labels = {
+        roles["Prefill"]: "P",
+        roles["Decode"]: "D",
+        roles["Proxy"]: "Proxy",
+    }
+    pids = list(labels)
     config = ROOT / "trace_python/call_stack_analysis/config/pd_hisparse_attach.py"
     loaded = load_config(config)
     locate(loaded.root, loaded.targets)
@@ -216,6 +221,7 @@ def main() -> int:
         "command": sys.orig_argv,
         "cwd": str(Path.cwd()),
         "roles": roles,
+        "process_labels": labels,
         "model": model,
         "config": str(config),
         "duration": args.duration,
@@ -225,7 +231,11 @@ def main() -> int:
         "services": services,
     }
     (directory / "command.json").write_text(json.dumps(context, ensure_ascii=False, indent=2))
-    print(f"P={roles['Prefill']} D={roles['Decode']} model={model}\n输出：{directory}", flush=True)
+    print(
+        f"P={roles['Prefill']} D={roles['Decode']} "
+        f"Proxy={roles['Proxy']} model={model}\n输出：{directory}",
+        flush=True,
+    )
     before = _metrics(services["Decode"]["address"])
     stop = threading.Event()
     results, errors = [], []
@@ -238,11 +248,16 @@ def main() -> int:
     try:
         _refresh(pids, directory, args.timeout, errors)
         try:
-            report = capture_processes(pids, config, directory / "capture", args.duration, args.timeout)
+            report = capture_processes(
+                pids, config, directory / "capture", args.duration, args.timeout,
+                process_labels=labels,
+            )
         except AttachError as error:
             report = error.report
             confirmations = _late_detach(report, args.timeout)
-            (directory / "detach-confirmation.json").write_text(json.dumps(confirmations, indent=2))
+            (directory / "detach-confirmation.json").write_text(
+                json.dumps(confirmations, indent=2)
+            )
         finally:
             if report is not None:
                 (directory / "attach-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import threading
 import time
@@ -130,6 +131,13 @@ class Tracer:
     def stop(self) -> None:
         with self.lock:
             self.active = False
+            self._refresh_identity()
+
+    def _refresh_identity(self) -> None:
+        name = multiprocessing.current_process().name
+        if name != self.identity["process_name"]:
+            self.identity["process_name"] = name
+            self.writer.update_identity(self.identity)
 
     def trace(self, frame: FrameType, event: str, arg: Any) -> None:
         if event != "call" or not self.active:
@@ -146,6 +154,7 @@ class Tracer:
             # 关闭采集可能发生在另一个线程等待这把锁期间。
             if not self.active:
                 return
+            self._refresh_identity()
             name = f"{target.file}:{target.function}"
             self.counts[name] += 1
             if self.counts[name] > target.limit:

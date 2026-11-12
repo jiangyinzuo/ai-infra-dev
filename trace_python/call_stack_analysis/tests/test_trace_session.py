@@ -85,7 +85,7 @@ def _cli_config(root: Path, outcome: str) -> tuple[Path, Path]:
         f"    {ending}\n"
         "config = TraceConfig(root=ROOT, run=run, targets=(\n"
         "    Target('scenario.py', 'observe', ('value',), limit=2),\n"
-        "), env={'TRACE_SMOKE_ENV': 'configured'})\n",
+        "), env={'TRACE_SMOKE_ENV': 'configured'}, process_label='CLI')\n",
         encoding="utf-8",
     )
     return config, restored
@@ -125,6 +125,8 @@ def test_direct_cli_preserves_outputs_and_target_context(tmp_path: Path, entrypo
     assert capture["run"]["root"] == str(config.parent)
     assert capture["run"]["config"] == str(config)
     assert capture["summary"]["counts"] == {"scenario.py:observe": 3}
+    assert capture["run"]["process_label"] == "CLI"
+    assert all(event["process_label"] == "CLI" for event in capture["events"])
     assert [event["values"] for event in capture["events"]] == [
         {"value": "first"}, {"value": "second"},
     ]
@@ -515,3 +517,131 @@ def test_real_api_engine_worker_topology(tmp_path: Path, start_method: str) -> N
         assert capture["run"]["cwd"] == str(invocation)
 
 
+@pytest.mark.parametrize("tensor_parallel_size", [None, "1"])
+def test_multi_api_startup_keeps_two_frontends_without_data_parallelism(
+    monkeypatch: pytest.MonkeyPatch, tensor_parallel_size: str | None,
+) -> None:
+    pytest.importorskip("vllm")
+    from vllm.entrypoints.cli.serve import ServeSubcommand
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
+    from trace_python.call_stack_analysis.config.startup_common import _command
+    from trace_python.call_stack_analysis.configuration import load_config
+
+    monkeypatch.delenv("TRACE_VLLM_STARTUP_TENSOR_PARALLEL_SIZE", raising=False)
+    if tensor_parallel_size is not None:
+        monkeypatch.setenv("TRACE_VLLM_STARTUP_TENSOR_PARALLEL_SIZE", tensor_parallel_size)
+    config = load_config(TOOL_DIRECTORY / "config/startup_multi_api.py")
+    assert config.root == REPOSITORY_ROOT / "code/vllm-workspace/vllm"
+    parser = FlexibleArgumentParser()
+    ServeSubcommand().subparser_init(parser.add_subparsers())
+    args = parser.parse_args(_command("multi-api")[3:])
+    assert args.api_server_count == 2
+    assert args.data_parallel_size == 1
+    assert args.tensor_parallel_size == int(tensor_parallel_size or "2")
+    assert not args.headless
+
+
+def test_same_name_children_keep_business_labels_and_separate_outputs(
+    tmp_path: Path, business: Any,
+) -> None:
+    from dataclasses import replace
+
+    context = multiprocessing.get_context("spawn")
+    session = _session(business, tmp_path / "shared")
+    processes = [
+        context.Process(
+            name="EngineCore", target=replace(session, process_label=label).run,
+            args=(business.observe, label),
+        )
+        for label in ("P", "D")
+    ]
+    try:
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(15)
+            assert process.exitcode == 0
+    finally:
+        for process in processes:
+            if process.pid is not None and process.is_alive():
+                process.terminate()
+                process.join(5)
+    captures = [smoke.read_capture(path) for path in tmp_path.glob("shared.*.jsonl")]
+    assert {capture["run"]["process_label"] for capture in captures} == {"P", "D"}
+    for capture in captures:
+        label = capture["run"]["process_label"]
+        assert f".{label}.EngineCore." in capture["paths"][0].name
+        assert capture["events"][0]["values"] == {"value": label}
+        assert capture["summary"]["output_prefix"] == capture["run"]["output_prefix"]
+
+
+def test_process_rename_moves_outputs_before_exit_even_after_hit_limit(
+    tmp_path: Path, business: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    monkeypatch.setenv("TRACE_PROCESS_LABEL", "D")
+    session = replace(_session(business, tmp_path / "capture"), process_label="P/节点")
+    process = multiprocessing.current_process()
+    previous_name = process.name
+    suffixes = (".jsonl", ".txt", ".tree.json", ".tree.txt")
+    try:
+        with session.capture() as tracer:
+            assert os.environ["TRACE_PROCESS_LABEL"] == "P/节点"
+            business.observe("recorded")
+            before = tracer.writer.prefix
+            process.name = "Worker/TP:0"
+            business.observe("over-limit")
+            after = tracer.writer.prefix
+            assert after != before
+            assert after.parent == tmp_path
+            assert ".P_节点.Worker_TP_0." in after.name
+            assert all(Path(str(after) + suffix).is_file() for suffix in suffixes)
+            assert not any(Path(str(before) + suffix).exists() for suffix in suffixes)
+    finally:
+        process.name = previous_name
+    assert os.environ["TRACE_PROCESS_LABEL"] == "D"
+    records = [json.loads(line) for line in Path(str(after) + ".jsonl").read_text().splitlines()]
+    assert records[-1]["process_name"] == "Worker/TP:0"
+    assert records[-1]["process_label"] == "P/节点"
+    assert records[-1]["output_prefix"] == str(after)
+    assert records[-1]["counts"] == {"smoke_business_functions.py:observe": 2}
+    assert [record["values"] for record in records if record["type"] == "event"] == [
+        {"value": "recorded"},
+    ]
+
+
+def test_subprocess_inherits_label_and_named_files_survive_sigkill(
+    tmp_path: Path, business: Any, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    monkeypatch.setenv("TRACE_PROCESS_LABEL", "original")
+    subject = tmp_path / "named_subject.py"
+    subject.write_text(
+        "import multiprocessing, os, signal\n"
+        "from pathlib import Path\n"
+        "from trace_python.call_stack_analysis import Target, TraceSession\n"
+        "def observe(value):\n    return value\n"
+        "session = TraceSession(Path(__file__).parent,\n"
+        "    (Target(Path(__file__).name, 'observe', ('value',)),),\n"
+        "    Path(__file__).with_name('child'))\n"
+        "with session.capture():\n"
+        "    multiprocessing.current_process().name = 'EngineCore'\n"
+        "    observe(42)\n"
+        "    os.kill(os.getpid(), signal.SIGKILL)\n",
+        encoding="utf-8",
+    )
+    session = replace(_session(business, tmp_path / "parent"), process_label="P")
+    with session.capture():
+        result = _run([sys.executable, str(subject)], tmp_path, module=True)
+    assert result.returncode == -signal.SIGKILL, result.stderr
+    assert os.environ["TRACE_PROCESS_LABEL"] == "original"
+    path, = tmp_path.glob("child.*.jsonl")
+    assert ".P.EngineCore." in path.name
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert records[-1]["type"] == "event"
+    assert records[-1]["process_label"] == "P"
+    assert records[-1]["process_name"] == "EngineCore"
+    assert records[-1]["values"] == {"value": 42}
+    assert Path(records[-1]["output_prefix"] + ".jsonl") == path

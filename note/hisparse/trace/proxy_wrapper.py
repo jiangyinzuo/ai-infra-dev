@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Start toy proxy with an in-process trace session."""
+"""Start toy proxy with tracing; resolve trace_python from the workspace root."""
 
 import os
 from pathlib import Path
 import runpy
 import sys
 
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
 from trace_python.call_stack_analysis import TraceSession
 from trace_python.call_stack_analysis.configuration import load_config
 
-ROOT = Path(__file__).resolve().parents[3]
 CONFIG = ROOT / "trace_python/call_stack_analysis/config/pd_hisparse_attach.py"
 
 
@@ -25,6 +27,7 @@ def main() -> int:
         config.targets,
         prefix,
         config_path=CONFIG,
+        process_label="Proxy",
     )
     with session.capture():
         runpy.run_path(str(proxy), run_name="__main__")

@@ -31,6 +31,20 @@ def _without_inherited_hook(hook: Any) -> Any:
     return hook
 
 
+@contextlib.contextmanager
+def _label_environment(label: str | None) -> Iterator[None]:
+    previous = os.environ.get("TRACE_PROCESS_LABEL")
+    if label is not None:
+        os.environ["TRACE_PROCESS_LABEL"] = label
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("TRACE_PROCESS_LABEL", None)
+        else:
+            os.environ["TRACE_PROCESS_LABEL"] = previous
+
+
 @dataclass(frozen=True)
 class TraceSession:
     """只传递配置；writer、锁、计数器都在进入目标进程后创建。"""
@@ -40,6 +54,7 @@ class TraceSession:
     output_prefix: Path
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     config_path: Path | None = None
+    process_label: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         if not self.root.is_absolute():
@@ -72,10 +87,14 @@ class TraceSession:
             "pid": pid,
             "ppid": os.getppid(),
             "process_name": multiprocessing.current_process().name,
+            "process_label": (
+                self.process_label if self.process_label is not None
+                else os.environ.get("TRACE_PROCESS_LABEL")
+            ),
         }
         prefix = (
             output_prefix.resolve() if output_prefix is not None
-            else Path(f"{self.output_prefix}.{instance}")
+            else self.output_prefix
         )
         # 在任何 cwd 切换之前记录真实启动上下文。
         invocation = {
@@ -90,15 +109,18 @@ class TraceSession:
         previous_trace = _without_inherited_hook(sys.gettrace())
         previous_thread_trace = _without_inherited_hook(threading.gettrace())
 
-        with open_writer(prefix) as writer:
+        with _label_environment(identity["process_label"]), open_writer(
+            prefix, identity=identity if output_prefix is None else None,
+        ) as writer:
+            writer.update_identity(identity)
             tracer = Tracer(self.root, self.targets, writer, identity, active=active)
             writer.emit({
                 "type": "run",
                 **common,
+                **identity,
                 "config": str(self.config_path) if self.config_path else None,
                 "root": str(self.root),
                 "python": sys.executable,
-                "output_prefix": str(prefix),
                 "start_method": multiprocessing.get_start_method(allow_none=True),
                 "scope": "current-process Python threads; no CUDA kernel tracing",
             })
@@ -123,6 +145,7 @@ class TraceSession:
                     writer.emit({
                         "type": "summary",
                         **common,
+                        **identity,
                         "status": status,
                         "error": error,
                         "events": tracer.sequence,

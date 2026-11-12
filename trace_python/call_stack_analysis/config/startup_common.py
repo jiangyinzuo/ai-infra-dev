@@ -17,7 +17,7 @@ from trace_python.call_stack_analysis import Target, TraceConfig
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 VLLM_ROOT = REPOSITORY_ROOT / "code/vllm-workspace/vllm"
-SERVE_CONFIG = REPOSITORY_ROOT / "code/dev/serve_config/deepseek-v3.2-hisparse.py"
+SERVE_CONFIG = REPOSITORY_ROOT / "code/dev/serve_config/deepseek-v3.2-dp2-ep1.py"
 sys.path.insert(0, str(REPOSITORY_ROOT / "code/dev"))
 
 TARGETS = (
@@ -37,10 +37,20 @@ TARGETS = (
     Target("vllm/v1/engine/core_client.py", "EngineCoreClient.make_async_mp_client"),
     Target("vllm/v1/engine/utils.py", "launch_core_engines"),
     Target("vllm/v1/engine/utils.py", "CoreEngineProcManager.__init__"),
-    Target("vllm/v1/engine/core.py", "EngineCoreProc.run_engine_core"),
-    Target("vllm/v1/engine/core.py", "EngineCoreProc.__init__"),
-    Target("vllm/v1/engine/core.py", "EngineCore.__init__"),
-    Target("vllm/v1/engine/core.py", "EngineCore._initialize_kv_caches"),
+    Target(
+        "vllm/v1/engine/core.py",
+        "EngineCore.__init__",
+        (
+            "self.vllm_config.parallel_config.data_parallel_size",
+            "self.vllm_config.parallel_config.data_parallel_rank",
+            "self.vllm_config.parallel_config.enable_expert_parallel",
+        ),
+    ),
+    Target(
+        "vllm/v1/engine/core.py",
+        "EngineCore._initialize_kv_caches",
+        ("self.vllm_config.parallel_config.data_parallel_rank",),
+    ),
     Target("vllm/v1/executor/multiproc_executor.py", "MultiprocExecutor.__init__"),
     Target("vllm/v1/executor/multiproc_executor.py", "WorkerProc.__init__"),
     Target("vllm/v1/executor/multiproc_executor.py", "WorkerProc.worker_main"),
@@ -53,34 +63,49 @@ TARGETS = (
 )
 
 
-def make_config(mode: str, config_path: Path) -> TraceConfig:
+def make_config(
+    mode: str, config_path: Path, process_label: str | None = None,
+) -> TraceConfig:
     def run(start) -> None:
         run_startup(start, mode, config_path)
 
-    return TraceConfig(root=VLLM_ROOT, run=run, targets=TARGETS)
+    return TraceConfig(
+        root=VLLM_ROOT, run=run, targets=TARGETS,
+        process_label=os.environ.get("TRACE_PROCESS_LABEL", process_label),
+    )
 
 
 def _command(mode: str) -> list[str]:
-    serve_config = runpy.run_path(str(SERVE_CONFIG))["config"]
-    tokens = [
-        token.replace("{model}", serve_config.model)
-        for token in serve_config.serve_command[1:]
+    if mode == "glm-hisparse-push-decode":
+        recipe = runpy.run_path(
+            str(SERVE_CONFIG.with_name("glm-5.3-hisparse-pd-push.py"))
+        )
+        return recipe["service_commands"](recipe["config"].model)["decode"]
+    if mode == "dp2-ep1":
+        serve_config = runpy.run_path(str(SERVE_CONFIG))["config"]
+        return [
+            argument.replace("{model}", serve_config.model)
+            for argument in serve_config.serve_command
+        ]
+    mode_args = {
+        "single-api": ["--api-server-count", "1"],
+        "multi-api": ["--api-server-count", "2"],
+        "headless": ["--headless"],
+    }
+    if mode not in mode_args:
+        raise ValueError(f"unsupported startup mode: {mode}")
+    serve_config = runpy.run_path(
+        str(SERVE_CONFIG.with_name("deepseek-v3.2-hisparse.py"))
+    )["config"]
+    command = [
+        sys.executable, "-m", "vllm.entrypoints.cli.main",
+        *(argument.replace("{model}", serve_config.model)
+          for argument in serve_config.serve_command[1:]),
     ]
-    command = [sys.executable, "-m", "vllm.entrypoints.cli.main", *tokens]
-    tensor_parallel_size = os.environ.get(
+    command[command.index("--tensor-parallel-size") + 1] = os.environ.get(
         "TRACE_VLLM_STARTUP_TENSOR_PARALLEL_SIZE", "2"
     )
-    try:
-        tensor_parallel_index = command.index("--tensor-parallel-size")
-    except ValueError:
-        command.extend(("--tensor-parallel-size", tensor_parallel_size))
-    else:
-        command[tensor_parallel_index + 1] = tensor_parallel_size
-    if mode == "multi-api":
-        command.extend(("--api-server-count", "2"))
-    elif mode == "headless":
-        command.append("--headless")
-    return command
+    return [*command, *mode_args[mode]]
 
 
 def _write_timeline(prefix: Path) -> Path:
@@ -98,7 +123,9 @@ def _write_timeline(prefix: Path) -> Path:
         origin = events[0]["monotonic_ns"]
         lines = [
             f"+{(event['monotonic_ns'] - origin) / 1_000_000:10.3f} ms "
-            f"pid={event['pid']} {event['process_name']} #{event['sequence']} "
+            f"pid={event['pid']} "
+            f"{event['process_label'] + ' ' if event.get('process_label') else ''}"
+            f"{event['process_name']} #{event['sequence']} "
             f"{event['target']}"
             for event in events
         ]
@@ -132,18 +159,26 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
 
 
 def run_startup(start, mode: str, config_path: Path) -> None:
-    if mode not in {"single-api", "multi-api", "headless"}:
-        raise ValueError(f"unsupported startup mode: {mode}")
+    command = _command(mode)
+    devices = os.environ.get("TRACE_VLLM_STARTUP_DEVICES") or os.environ.get(
+        "CUDA_VISIBLE_DEVICES"
+    )
+    if mode == "dp2-ep1" and (not devices or len(devices.split(",")) != 2):
+        raise ValueError(
+            "Set TRACE_VLLM_STARTUP_DEVICES to two GPU UUIDs or indices"
+        )
     start()
     run_id = uuid.uuid4().hex
     base_prefix = Path(
         os.environ.get(
-            "TRACE_VLLM_STARTUP_OUTPUT_PREFIX", f"runtime/startup-trace/{mode}"
+            "TRACE_VLLM_STARTUP_OUTPUT_PREFIX", f"/tmp/runtime/startup-trace/{mode}"
         )
     ).resolve()
     prefix = base_prefix.with_name(f"{base_prefix.name}-{run_id[:8]}")
     prefix.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
+    if devices:
+        env["CUDA_VISIBLE_DEVICES"] = devices
     existing_pythonpath = env.get("PYTHONPATH")
     with tempfile.TemporaryDirectory(prefix="vllm-startup-trace-") as bootstrap_dir:
         Path(bootstrap_dir, "sitecustomize.py").write_text(
@@ -161,7 +196,6 @@ def run_startup(start, mode: str, config_path: Path) -> None:
         env["TRACE_VLLM_STARTUP_RUN_ID"] = run_id
         # Spawn reruns sitecustomize in every API, EngineCore, and Worker process.
         env["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
-        command = _command(mode)
         print("命令：" + shlex.join(command), flush=True)
         process = subprocess.Popen(
             command, cwd=VLLM_ROOT, env=env, start_new_session=True

@@ -4,4 +4,4 @@ from pathlib import Path
 
 from trace_python.call_stack_analysis.config.startup_common import make_config
 
-config = make_config("multi-api", Path(__file__).resolve())
+config = make_config("multi-api", Path(__file__).resolve(), process_label="multi-api")

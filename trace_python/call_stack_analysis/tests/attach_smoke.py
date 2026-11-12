@@ -61,13 +61,16 @@ def permission_error(exc: BaseException) -> bool:
 
 
 class Subject:
-    def __init__(self, directory: Path, *, disabled: bool = False) -> None:
+    def __init__(self, directory: Path, *, disabled: bool = False, process_label: str | None = None) -> None:
         directory.mkdir(parents=True)
         self.directory = directory
         self.batches: list[str] = []
         environment = os.environ.copy()
         environment.pop("PYTHONPATH", None)
         environment.pop("PYTHON_DISABLE_REMOTE_DEBUG", None)
+        environment.pop("TRACE_PROCESS_LABEL", None)
+        if process_label is not None:
+            environment["TRACE_PROCESS_LABEL"] = process_label
         environment["ATTACH_SMOKE_ENV"] = "business-original"
         if disabled:
             environment["PYTHON_DISABLE_REMOTE_DEBUG"] = "1"
@@ -95,18 +98,27 @@ class Subject:
             stdout, stderr = self.process.communicate()
             raise AssertionError(f"Subject exited {self.process.returncode}: {stdout}\n{stderr}")
 
-    def batch(self, name: str, values: list[int] | None = None) -> dict[str, Any]:
+    def batch(
+        self, name: str, values: list[int] | None = None,
+        *, process_label: str | None = None, process_name: str | None = None,
+    ) -> dict[str, Any]:
         self.check_alive()
         response_path = self.directory / "response.json"
         response_path.unlink(missing_ok=True)
         request = {"action": "batch", "batch": name, "values": VALUES if values is None else values}
+        if process_name is not None:
+            request["process_name"] = process_name
         temporary = self.directory / "request.tmp"
         temporary.write_text(json.dumps(request), encoding="utf-8")
         temporary.replace(self.directory / "request.json")
         self.batches.append(name)
         response = wait_for(lambda: self._response(response_path), f"business batch {name}")
         assert response["batch"] == name, response
-        for key in ("cwd", "environment", "sys_path"):
+        expected_environment = self.baseline["environment"].copy()
+        if process_label is not None:
+            expected_environment["TRACE_PROCESS_LABEL"] = process_label
+        assert response["environment"] == expected_environment, response
+        for key in ("cwd", "sys_path"):
             assert response[key] == self.baseline[key], (key, response, self.baseline)
         expected = request["values"]
         assert response["values"] == [value * 2 for value in expected], response
@@ -148,7 +160,7 @@ class Subject:
             assert stdout.splitlines() == expected, (stdout, expected)
 
 
-def make_config(path: Path, *, invalid: bool = False) -> Path:
+def make_config(path: Path, *, invalid: bool = False, process_label: str | None = None) -> Path:
     function = "does_not_exist" if invalid else "main_work"
     specifications = [(function, 2), ("existing_work", 2), ("future_work", 2), ("count_only", 0)]
     targets = ",\n".join(
@@ -162,24 +174,28 @@ def make_config(path: Path, *, invalid: bool = False) -> Path:
         f"assert os.getpid() == {os.getpid()}, 'config imported outside controller'\n"
         "def run(start):\n"
         "    raise AssertionError('attach must not call config.run')\n"
-        f"config = TraceConfig(root=Path({str(REPOSITORY_ROOT)!r}), run=run, targets=(\n{targets},\n))\n",
+        f"config = TraceConfig(root=Path({str(REPOSITORY_ROOT)!r}), run=run, targets=(\n{targets},\n), process_label={process_label!r})\n",
         encoding="utf-8",
     )
     return path
 
 
 def run_record(prefix: Path, pid: int) -> dict[str, Any] | None:
-    for path in prefix.parent.glob(prefix.name + f".{pid}-*.jsonl"):
+    for path in prefix.parent.glob(prefix.name + ".*.jsonl"):
         with path.open(encoding="utf-8") as stream:
             first = stream.readline()
         if first.endswith("\n"):
             record = json.loads(first)
-            if record["type"] == "run":
+            if record["type"] == "run" and record["pid"] == pid:
                 return record
     return None
 
 
-def capture_batch(subjects: list[Subject], config: Path, prefix: Path, duration: float, *, cli: bool = False) -> tuple[dict[str, Any], dict[int, dict[str, Any]]]:
+def capture_batch(
+    subjects: list[Subject], config: Path, prefix: Path, duration: float,
+    *, cli: bool = False, process_labels: dict[int, str] | None = None,
+    final_process_name: str | None = None,
+) -> tuple[dict[str, Any], dict[int, dict[str, Any]]]:
     from trace_python.call_stack_analysis.attach import AttachError, capture_processes, main as attach_main
 
     abort = threading.Event()
@@ -198,7 +214,20 @@ def capture_batch(subjects: list[Subject], config: Path, prefix: Path, duration:
                 if abort.is_set():
                     return
                 assert isinstance(record, dict), record
-                responses[pid] = subject.batch(f"capture-{prefix.name}")
+                responses[pid] = subject.batch(
+                    f"capture-{prefix.name}", process_label=record["process_label"],
+                )
+                if final_process_name is not None:
+                    # All target limits are exhausted; identity must still follow the rename.
+                    subject.batch(
+                        f"exhausted-{prefix.name}", process_label=record["process_label"],
+                        process_name="EngineCore-matched",
+                    )
+                    # No target executes after this rename: only stop can refresh the final path.
+                    subject.batch(
+                        f"rename-{prefix.name}", [], process_label=record["process_label"],
+                        process_name=final_process_name,
+                    )
         except BaseException as exc:
             failures.append(exc)
 
@@ -213,13 +242,17 @@ def capture_batch(subjects: list[Subject], config: Path, prefix: Path, duration:
                     "--pid", *(str(pid) for pid in pids), "--config", str(config),
                     "--output-prefix", str(prefix), "--duration", str(duration),
                     "--timeout", str(TIMEOUT),
+                    *(argument for pid, label in (process_labels or {}).items()
+                      for argument in ("--process-label", f"{pid}={label}")),
                 ])
             report = json.loads(stdout.getvalue())
             if code != 0:
                 raise AttachError(report)
             assert stderr.getvalue() == "", stderr.getvalue()
         else:
-            report = capture_processes(pids, config, prefix, duration, TIMEOUT)
+            report = capture_processes(
+                pids, config, prefix, duration, TIMEOUT, process_labels=process_labels,
+            )
     except BaseException as exc:
         if permission_error(exc):
             raise PermissionUnavailable(str(exc)) from exc
@@ -237,7 +270,10 @@ def capture_batch(subjects: list[Subject], config: Path, prefix: Path, duration:
     return report, responses
 
 
-def check_capture(capture: dict[str, Any], report: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
+def check_capture(
+    capture: dict[str, Any], report: dict[str, Any], response: dict[str, Any],
+    *, calls_per_target: int = len(VALUES),
+) -> dict[str, Any]:
     prefix = Path(capture["output_prefix"])
     paths = [Path(str(prefix) + suffix)
              for suffix in (".jsonl", ".txt", ".tree.json", ".tree.txt")]
@@ -249,13 +285,20 @@ def check_capture(capture: dict[str, Any], report: dict[str, Any], response: dic
     assert summary["events"] == len(events) == 6, summary
     assert summary["elapsed_seconds"] >= 0, summary
     assert capture["stopped"] is True, capture
-    assert prefix.name.endswith("." + capture["process_instance_id"]), capture
     for record in records:
         assert record["pid"] == capture["pid"], record
         assert record["run_id"] == report["run_id"], record
         assert record["process_instance_id"] == capture["process_instance_id"], record
+        assert record["process_label"] == capture["process_label"], record
+    assert run["process_name"] == response["process_name"], run
+    assert all(event["process_name"] == run["process_name"] for event in events), events
+    assert summary["process_name"] == capture["process_name"], summary
+    assert summary["output_prefix"] == str(prefix), summary
+    if run["output_prefix"] != str(prefix):
+        assert not any(Path(run["output_prefix"] + suffix).exists()
+                       for suffix in (".jsonl", ".txt", ".tree.json", ".tree.txt")), run
     assert [event["sequence"] for event in events] == list(range(1, 7)), events
-    expected_counts = {f"{SOURCE}:{name}": 3 for name in (*FUNCTIONS, "count_only")}
+    expected_counts = {f"{SOURCE}:{name}": calls_per_target for name in (*FUNCTIONS, "count_only")}
     assert summary["counts"] == expected_counts, summary
     for name in FUNCTIONS:
         selected = [event for event in events if event["target"] == f"{SOURCE}:{name}"]
@@ -290,15 +333,22 @@ def successful_scenario(prefix: Path, duration: float = 0.5) -> dict[str, Any]:
     subjects: list[Subject] = []
     reports: list[dict[str, Any]] = []
     try:
-        config = make_config(work / "config.py")
+        config = make_config(work / "config.py", process_label="configured")
         subjects.append(Subject(work / "first"))
+        process_labels = {subjects[0].process.pid: "P"}
         for label in ("first", "reattach"):
             report, responses = capture_batch(
                 subjects, config, Path(str(prefix) + "-" + label), duration, cli=label == "first",
+                process_labels=process_labels, final_process_name="EngineCore",
             )
             assert report["pids"] == [subjects[0].process.pid], report
             assert len(report["captures"]) == 1, report
-            checked = check_capture(report["captures"][0], report, responses[subjects[0].process.pid])
+            checked = check_capture(
+                report["captures"][0], report, responses[subjects[0].process.pid],
+                calls_per_target=2 * len(VALUES),
+            )
+            assert report["captures"][0]["process_label"] == "P", report
+            assert report["captures"][0]["process_name"] == "EngineCore", report
             subjects[0].assert_detached()
             subjects[0].batch(f"after-{label}")
             assert all(Path(path).stat().st_size == size for path, size in checked["sizes"].items())
@@ -307,12 +357,21 @@ def successful_scenario(prefix: Path, duration: float = 0.5) -> dict[str, Any]:
         assert first["process_instance_id"] != second["process_instance_id"], reports
         assert reports[0]["run_id"] != reports[1]["run_id"], reports
         subjects.append(Subject(work / "second"))
-        report, responses = capture_batch(subjects, config, Path(str(prefix) + "-multi"), duration)
+        subjects[1].batch("set-name", [], process_name="EngineCore")
+        process_labels[subjects[1].process.pid] = "D"
+        report, responses = capture_batch(
+            subjects, config, Path(str(prefix) + "-multi"), duration, cli=True,
+            process_labels=process_labels, final_process_name="EngineCore-final",
+        )
         assert report["pids"] == [subject.process.pid for subject in subjects], report
         assert {capture["pid"] for capture in report["captures"]} == set(report["pids"]), report
         assert len({capture["process_instance_id"] for capture in report["captures"]}) == 2, report
         for capture in report["captures"]:
-            check_capture(capture, report, responses[capture["pid"]])
+            check_capture(capture, report, responses[capture["pid"]], calls_per_target=2 * len(VALUES))
+            assert capture["process_label"] == process_labels[capture["pid"]], capture
+            assert capture["process_name"] == "EngineCore-final", capture
+            assert f".{capture['process_label']}.EngineCore-final." in Path(capture["output_prefix"]).name, capture
+        assert len({capture["output_prefix"] for capture in report["captures"]}) == 2, report
         reports.append(report)
         for subject in subjects:
             subject.assert_detached()
@@ -321,6 +380,28 @@ def successful_scenario(prefix: Path, duration: float = 0.5) -> dict[str, Any]:
         active_error = sys.exc_info()[0] is not None
         for subject in subjects:
             subject.close(check=not active_error)
+
+
+def process_label_scenario(prefix: Path) -> dict[str, Any]:
+    require_runtime()
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=prefix.name + "-labels-", dir=prefix.parent))
+    subject = Subject(work / "subject", process_label="target-environment")
+    reports: list[dict[str, Any]] = []
+    try:
+        for configured in (None, "configured"):
+            config = make_config(work / "config.py", process_label=configured)
+            report, responses = capture_batch(
+                [subject], config, Path(f"{prefix}-{len(reports)}"), 0.5,
+            )
+            capture, = report["captures"]
+            assert capture["process_label"] == (configured or "target-environment"), capture
+            check_capture(capture, report, responses[subject.process.pid])
+            subject.assert_detached()
+            reports.append(report)
+        return {"reports": reports}
+    finally:
+        subject.close(check=sys.exc_info()[0] is None)
 
 
 def invalid_target_scenario(prefix: Path) -> dict[str, Any]:
@@ -440,6 +521,7 @@ def main() -> int:
     prefix = options.output_prefix.resolve() if options.output_prefix else Path(temporary.name) / "capture"
     try:
         result = successful_scenario(prefix, options.duration)
+        result["process_labels"] = process_label_scenario(Path(str(prefix) + "-labels"))
         result["invalid_target"] = invalid_target_scenario(Path(str(prefix) + "-invalid"))
         result["timeout"] = timeout_scenario(Path(str(prefix) + "-timeout"))
         result["disabled"] = disabled_scenario(Path(str(prefix) + "-disabled"))

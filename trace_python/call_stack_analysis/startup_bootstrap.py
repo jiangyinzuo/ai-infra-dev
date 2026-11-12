@@ -20,6 +20,7 @@ def install() -> None:
         output_prefix=output_prefix,
         run_id=os.environ["TRACE_VLLM_STARTUP_RUN_ID"],
         config_path=config_path,
+        process_label=os.environ.get("TRACE_PROCESS_LABEL", config.process_label),
     )
     capture = session.capture()
     capture.__enter__()

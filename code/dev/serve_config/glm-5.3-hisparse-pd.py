@@ -1,4 +1,4 @@
-"""双卡 SM120：GLM-5.3 tiny random P/D + HiSparse，仅供执行路径学习。"""
+"""GLM-5.3 tiny random P/D + HiSparse，默认 NIXL pull。"""
 
 import json
 import runpy
@@ -35,13 +35,53 @@ config = ServeConfig(
 )
 
 
-def service_commands(model):
+def service_commands(model, *, transfer_mode="pull", hisparse=True):
     # 复用 P/D 学习配置，两个角色都保留 --disable-flashinfer-autotune。
     commands = _PD["service_commands"](model)
     for role in ("prefill", "decode"):
         command = commands[role]
         command[command.index("--hf-overrides") + 1] = json.dumps(_HF_OVERRIDES)
         command[command.index("--served-model-name") + 1] = "tiny-glm-5.3"
+        index = command.index("--kv-transfer-config") + 1
+        transfer = json.loads(command[index])
+        if role == "prefill":
+            nixl = transfer
+        else:
+            nixl = transfer["kv_connector_extra_config"]["connectors"][0]
+        transfer["engine_id"] = f"glm-5.3-{role}"
+        if hisparse:
+            nixl["kv_connector_extra_config"] = {"transfer_mode": transfer_mode}
+        else:
+            transfer.update(
+                kv_connector="NixlConnector",
+                kv_role="kv_producer" if role == "prefill" else "kv_consumer",
+                kv_load_failure_policy="fail",
+                kv_connector_extra_config={"transfer_mode": transfer_mode},
+            )
+            if role == "decode":
+                attention_index = command.index("--attention-config") + 1
+                attention = json.loads(command[attention_index])
+                attention.pop("hisparse_config", None)
+                command[attention_index] = json.dumps(attention)
+        command[index] = json.dumps(transfer)
+    if transfer_mode == "push":
+        proxy = (
+            Path(__file__).resolve().parents[2]
+            / "vllm-workspace/vllm/examples/disaggregated/disaggregated_serving"
+            / "disagg_proxy_pushconnector_demo.py"
+        )
+        commands["proxy"] = [
+            sys.executable, str(proxy),
+            "--model", "tiny-glm-5.3",
+            "--port", "8192",
+            "--prefill", "127.0.0.1:8100",
+            "--decode", "127.0.0.1:8200",
+            "--prefill-engine-id", "glm-5.3-prefill",
+            "--prefill-kv-host", "127.0.0.1",
+            "--prefill-side-channel-port", "5600",
+            "--prefill-tp-size", "1",
+            "--prefill-pp-size", "1",
+        ]
     return commands
 
 

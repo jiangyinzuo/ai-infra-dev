@@ -1,4 +1,5 @@
 """单请求 HiSparse 学习配置；用 vLLM 虚拟环境运行，设备由调用者选择。"""
+import os
 import runpy
 import sys
 from argparse import Namespace
@@ -50,6 +51,7 @@ def run(start):
 config = TraceConfig(
     root=ROOT, run=run,
     env={"VLLM_ENABLE_V1_MULTIPROCESSING": "0"},
+    process_label=os.environ.get("TRACE_PROCESS_LABEL", "hisparse"),
     targets=(
         Target("vllm/v1/engine/llm_engine.py", "LLMEngine.add_request", ("request_id",)),
         Target("vllm/v1/core/sched/scheduler.py", "Scheduler.add_request", REQUEST),

@@ -267,10 +267,14 @@ def child_service_status(pid, *, check_health=True):
             name = "Prefill"
         elif "kv_consumer" in roles:
             name = "Decode"
-        proxy = "--prefiller-ports" in command and "--decoder-ports" in command
+        pull_proxy = "--prefiller-ports" in command and "--decoder-ports" in command
+        push_proxy = "--prefill-engine-id" in command and "--decode" in command
+        proxy = pull_proxy or push_proxy
         if proxy:
             name = "Proxy"
-        health_path = "/healthcheck" if proxy else "/health"
+        health_path = "/status" if push_proxy else (
+            "/healthcheck" if pull_proxy else "/health"
+        )
         ready = False
         if check_health:
             try:

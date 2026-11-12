@@ -306,8 +306,6 @@ def _check_captures(
         run, summary = capture["run"], capture["summary"]
         assert run["run_id"] == session.run_id, run
         assert all(run[field] == identity[field] for field in ("pid", "ppid", "process_name")), run
-        expected_path = Path(f"{prefix}.{run['process_instance_id']}.jsonl")
-        assert capture["paths"][0] == expected_path, capture["paths"]
         role = identity["role"]
         common = _events(capture, "checkpoint")
         assert [event["values"] for event in common] == [

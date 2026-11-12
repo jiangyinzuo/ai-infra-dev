@@ -24,7 +24,6 @@ class _Capture:
     run_id: str
     context: contextlib.AbstractContextManager[Tracer]
     tracer: Tracer
-    prefix: str
 
     def response(self, action: str, status: str = "ok") -> dict[str, Any]:
         return {
@@ -32,8 +31,10 @@ class _Capture:
             "action": action,
             "pid": self.pid,
             "run_id": self.run_id,
-            "output_prefix": self.prefix,
+            "output_prefix": str(self.tracer.writer.prefix),
             "process_instance_id": self.tracer.identity["process_instance_id"],
+            "process_label": self.tracer.identity["process_label"],
+            "process_name": self.tracer.identity["process_name"],
         }
 
 
@@ -114,12 +115,12 @@ def _start(request: dict[str, Any]) -> _Capture:
         root=_absolute_path(request, "root"), targets=targets,
         output_prefix=_absolute_path(request, "output_prefix"),
         run_id=request["run_id"], config_path=_absolute_path(request, "config_path"),
+        process_label=request.get("process_label"),
     )
     context = session.capture()
     tracer = context.__enter__()
     capture = _Capture(
         pid=os.getpid(), run_id=session.run_id, context=context, tracer=tracer,
-        prefix=f"{session.output_prefix}.{tracer.identity['process_instance_id']}",
     )
     # 必须持有生成器上下文，dispatch 返回时不能触发 GC 而提前关闭采集。
     _active = capture

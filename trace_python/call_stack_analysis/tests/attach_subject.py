@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 import queue
 import sys
@@ -70,6 +71,7 @@ def main() -> None:
         "pid": os.getpid(), "cwd": str(Path.cwd()), "environment": dict(os.environ),
         "sys_path": original_path, "hooks": hook_state(),
         "tracing_imported": any(name.startswith("trace_python") for name in sys.modules),
+        "process_name": multiprocessing.current_process().name,
     }
     atomic_json(directory / "ready.json", baseline)
     print("business:ready", flush=True)
@@ -85,6 +87,8 @@ def main() -> None:
             if command["action"] == "quit":
                 atomic_json(directory / "response.json", {"stopped": True})
                 return
+            if "process_name" in command:
+                multiprocessing.current_process().name = command["process_name"]
             existing_result: dict[str, Any] = {}
             future_result: dict[str, Any] = {}
             done = threading.Event()
@@ -103,6 +107,7 @@ def main() -> None:
             result.update({
                 "existing": existing_result, "future": future_result,
                 "cwd": str(Path.cwd()), "environment": dict(os.environ),
+                "process_name": multiprocessing.current_process().name,
                 "sys_path": list(sys.path),
             })
             print(f"business:{command['batch']}", flush=True)

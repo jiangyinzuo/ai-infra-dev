@@ -306,12 +306,27 @@ sys.exit(module["run_services"](commands, ["GPU-P", "GPU-D"], Path.cwd()))
                     pass
 
 
+@pytest.mark.parametrize(
+    ("role", "device", "health_path", "child_args"),
+    [
+        ("Prefill", "GPU-test-prefill", "/health", [
+            "--kv-transfer-config", json.dumps({"kv_role": "kv_producer"}),
+        ]),
+        ("Proxy", "CPU", "/healthcheck", [
+            "--prefiller-ports", "8100", "--decoder-ports", "8200",
+        ]),
+        ("Proxy", "CPU", "/status", [
+            "--prefill-engine-id", "glm-5.3-prefill", "--decode", "127.0.0.1:8200",
+        ]),
+    ],
+    ids=["prefill", "pull-proxy", "push-proxy"],
+)
 def test_status_checks_child_api_without_restarting_or_mutating_state(
-    service, tmp_path, capsys
+    service, tmp_path, capsys, role, device, health_path, child_args
 ):
     """子服务进程存活但健康检查失败时，不能报告 API 就绪。"""
     child = tmp_path / "health_server.py"
-    child.write_text('''
+    child.write_text(f'''
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import socket
@@ -319,7 +334,10 @@ import sys
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200 if Path("healthy").exists() else 503)
+        self.send_response(
+            (200 if Path("healthy").exists() else 503)
+            if self.path == {health_path!r} else 404
+        )
         self.end_headers()
     def log_message(self, *args):
         pass
@@ -347,8 +365,7 @@ port = listener.getsockname()[1]
 with Path("prefill.log").open("w") as log:
     child = subprocess.Popen(
         [sys.executable, {str(child)!r}, str(listener.fileno()),
-         "--host", "127.0.0.1", "--port", str(port),
-         "--kv-transfer-config", json.dumps({{"kv_role": "kv_producer"}})],
+         "--host", "127.0.0.1", "--port", str(port), *{child_args!r}],
         env=dict(os.environ, CUDA_VISIBLE_DEVICES="GPU-test-prefill"),
         pass_fds=(listener.fileno(),), stdout=log, stderr=subprocess.STDOUT,
     )
@@ -380,10 +397,10 @@ time.sleep(120)
         original = state_file.read_bytes()
         assert service.execute(options("status")) == 0
         output = capsys.readouterr().out
-        assert "Prefill" in output and "API=未就绪" in output
+        assert role in output and "API=未就绪" in output
         assert str(child_info["pid"]) in output
         assert f"http://127.0.0.1:{child_info['port']}" in output
-        assert "GPU-test-prefill" in output
+        assert device in output
         assert str(tmp_path / "prefill.log") in output
         (tmp_path / "healthy").touch()
         assert service.execute(options("status")) == 0

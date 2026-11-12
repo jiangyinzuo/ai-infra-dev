@@ -123,9 +123,21 @@ def _positive_seconds(value: str) -> float:
     return number
 
 
+def _process_label(value: str) -> tuple[int, str]:
+    pid_text, separator, label = value.partition("=")
+    try:
+        pid = int(pid_text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("进程标签必须为正 PID=NAME") from exc
+    if not separator or pid <= 0 or not label.strip():
+        raise argparse.ArgumentTypeError("进程标签必须为正 PID=NAME，NAME 不可为空")
+    return pid, label
+
+
 def capture_processes(
     pids: list[int], config_path: Path, output_prefix: Path,
     duration: float = 10.0, timeout: float = 10.0,
+    *, process_labels: dict[int, str] | None = None,
 ) -> dict[str, Any]:
     """采集明确指定的 PID；异常时 AttachError.report 保留部分结果和未知状态。"""
     if sys.version_info < (3, 14) or not hasattr(sys, "remote_exec"):
@@ -136,6 +148,12 @@ def capture_processes(
         raise ValueError("不能 attach 控制脚本自身")
     if any(not math.isfinite(value) or value <= 0 for value in (duration, timeout)):
         raise ValueError("duration 和 timeout 必须为有限正秒数")
+    if process_labels is not None:
+        for pid, label in process_labels.items():
+            if type(pid) is not int or pid not in pids:
+                raise ValueError(f"进程标签 PID 不在采集列表中：{pid!r}")
+            if not isinstance(label, str) or not label.strip():
+                raise ValueError(f"PID {pid} 的进程标签必须为非空字符串")
     config_path, output_prefix = config_path.resolve(), output_prefix.resolve()
     with contextlib.redirect_stdout(sys.stderr):
         config = load_config(config_path)
@@ -156,6 +174,7 @@ def capture_processes(
                 "action": "start", "pid": pid, "run_id": report["run_id"],
                 "root": str(config.root), "targets": [asdict(target) for target in config.targets],
                 "output_prefix": str(output_prefix), "config_path": str(config_path),
+                "process_label": (process_labels or {}).get(pid, config.process_label),
             })
             requests.append(request)
             starts.append(request)
@@ -183,7 +202,9 @@ def capture_processes(
                 })
                 requests.append(stop)
                 _submit(stop)
-                _check_response(stop.wait(timeout), stop)
+                response = stop.wait(timeout)
+                _check_response(response, stop)
+                capture.update(response)
                 capture["stopped"] = True
             except (Exception, KeyboardInterrupt) as exc:
                 report["errors"].append(
@@ -206,13 +227,24 @@ def capture_processes(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--pid", type=int, nargs="+", required=True, help="已运行的 Python PID，不递归追踪后代")
-    parser.add_argument("--config", type=Path, required=True, help="可信 TraceConfig；仅加载 root/targets，不调用 run 或应用 env")
+    parser.add_argument("--config", type=Path, required=True, help="可信 TraceConfig；仅加载 root/targets/process_label，不调用 run 或应用 env")
     parser.add_argument("--output-prefix", type=Path, required=True)
+    parser.add_argument("--process-label", type=_process_label, action="append", default=[], metavar="PID=NAME", help="指定 PID 的业务标签，可重复；覆盖配置 process_label")
     parser.add_argument("--duration", type=_positive_seconds, default=10.0, help="所有 PID 确认安装后采集秒数（默认 10）")
     parser.add_argument("--timeout", type=_positive_seconds, default=10.0, help="每次远程请求确认超时秒数（默认 10）")
     args = parser.parse_args(argv)
+    process_labels: dict[int, str] = {}
+    for pid, label in args.process_label:
+        if pid not in args.pid:
+            parser.error(f"--process-label PID 不在 --pid 列表中：{pid}")
+        if pid in process_labels:
+            parser.error(f"--process-label PID 重复：{pid}")
+        process_labels[pid] = label
     try:
-        report = capture_processes(args.pid, args.config, args.output_prefix, args.duration, args.timeout)
+        report = capture_processes(
+            args.pid, args.config, args.output_prefix, args.duration, args.timeout,
+            process_labels=process_labels or None,
+        )
     except AttachError as exc:
         print(json.dumps(exc.report, ensure_ascii=False, indent=2))
         print(str(exc), file=sys.stderr)

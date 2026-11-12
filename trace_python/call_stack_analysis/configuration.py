@@ -27,6 +27,7 @@ class TraceConfig:
     targets: tuple[Target, ...]
     # 仅在受控场景期间覆盖环境，退出时恢复。
     env: dict[str, str] = field(default_factory=dict)
+    process_label: str | None = field(default=None, kw_only=True)
 
 def load_config(path: Path) -> TraceConfig:
     spec = importlib.util.spec_from_file_location("trace_user_config", path)

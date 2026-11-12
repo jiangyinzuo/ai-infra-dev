@@ -67,7 +67,7 @@ def execution_context(config: TraceConfig) -> Iterator[None]:
 
 def run_trace(config: TraceConfig, output_prefix: Path, config_path: Path) -> int:
     session = TraceSession(config.root, config.targets, output_prefix,
-                           config_path=config_path)
+                           config_path=config_path, process_label=config.process_label)
     try:
         with session.capture(active=False, output_prefix=output_prefix) as tracer:
             with execution_context(config):
