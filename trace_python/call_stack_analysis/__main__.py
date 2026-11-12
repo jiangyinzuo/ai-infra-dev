@@ -41,7 +41,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--config", required=True, type=Path, help="可信 Python 配置，import 会执行代码"
     )
     parser.add_argument("--output-prefix", required=True, type=Path,
-                        help="统一输出前缀；覆盖写入 .jsonl、.txt、.tree.json、.tree.txt")
+                        help="统一输出前缀；覆盖 JSONL、文本和调用树")
     args = parser.parse_args(argv)
     args.config = args.config.resolve()
     return args

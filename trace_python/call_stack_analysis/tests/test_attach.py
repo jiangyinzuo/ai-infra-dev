@@ -38,6 +38,8 @@ def test_real_attach_threads_reattach_and_multi_pid(tmp_path: Path) -> None:
     assert len(result["reports"]) == 3
     assert Path.cwd() == original_cwd
     assert dict(os.environ) == original_environment
+    for report in result["reports"]:
+        assert all(capture["stopped"] for capture in report["captures"])
 
 
 @requires_remote_exec

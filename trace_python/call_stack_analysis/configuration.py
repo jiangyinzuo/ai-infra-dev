@@ -14,6 +14,8 @@ class Target:
     fields: tuple[str, ...] = ()
     # 每进程最多保存 limit 个详细事件；超出后仍计数，0 表示仅计数。
     limit: int = 2
+    # 在目标入口读取直接 Python 调用者的局部变量，不跳过包装函数。
+    caller_fields: tuple[str, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -25,7 +27,6 @@ class TraceConfig:
     targets: tuple[Target, ...]
     # 仅在受控场景期间覆盖环境，退出时恢复。
     env: dict[str, str] = field(default_factory=dict)
-
 
 def load_config(path: Path) -> TraceConfig:
     spec = importlib.util.spec_from_file_location("trace_user_config", path)

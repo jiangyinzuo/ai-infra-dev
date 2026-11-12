@@ -152,7 +152,7 @@ def make_config(path: Path, *, invalid: bool = False) -> Path:
     function = "does_not_exist" if invalid else "main_work"
     specifications = [(function, 2), ("existing_work", 2), ("future_work", 2), ("count_only", 0)]
     targets = ",\n".join(
-        f"    Target({SOURCE!r}, {name!r}, {('value',) if name == 'count_only' else ('value', 'batch')!r}, limit={limit})"
+        f"    Target({SOURCE!r}, {name!r}, {('value',) if name == 'count_only' else ('value', 'batch')!r}, limit={limit}, caller_fields=('command',))"
         for name, limit in specifications
     )
     path.write_text(
@@ -162,8 +162,7 @@ def make_config(path: Path, *, invalid: bool = False) -> Path:
         f"assert os.getpid() == {os.getpid()}, 'config imported outside controller'\n"
         "def run(start):\n"
         "    raise AssertionError('attach must not call config.run')\n"
-        f"config = TraceConfig(root=Path({str(REPOSITORY_ROOT)!r}), run=run, targets=(\n{targets},\n), "
-        "env={'ATTACH_SMOKE_ENV': 'must-not-be-applied'})\n",
+        f"config = TraceConfig(root=Path({str(REPOSITORY_ROOT)!r}), run=run, targets=(\n{targets},\n))\n",
         encoding="utf-8",
     )
     return path
@@ -240,7 +239,8 @@ def capture_batch(subjects: list[Subject], config: Path, prefix: Path, duration:
 
 def check_capture(capture: dict[str, Any], report: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
     prefix = Path(capture["output_prefix"])
-    paths = [Path(str(prefix) + suffix) for suffix in (".jsonl", ".txt", ".tree.json", ".tree.txt")]
+    paths = [Path(str(prefix) + suffix)
+             for suffix in (".jsonl", ".txt", ".tree.json", ".tree.txt")]
     assert all(path.is_file() for path in paths), paths
     records = [json.loads(line) for line in paths[0].read_text(encoding="utf-8").splitlines()]
     run, *events, summary = records
@@ -262,6 +262,10 @@ def check_capture(capture: dict[str, Any], report: dict[str, Any], response: dic
         assert [event["hit"] for event in selected] == [1, 2], selected
         assert [event["values"]["value"] for event in selected] == VALUES[:2], selected
         assert all(event["values"]["batch"] == response["batch"] for event in selected), selected
+        for event in selected:
+            caller_command = dict(event["caller_values"]["command"]["items"])
+            assert caller_command["batch"] == response["batch"], event
+            assert caller_command["action"] == "batch", event
         state = response if name == "main_work" else response[name.split("_")[0]]
         assert state["hooks"] == {"current": True, "future": True}, state
         for event in selected:

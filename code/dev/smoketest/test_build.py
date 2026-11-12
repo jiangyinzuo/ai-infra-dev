@@ -163,9 +163,16 @@ def test_unsupported_python_rejected(builder, monkeypatch):
         builder.main(["devtools", "install"])
 
 
-@pytest.mark.parametrize("operation", [["install"], ["serve", "stop"], ["serve", "status"]])
+@pytest.mark.parametrize(
+    "resource,operation",
+    [("vllm-ascend", ["install"])] + [
+        (resource, ["serve", action])
+        for resource in ("vllm", "vllm-ascend")
+        for action in ("stop", "status", "show-log")
+    ],
+)
 def test_interactive_remote_uses_managed_user(
-    builder, monkeypatch, tmp_path, operation
+    builder, monkeypatch, tmp_path, operation, resource
 ):
     from ssh_common import remote
 
@@ -179,7 +186,7 @@ def test_interactive_remote_uses_managed_user(
     monkeypatch.setattr(builder, "checked_command", lambda host, command: command)
     assert (
         builder.main(
-            ["vllm-ascend", *operation, "--host", "suzhou-one", "--container", "dev1"]
+            [resource, *operation, "--host", "suzhou-one", "--container", "dev1"]
         )
         == 0
     )

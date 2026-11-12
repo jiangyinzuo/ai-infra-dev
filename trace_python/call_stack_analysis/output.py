@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from .call_tree import CallTree, format_duration
+from .representation import format_value
 
 
 class Writer:
@@ -48,9 +49,15 @@ class Writer:
             )
             for name, value in record["values"].items():
                 print(
-                    f"  {name} = {json.dumps(value, ensure_ascii=False)}",
+                    f"  {name} = {format_value(value)}",
                     file=self.human,
                 )
+            if record.get("caller_values"):
+                stack = record["stack"]
+                caller = stack[-2]["function"] if len(stack) > 1 else "<no Python caller>"
+                print(f"  👆 caller={caller}", file=self.human)
+                for name, value in record["caller_values"].items():
+                    print(f"    {name} = {format_value(value)}", file=self.human)
             print("  调用栈（外层 → 内层）：", file=self.human)
             for frame in record["stack"]:
                 print(
@@ -77,15 +84,19 @@ class Writer:
 
 @contextlib.contextmanager
 def open_writer(prefix: Path) -> Iterator[Writer]:
-    """覆盖四个输出文件；目录须已存在，任一步打开失败都会关闭已有句柄。"""
+    """保存 JSONL、文本、调用树 JSON 和调用树文本。"""
     with contextlib.ExitStack() as stack:
         def open_output(suffix: str) -> TextIO:
             path = Path(str(prefix) + suffix)
             return stack.enter_context(path.open("w", encoding="utf-8"))
 
-        yield Writer(
+        writer = Writer(
             open_output(".jsonl"),
             open_output(".txt"),
             open_output(".tree.json"),
             open_output(".tree.txt"),
         )
+        try:
+            yield writer
+        finally:
+            writer.machine.flush()

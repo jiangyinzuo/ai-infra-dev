@@ -27,6 +27,7 @@ PROXY = (
     ROOT.parents[1]
     / "vllm-workspace/vllm/tests/v1/kv_connector/nixl_integration/toy_proxy_server.py"
 )
+PROXY_WRAPPER = ROOT.parents[2] / "note/hisparse/trace/proxy_wrapper.py"
 
 config = ServeConfig(
     model=BASE.model,
@@ -36,6 +37,7 @@ config = ServeConfig(
 
 
 def service_commands(model):
+    # P、D 都继承单卡学习配置的 --disable-flashinfer-autotune。
     common = [sys.executable, "-m", "vllm.entrypoints.cli.main", *BASE.serve_command[1:]]
     common = [argument.replace("{model}", model) for argument in common]
     common.extend([
@@ -71,11 +73,28 @@ def service_commands(model):
     ):
         command = common.copy()
         command[command.index("--kv-transfer-config") + 1] = json.dumps(transfer)
+        command[command.index("--max-model-len") + 1] = "16384"
         if role == "prefill":
             index = command.index("--attention-config") + 1
             attention = json.loads(command[index])
             attention.pop("hisparse_config")
             command[index] = json.dumps(attention)
+        else:
+            index = command.index("--attention-config") + 1
+            attention = json.loads(command[index])
+            attention["hisparse_config"] = {
+                "device_buffer_size": 2048,
+                "eager_host_mirror": False,
+            }
+            command[index] = json.dumps(attention)
+            transfer_index = command.index("--kv-transfer-config") + 1
+            transfer_config = json.loads(command[transfer_index])
+            transfer_config["kv_connector_extra_config"]["connectors"][1][
+                "kv_connector_extra_config"
+            ]["host_pool_gib"] = 2
+            command[transfer_index] = json.dumps(transfer_config)
+            # 512 blocks 扣除 HiSparse 固定组后仍能启动，并为 16384 上下文保留 Host tier。
+            command.extend(["--num-gpu-blocks-override", "512"])
         commands[role] = [*command, "--port", port]
     commands["proxy"] = [
         sys.executable, str(PROXY),
@@ -125,6 +144,9 @@ def run_services(commands, devices, directory):
                 environment["VLLM_NIXL_SIDE_CHANNEL_HOST"] = "127.0.0.1"
                 environment["VLLM_NIXL_SIDE_CHANNEL_PORT"] = str(5600 + index)
                 environment["UCX_NET_DEVICES"] = "all"
+            if role == "proxy":
+                command = [sys.executable, str(PROXY_WRAPPER), *command[1:]]
+                environment["TRACE_PROXY_OUTPUT_PREFIX"] = str(directory / "proxy-trace")
             log = directory / f"{role}.log"
             print(f"{role}: {shlex.join(command)}\n日志：{log}", flush=True)
             with log.open("ab") as output:
@@ -158,9 +180,9 @@ def run_services(commands, devices, directory):
             signal.signal(sig, handler)
 
 
-def main():
+def main(command_builder=service_commands):
     if len(sys.argv) != 2:
-        raise SystemExit("请通过 dev vllm serve --script deepseek-v3.2-hisparse-pd.py 启动")
+        raise SystemExit(f"请通过 dev vllm serve --script {Path(sys.argv[0]).name} 启动")
     devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
     if (
         len(devices) != 2
@@ -177,7 +199,7 @@ def main():
         / f"hisparse-pd-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
     )
     directory.mkdir(parents=True)
-    return run_services(service_commands(sys.argv[1]), devices, directory)
+    return run_services(command_builder(sys.argv[1]), devices, directory)
 
 
 if __name__ == "__main__":

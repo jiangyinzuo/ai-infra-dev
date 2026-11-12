@@ -227,7 +227,7 @@ def command_option(command, option):
         return None
 
 
-def child_service_status(pid):
+def child_service_status(pid, *, check_health=True):
     try:
         children = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
     except FileNotFoundError:
@@ -271,11 +271,13 @@ def child_service_status(pid):
         if proxy:
             name = "Proxy"
         health_path = "/healthcheck" if proxy else "/health"
-        try:
-            with urlopen(address + health_path, timeout=0.5) as response:
-                ready = response.status == 200
-        except (OSError, URLError):
-            ready = False
+        ready = False
+        if check_health:
+            try:
+                with urlopen(address + health_path, timeout=0.5) as response:
+                    ready = response.status == 200
+            except (OSError, URLError):
+                pass
         alive = process_identity(child_pid) == identity
         devices = environment.get("CUDA_VISIBLE_DEVICES") or environment.get(
             "ASCEND_RT_VISIBLE_DEVICES"
@@ -321,6 +323,30 @@ def service_status(directory):
     return 0
 
 
+def show_service_logs(directory, resource):
+    from log_view import show_logs
+
+    state_file = directory / "service.json"
+    if not state_file.exists():
+        print("当前没有本工具记录的服务日志")
+        return 0
+    state = json.loads(state_file.read_text())
+    children = (
+        child_service_status(state["pid"], check_health=False) if running(state) else []
+    )
+    candidates = [(child["name"], child["log"]) for child in children]
+    candidates.append(("Supervisor", state["log"]))
+    logs = []
+    seen = set()
+    for name, path in candidates:
+        if path not in seen and Path(path).is_file():
+            seen.add(path)
+            logs.append((name, path))
+    if not logs:
+        raise RuntimeError("服务日志文件已不存在")
+    return show_logs(logs, resource)
+
+
 def execute(args):
     action = "log" if getattr(args, "print_log", False) else args.serve_action
     launch = None
@@ -329,11 +355,14 @@ def execute(args):
             # 先验证配置，再考虑停止旧服务，避免无效配置打断现有服务。
             script = resolve_script(args.script)
             launch = (script, load_config(script))
-        case "stop" | "status" | "log":
+        case "stop" | "status" | "log" | "show-log":
             pass
         case _:
             raise ValueError("不支持的服务动作：" + str(action))
     directory = state_directory(args.resource)
+    if action == "show-log":
+        # 查看器可能持续运行；不能持有生命周期锁，阻塞停止服务。
+        return show_service_logs(directory, args.resource)
     with (directory / "lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         match action:

@@ -106,14 +106,14 @@ def _start(request: dict[str, Any]) -> _Capture:
         Target(
             file=target["file"], function=target["function"],
             fields=tuple(target["fields"]), limit=target["limit"],
+            caller_fields=tuple(target["caller_fields"]),
         )
         for target in request["targets"]
     )
     session = TraceSession(
         root=_absolute_path(request, "root"), targets=targets,
         output_prefix=_absolute_path(request, "output_prefix"),
-        run_id=request["run_id"],
-        config_path=_absolute_path(request, "config_path"),
+        run_id=request["run_id"], config_path=_absolute_path(request, "config_path"),
     )
     context = session.capture()
     tracer = context.__enter__()

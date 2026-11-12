@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from collections import Counter
+from itertools import islice
 from pathlib import Path
 from types import CodeType, FrameType
 from typing import Any
@@ -18,22 +19,20 @@ def snapshot(value: Any, depth: int = 0) -> Any:
     """不调用 repr 或搬运 tensor；容器有界，未知对象只保存类型。"""
     if value is None or type(value) in (str, int, float, bool):
         return value
+    if isinstance(value, (tuple, list, dict, set, frozenset)):
+        result: dict[str, Any] = {"type": type(value).__name__, "length": len(value)}
+        if depth >= 3:
+            return {**result, "truncated": True}
+        if isinstance(value, dict):
+            result["items"] = [
+                [snapshot(key, depth + 1), snapshot(item, depth + 1)]
+                for key, item in islice(value.items(), 16)
+            ]
+        else:
+            result["items"] = [snapshot(item, depth + 1) for item in islice(value, 16)]
+        return result
     if depth >= 3:
         return {"type": type(value).__qualname__, "truncated": True}
-    if isinstance(value, (tuple, list)):
-        return {
-            "type": type(value).__name__,
-            "length": len(value),
-            "items": [snapshot(x, depth + 1) for x in value[:16]],
-        }
-    if isinstance(value, dict):
-        return {
-            "type": "dict",
-            "length": len(value),
-            "items": {
-                str(k): snapshot(v, depth + 1) for k, v in list(value.items())[:16]
-            },
-        }
     if all(hasattr(value, attr) for attr in ("shape", "dtype", "device")):
         return {
             "shape": list(value.shape),
@@ -43,7 +42,9 @@ def snapshot(value: Any, depth: int = 0) -> Any:
     return {"type": type(value).__qualname__}
 
 
-def capture_fields(frame: FrameType, fields: tuple[str, ...]) -> dict[str, Any]:
+def capture_fields(frame: FrameType | None, fields: tuple[str, ...]) -> dict[str, Any]:
+    if frame is None:
+        return {path: {"unavailable": "NoCallerFrame"} for path in fields}
     result = {}
     for path in fields:
         parts = path.split(".")
@@ -64,7 +65,8 @@ def locate(
     found = {}
     for target in targets:
         if target.limit < 0 or any(
-            not all(p.isidentifier() for p in f.split(".")) for f in target.fields
+            not all(p.isidentifier() for p in f.split("."))
+            for f in (*target.fields, *target.caller_fields)
         ):
             raise ValueError(f"无效 limit 或字段路径：{target}")
         path = (root / target.file).resolve()
@@ -149,7 +151,7 @@ class Tracer:
             if self.counts[name] > target.limit:
                 return
             self.sequence += 1
-            self.writer.emit({
+            record = {
                 "type": "event",
                 **self.identity,
                 "thread_id": threading.get_ident(),
@@ -160,4 +162,7 @@ class Tracer:
                 "hit": self.counts[name],
                 "values": capture_fields(frame, target.fields),
                 "stack": collect_stack(frame, self.root),
-            })
+            }
+            if target.caller_fields:
+                record["caller_values"] = capture_fields(frame.f_back, target.caller_fields)
+            self.writer.emit(record)

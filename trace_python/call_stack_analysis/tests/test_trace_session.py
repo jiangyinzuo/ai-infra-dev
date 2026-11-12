@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
 import json
 import multiprocessing
@@ -206,6 +207,196 @@ def test_inactive_capture_explicit_prefix_and_per_target_limit(tmp_path: Path, b
     assert capture["summary"]["counts"] == {"smoke_business_functions.py:observe": 3}
 
 
+def test_tree_values_stay_under_target_and_reset_between_captures(tmp_path: Path) -> None:
+    """变量叶节点不能破坏兄弟树线，展示限次不应丢失原始事件。"""
+    source = tmp_path / "tree_business.py"
+    source.write_text(
+        'def leaf(value):\n    return value\n'
+        'def sibling():\n    return "sibling"\n'
+        'def root(value):\n    leaf(value)\n    sibling()\n',
+        encoding="utf-8",
+    )
+    spec = importlib.util.spec_from_file_location("tree_business", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    session = TraceSession(
+        root=tmp_path,
+        targets=(
+            Target(source.name, "root", ("value",), limit=5),
+            Target(source.name, "leaf", ("value",), limit=5),
+            Target(source.name, "sibling", limit=5),
+        ),
+        output_prefix=tmp_path / "unused",
+    )
+    for run in range(2):
+        prefix = tmp_path / f"capture-{run}"
+        with session.capture(output_prefix=prefix):
+            for index in range(5):
+                module.root(f"run-{run}:值-{index}\nnext")
+        capture = smoke.read_capture(Path(str(prefix) + ".jsonl"))
+        assert len(capture["events"]) == 15
+        assert sum(event["values"] == {"value": f"run-{run}:值-4\nnext"}
+                   for event in capture["events"]) == 2
+        lines = Path(str(prefix) + ".tree.txt").read_text().splitlines()
+        displayed = [line.split("value = ", 1)[1] for line in lines if "─value = " in line]
+        assert [ast.literal_eval(value) for value in displayed] == [
+            f"run-{run}:值-{index}\nnext"
+            for _ in range(2) for index in range(2)
+        ]
+        assert sum("另有 3 次变量快照未展示" in line for line in lines) == 2
+        for function, last_child in (("root", False), ("leaf", True)):
+            position = next(i for i, line in enumerate(lines) if f"─{function} 🎯" in line)
+            node_line = lines[position]
+            branch_pos = node_line.index(f"─{function}") - 1
+            child_prefix = node_line[:branch_pos] + (
+                "  " if node_line[branch_pos] == "└" else "│ "
+            )
+            assert lines[position + 1].startswith(child_prefix + "├─🔎[")
+            assert lines[position + 2].startswith(child_prefix + "│ └─value = ")
+            assert lines[position + 3].startswith(child_prefix + "├─🔎[")
+            assert lines[position + 4].startswith(child_prefix + "│ └─value = ")
+            last_branch = "└─" if last_child else "├─"
+            assert lines[position + 5].startswith(child_prefix + last_branch + "🔎 ")
+        sibling = next(i for i, line in enumerate(lines) if "─sibling 🎯" in line)
+        assert "🔎" not in lines[sibling + 1]
+
+
+@pytest.mark.parametrize("fields", [(), ("value",)])
+def test_caller_fields_use_direct_frame_and_share_tree_limit(tmp_path: Path, fields: tuple[str, ...]) -> None:
+    """同名变量分属两层；不跳过 wrapper，也不能读取调用后才赋值的变量。"""
+    source = tmp_path / "caller_business.py"
+    source.write_text(
+        'def observe(value):\n    return value\n'
+        'class Caller:\n'
+        '    role = "decode"\n'
+        '    def call(self, index):\n'
+        '        value = "outer"\n'
+        '        return self.wrapper(index)\n'
+        '    def wrapper(self, index):\n'
+        '        value = f"caller-{index}"\n'
+        '        result = observe(f"callee-{index}")\n'
+        '        later = "after-call"\n'
+        '        return result\n',
+        encoding="utf-8",
+    )
+    spec = importlib.util.spec_from_file_location("caller_business", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    session = TraceSession(
+        root=tmp_path,
+        targets=(Target(source.name, "observe", fields, limit=3,
+                        caller_fields=("value", "index", "self.role", "later")),),
+        output_prefix=tmp_path / "unused",
+    )
+    for run in range(2):
+        prefix = tmp_path / f"caller-{run}"
+        with session.capture(output_prefix=prefix):
+            for index in range(4):
+                assert module.Caller().call(index) == f"callee-{index}"
+        capture = smoke.read_capture(Path(str(prefix) + ".jsonl"))
+        assert capture["summary"]["counts"] == {f"{source.name}:observe": 4}
+        for index, event in enumerate(capture["events"]):
+            assert event["values"] == ({"value": f"callee-{index}"} if fields else {})
+            assert event["caller_values"] == {
+                "value": f"caller-{index}", "index": index, "self.role": "decode",
+                "later": {"unavailable": "KeyError"},
+            }
+            assert event["stack"][-2]["function"] == "Caller.wrapper"
+        assert len(capture["events"]) == 3
+        text = Path(str(prefix) + ".txt").read_text()
+        assert "👆 caller=Caller.wrapper" in text and "value = 'caller-2'" in text
+        tree = Path(str(prefix) + ".tree.txt").read_text().splitlines()
+        position = next(i for i, line in enumerate(tree) if "─observe 🎯" in line)
+        branch = tree[position].index("─observe") - 1
+        child_prefix = tree[position][:branch] + "  "
+        caller_rows = [i for i, line in enumerate(tree) if line.startswith(child_prefix + "├─👆[")]
+        assert len(caller_rows) == 2
+        for row in caller_rows:
+            assert tree[row].endswith("caller=Caller.wrapper")
+            assert tree[row + 1].startswith(child_prefix + "│ ├─value = 'caller-")
+            assert tree[row + 4] == child_prefix + "│ └─later = <unavailable: KeyError>"
+        local_rows = [line for line in tree if line.startswith(child_prefix + "├─🔎[")]
+        assert len(local_rows) == (2 if fields else 0)
+        assert child_prefix + "└─🔎 另有 1 次变量快照未展示" in tree
+        assert not any("value = 'caller-2'" in line for line in tree)
+
+
+def test_invalid_caller_expression_is_rejected_before_business_call(tmp_path: Path, business: Any) -> None:
+    session = TraceSession(
+        root=tmp_path,
+        targets=(Target("smoke_business_functions.py", "observe", caller_fields=("len(value)",)),),
+        output_prefix=tmp_path / "invalid",
+    )
+    with pytest.raises(ValueError, match="字段路径"):
+        with session.capture():
+            pytest.fail("invalid caller expression reached business code")
+
+
+@pytest.mark.parametrize("value", [
+    None, True, False, "中文\nnext", [], (), (7,), {}, set(), frozenset(),
+    [1, False, None], ("a", 2), {1, 2}, frozenset({"a", "b"}),
+    {1: "integer", "1": "string", (2, 3): True, None: False},
+    {"nested": [1, False], "type": "dict", "items": {}},
+])
+def test_text_values_preserve_python_container_semantics(tmp_path: Path, business: Any, value: Any) -> None:
+    """人类输出可直接读作 Python 值，不丢失容器或字典 key 的类型。"""
+    prefix = tmp_path / "python-values"
+    with _session(business, prefix).capture(output_prefix=prefix):
+        business.observe(value)
+    for suffix in (".txt", ".tree.txt"):
+        lines = Path(str(prefix) + suffix).read_text().splitlines()
+        rendered, = [line.split("value = ", 1)[1] for line in lines if "value = " in line]
+        parsed = ast.parse(rendered, mode="eval").body
+        if isinstance(value, frozenset):
+            assert isinstance(parsed, ast.Call) and parsed.func.id == "frozenset"
+            actual = frozenset(ast.literal_eval(parsed.args[0])) if parsed.args else frozenset()
+        else:
+            actual = ast.literal_eval(parsed)
+        assert actual == value and type(actual) is type(value)
+
+
+@pytest.mark.parametrize("value", [list(range(20)), tuple(range(20)), set(range(20)),
+                                   dict.fromkeys(range(20), True)])
+def test_text_values_bound_large_containers(tmp_path: Path, business: Any, value: Any) -> None:
+    """只展示有界前缀，并明确告知容器总长度；JSONL 保留结构化快照。"""
+    prefix = tmp_path / "bounded-values"
+    with _session(business, prefix).capture(output_prefix=prefix):
+        business.observe(value)
+    capture = smoke.read_capture(Path(str(prefix) + ".jsonl"))
+    snapshot = capture["events"][0]["values"]["value"]
+    assert snapshot["length"] == 20 and len(snapshot["items"]) == 16
+    for suffix in (".txt", ".tree.txt"):
+        lines = Path(str(prefix) + suffix).read_text().splitlines()
+        rendered, = [line.split("value = ", 1)[1] for line in lines if "value = " in line]
+        body, length = rendered.rsplit(" (length=", 1)
+        assert length == "20)" and "..." in body
+        if isinstance(value, dict):
+            assert body.endswith(", ...}")
+            actual = ast.literal_eval(body[:-6] + "}")
+            assert actual == dict(list(value.items())[:16])
+        else:
+            actual = ast.literal_eval(body)
+            assert Ellipsis in actual and len(actual) == 17
+            assert set(actual) - {Ellipsis} <= set(value)
+
+
+def test_text_values_bound_cycles_and_never_repr_business_objects(tmp_path: Path, business: Any) -> None:
+    """循环容器必须有界；打印字典 key 不能执行业务对象的 repr。"""
+    class Opaque:
+        def __repr__(self):
+            raise AssertionError("business repr must not execute")
+
+    cycle = []
+    cycle.append(cycle)
+    prefix = tmp_path / "cycle"
+    with _session(business, prefix).capture(output_prefix=prefix):
+        business.observe({Opaque(): cycle})
+    for suffix in (".txt", ".tree.txt"):
+        text = Path(str(prefix) + suffix).read_text()
+        assert "Opaque>" in text
+        assert "[...] (length=1)" in text
+
+
 def test_errors_reraise_same_exception_and_restore_all_hook_defaults(tmp_path: Path, business: Any) -> None:
     session = _session(business, tmp_path / "restoration")
     previous = (sys.gettrace(), sys.getprofile(), threading.gettrace(), threading.getprofile())
@@ -322,3 +513,5 @@ def test_real_api_engine_worker_topology(tmp_path: Path, start_method: str) -> N
         capture = smoke.read_capture(path)
         assert capture["run"]["run_id"] == report["run_id"]
         assert capture["run"]["cwd"] == str(invocation)
+
+

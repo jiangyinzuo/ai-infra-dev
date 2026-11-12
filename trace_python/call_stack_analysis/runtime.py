@@ -45,7 +45,6 @@ class TraceSession:
         if not self.root.is_absolute():
             raise ValueError("root 必须为绝对路径")
         object.__setattr__(self, "root", self.root.resolve())
-        # 受控场景可能切换 cwd；子进程仍须写回同一输出目录。
         object.__setattr__(self, "output_prefix", self.output_prefix.resolve())
 
     def run(self, target: Callable[..., _Result], /,
@@ -85,7 +84,9 @@ class TraceSession:
             "cwd": str(Path.cwd()),
         }
         started_at = datetime.now().astimezone().isoformat(timespec="seconds")
-        common = {**identity, **invocation, "started_at": started_at}
+        started_monotonic_ns = time.monotonic_ns()
+        common = {**identity, **invocation, "started_at": started_at,
+                  "trace_start_monotonic_ns": started_monotonic_ns}
         previous_trace = _without_inherited_hook(sys.gettrace())
         previous_thread_trace = _without_inherited_hook(threading.gettrace())
 

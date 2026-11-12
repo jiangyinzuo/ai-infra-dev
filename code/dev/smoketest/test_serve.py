@@ -395,3 +395,34 @@ time.sleep(120)
         state_file.unlink(missing_ok=True)
         os.killpg(process.pid, signal.SIGTERM)
         process.wait(timeout=5)
+
+
+def test_show_log_leaves_lifecycle_lock_and_service_untouched(
+    service, monkeypatch, tmp_path
+):
+    """长时间查看日志不能阻塞 stop，也不能改状态或发健康检查请求。"""
+    import fcntl
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3] / "ssh"))
+    import log_view
+
+    assert service.execute(options()) == 0
+    state_file = tmp_path / "service.json"
+    original = state_file.read_bytes()
+    state = json.loads(original)
+    monkeypatch.setattr(
+        service, "urlopen", lambda *args, **kwargs: pytest.fail("日志查看不应探测 API")
+    )
+
+    def view(logs, resource):
+        with (tmp_path / "lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert service.running(state)
+        assert state_file.read_bytes() == original
+        assert Path(state["log"]) in [Path(path) for _, path in logs]
+        return 0
+
+    monkeypatch.setattr(log_view, "show_logs", view)
+    assert service.execute(options("show-log")) == 0
+    assert service.running(state)
+    assert state_file.read_bytes() == original

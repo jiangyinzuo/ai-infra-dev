@@ -74,5 +74,7 @@ config = ServeConfig(
         "--scheduler-reserve-full-isl",
         # 先走 eager、无 speculative 的最小路径，避免把图捕获和 MTP 混入学习。
         "--enforce-eager",
+        # 学习优先缩短启动：跳过 FlashInfer 策略搜索，不跳过首次必需的内核编译。
+        "--disable-flashinfer-autotune",
     ],
 )

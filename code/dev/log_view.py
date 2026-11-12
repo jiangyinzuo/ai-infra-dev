@@ -1,4 +1,4 @@
-"""Follow remote container logs in a WSL-local pager, independent of the service."""
+"""View service logs without changing the service's environment or lifecycle."""
 
 import os
 import shlex
@@ -6,6 +6,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 from ssh_common.remote import SSH_DIR, checked_command, ssh_arguments
 from container_command import container_exec
@@ -76,3 +77,75 @@ def attach(args):
             "已退出日志查看，未向服务发送停止信号。\n重新查看日志：\n" + reattach,
             flush=True,
         )
+
+
+def show_logs(logs, resource):
+    tmux = shutil.which("tmux")
+    tail = shutil.which("tail")
+    if not tmux or not tail:
+        raise RuntimeError("show-log 需要 tmux 和 tail，请先安装")
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise RuntimeError("show-log 需要交互终端")
+    session = f"{resource}-logs-{os.getpid()}-{time.time_ns()}"
+    created = False
+    try:
+        for index in range(0, len(logs), 2):
+            pair = logs[index:index + 2]
+            name, path = pair[0]
+            command = "exec " + shlex.join(
+                [tail, "-n", "100", "-F", "-s", "0.2", "--", str(path)]
+            )
+            window_name = "-".join(label for label, _ in pair)
+            create = (
+                ["new-session", "-d", "-s", session]
+                if not created else ["new-window", "-d", "-t", session + ":"]
+            )
+            result = subprocess.run(
+                [tmux, *create, "-P", "-F", "#{window_id} #{pane_id}",
+                 "-n", window_name, command],
+                capture_output=True, text=True, check=True,
+            )
+            created = True
+            window, pane = result.stdout.strip().split()
+            subprocess.run([tmux, "select-pane", "-t", pane, "-T", name], check=True)
+            if len(pair) == 2:
+                name, path = pair[1]
+                command = "exec " + shlex.join(
+                    [tail, "-n", "100", "-F", "-s", "0.2", "--", str(path)]
+                )
+                result = subprocess.run(
+                    [tmux, "split-window", "-d", "-v", "-t", window,
+                     "-P", "-F", "#{pane_id}", command],
+                    capture_output=True, text=True, check=True,
+                )
+                subprocess.run(
+                    [tmux, "select-pane", "-t", result.stdout.strip(), "-T", name],
+                    check=True,
+                )
+                subprocess.run(
+                    [tmux, "select-layout", "-t", window, "even-vertical"],
+                    stdout=subprocess.DEVNULL, check=True,
+                )
+        subprocess.run(
+            [tmux, "set-option", "-t", session, "pane-border-status", "top"],
+            check=True,
+        )
+        subprocess.run(
+            [tmux, "set-option", "-t", session, "pane-border-format", " #{pane_title} "],
+            check=True,
+        )
+        subprocess.run(
+            [tmux, "select-window", "-t", session + ":^"], check=True,
+        )
+    except BaseException:
+        if created:
+            subprocess.run(
+                [tmux, "kill-session", "-t", session],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+            )
+        raise
+    print(f"日志会话：{session}；关闭或分离查看器不会停止 vLLM。", flush=True)
+    action = "switch-client" if os.environ.get("TMUX") else "attach-session"
+    result = subprocess.run([tmux, action, "-t", session], check=False)
+    print("重新进入：" + shlex.join([tmux, "attach-session", "-t", session]))
+    return result.returncode

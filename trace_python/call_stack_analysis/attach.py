@@ -198,8 +198,6 @@ def capture_processes(
             report["errors"].append(
                 f"保留远程控制文件以供延迟执行：{directory}；不要在请求确认前删除"
             )
-    if interrupted:
-        report["interrupted"] = True
     if report["errors"]:
         raise AttachError(report)
     return report

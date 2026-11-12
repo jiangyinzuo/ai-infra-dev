@@ -147,6 +147,7 @@ def show_dev(args, *, resource=None):
         *install_commands[resource],
         ("启动服务", [resource, "serve", "--script", config]),
         ("服务状态", [resource, "serve", "status"]),
+        ("查看日志", [resource, "serve", "show-log"]),
         ("停止服务", [resource, "serve", "stop"]),
     ]:
         line = shlex.join(["python3", str(dev), *arguments, *connection])

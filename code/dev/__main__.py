@@ -21,7 +21,13 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     resources = parser.add_subparsers(dest="resource", required=True)
     for resource in ("vllm", "vllm-ascend", "devtools"):
-        group = resources.add_parser(resource)
+        group = resources.add_parser(
+            resource,
+            description=(
+                "开发工具：Pyrefly（Python 类型检查）、Pylint（Python 静态检查）。"
+                if resource == "devtools" else None
+            ),
+        )
         actions = group.add_subparsers(dest="action", required=True)
         if resource == "vllm":
             actions.add_parser("install", help="查找已发布 CUDA wheel 并执行 uv pip install -e .")
@@ -43,7 +49,10 @@ def parse_args(argv=None):
                 )
         if resource != "devtools":
             serve = actions.add_parser("serve", help="后台启动 GPU 服务" if resource == "vllm" else "后台启动 NPU 服务")
-            serve.add_argument("serve_action", nargs="?", choices=["stop", "status"])
+            serve.add_argument(
+                "serve_action", nargs="?", choices=["stop", "status", "show-log"],
+                help="show-log：tmux 多窗口跟随日志，每个窗口最多 2 个日志",
+            )
             serve.add_argument("--host", type=host_alias)
             serve.add_argument("--container")
             serve.add_argument(
