@@ -1,3 +1,5 @@
+专家并行需要AllToAll通信
+
 `select_moe_comm_method`方法
 
 vllm/vllm-ascend:vllm_ascend/ascend_forward_context.py:41-45

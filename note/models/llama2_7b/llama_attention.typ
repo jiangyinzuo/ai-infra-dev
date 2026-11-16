@@ -87,6 +87,17 @@ $ alpha_(t j) = frac(exp #h(-0.1667em) (q_t^T k_j \/ sqrt(d)), sum_(ell = 1)^t e
 $M$ 是 causal mask：
 $ M_(i j) = cases(delim: "{", 0 "," & j lt.eq i, - oo "," & j > i) $
 
+不能移除Mask的原因：
+
+一旦移除 Mask，在计算位置$i$的表示时，自注意力机制会允许它“看到”输入序列中位置 
+$i+1$ 及之后的所有 token。由于在标准的下一 token 预测训练中，输入序列的下一个 token 正是模型需要预测的目标，模型会立刻发现一条“捷径”：直接复制未来的输入作为输出。
+
+其后果是灾难性的：
+- 训练损失异常崩溃：损失会远低于词汇表大小的对数（例如，对于 64 个 token 的词汇表，健康损失应在 4.16 附近），可能迅速趋近于零。
+- 模型行为异常：模型学到的不是语言规律，而是“复制”操作。在生成（采样）时，由于没有“未来 token”可供复制，模型将输出无意义的噪声。
+
+这一现象在实践中有明确的记录。例如，有报告指出，缺少 causal mask 会导致“损失崩溃，样本毫无意义”（the loss collapses and the samples are nonsense）。这本质上是一种信息泄露，模型在训练阶段作弊，从而完全丧失了泛化到真实生成任务的能力。
+
 逻辑上，$M in bb(R)^(n times n)$；真实实现中，attention 是带 batch 和多头的：
 
 $ Q , K in bb(R)^(B times H times n times d)\

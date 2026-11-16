@@ -188,8 +188,6 @@ AllGather **不做规约**，只把上面 4 个结果收集并拼接起来。于
 
 正好等于直接做 AllReduce(sum) 的结果。
 
----
-
 ### 3. 关键对比
 
 | 操作 | P0 得到 | P1 得到 | P2 得到 | P3 得到 |
@@ -200,13 +198,13 @@ AllGather **不做规约**，只把上面 4 个结果收集并拼接起来。于
 
 所以：
 
-\[
+$$
 \boxed{
 \mathrm{AllReduce}
 =
 \mathrm{AllGather}\circ \mathrm{ReduceScatter}
 }
-\]
+$$
 
 在这个例子里：
 
@@ -214,3 +212,95 @@ AllGather **不做规约**，只把上面 4 个结果收集并拼接起来。于
 - **AllGather 只负责收集拼接**，不带规约。
 - **AllReduce 的语义是完整向量逐元素规约**，每个进程都拿到完整的 \([1111,2222,3333,4444]\)。
 
+---
+
+A2 A3原生支持 RoCE, HCCS，A5原生不支持
+A5支持UB
+
+hcomm: P2P基础通信，基础能力
+hccl shmem hixl基于hcomm
+shmem共享内存库
+hixl PD分离使用这个库
+
+- 数据并行：解决吞吐不够大
+- 模型并行：解决内存放不下
+   - 流水线并行：有空泡问题。
+      - DualPipe 双向流水线，缓解空泡问题
+      - 数据量最小
+   - 张量并行：数据同步量大，对带宽要求高。通常只在小范围内做TP。
+   - 专家并行：
+      - All2All Dispatch, All2All Combine，两次All2All通信。
+
+通信原语：InputBuffer, OutputBuffer，所以All2All通信结束后，InputBuffer数据依然保留。本地也有InputBuffer -> OutputBuffer的拷贝
+
+---
+
+## 950芯片逻辑架构
+
+Die: 硅上刻出来的一片，硅片。
+光刻机的光刻面积有限，一个Die的面积最大只能这么大。所以一个芯片可能有多Die合封。
+
+出于节省研发成本考虑，UB Switch直接由两个IO Die封装，不需要专门设计新的Die。
+
+HBM是单独的Die，不在片上。HBM通过接口连接，不属于芯片内部。
+
+D2D -> Die 2 Die 通信，带间通信
+Security Core：安全启动
+
+Linx816 CPU。可以跑欧拉操作系统，可以负责下发算子。 star负责调度算子资源。
+
+9个UBPort (x4 Lane，4个Lane合成一个Port)，但`UB-Port[0-3]`可以复用为 PCIe Gen5 x16模式（一个端口16个Lane）。x16=x4 * 4
+- PCIe5只能32G，速率没有原来的UB来得高。
+- 有的客户要用x86服务器，x86只能通过PCIe连接。
+   - 购买标卡，自己组服务器：客户定制机型组网（DeepSeek）
+综合考虑组网速率。Lane数量小了，带宽就低了。Lane宽度大了，Port数量就效率。
+
+`Port[8]`复用为UBoE模式
+UBoE：和客户原有的以太网对接，走以太交换机。在以太网基础上，运行UB的传输层协议层。
+
+灵衢1.0：HCCS，和UB没关系,A1到A3
+灵衢2.0：UB
+
+A1~A3代际，NPU内集成一个网卡
+
+RoCE, InfiniBand: RDMA，不需要CPU拷贝数据，只需要CPU控制。英伟达超节点互联：GDR
+- GDR方案的缺点：抢占PCIe带宽/通道。
+
+A5全用UB了。
+
+A3，
+CPU8个端口，CPU之间自己和自己互联用了3个端口，剩下5个连交换机。
+NPU8个端口，7个连交换机，1个连控制面
+
+
+384超节点：L1、L2两层交换机。
+server内部电互联。server间光互联。 一个超节点5000+个光模块。
+
+华为1825网卡：外置RoCE网卡
+- 外置网卡的优点：维修方便，网卡坏了可以单独维修替换。
+2口UB + 2口UB + 4口UB + 1口UB
+
+跨Die通信时延和不跨Die差不多。
+
+单柜64卡，总共16柜，总共1024卡。
+
+NV Switch <-> UBSwitch
+
+CX7网卡自带PCIe Switch
+
+Nvidia和Ascend的区别：
+- Nvidia外置网卡，没有内置网卡
+- 全电互联，没有光互联
+
+NVL72：单柜72个GPU互联。
+电缆超过5米后，速率迅速衰减，只能走光纤通信。光互连属于业内趋势。
+
+STAR拓扑：星形拓扑
+
+CCU里面也是SRAM，没法做得太大。
+
+昇腾Full-Mesh拓扑比NV STAR拓扑省交换机，但是扩展性差。Full-Mesh结构不好做确定性计算
+
+客户提问：是否兼容第三方交换机？RoCE兼容，IB不兼容。
+
+不同的拓扑，需要定制不同的集合通信算法，开源hccl hcomm代码，让客户自行定制算法。
