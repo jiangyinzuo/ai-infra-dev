@@ -1,4 +1,7 @@
-查看npu型号
+昇腾 DSA Ascend910 架构梳理 - hal3515的文章 - 知乎
+https://zhuanlan.zhihu.com/p/1978037417261946625
+
+## 查看npu型号
 
 只能看出是910，看不出具体型号
 ```
