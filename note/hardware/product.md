@@ -77,6 +77,8 @@ LQC可能也叫HCCS
 
 ## A5
 
+每个NPU芯片18个UB2.0端口，H2D 2口，Mesh 7口，Clos 8口，RoCE 1口。
+
 ### Atlas 350标卡
 
 1 * 昇腾950PR
