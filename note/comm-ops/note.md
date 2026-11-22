@@ -1,3 +1,5 @@
+通算掩盖，通信stream和计算stream重叠。通信算子通常用vector core
+
 博客教程
 - https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/800alpha001/devguide/hccl/hcclug/hcclug_000004.html
 - https://github.com/devinjeon/gpu-comm-visualizer

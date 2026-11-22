@@ -1,0 +1,1 @@
+图模式的profiling中可以看到一些event wait
