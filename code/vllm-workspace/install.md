@@ -42,7 +42,7 @@ python3 scripts/find_vllm_precompiled_commit.py --variant cu129 --format command
 
 仅用于python代码阅读，不编译C++
 ```bash
-VLLM_USE_PRECOMPILED=1 uv pip install -e . --torch-backend cpu
+VLLM_USE_PRECOMPILED=1 VLLM_TARGET_DEVICE=cpu uv pip install -e . --no-build-isolation
 ```
 
 如果要源码编译，需要`sudo apt-get install -y libnuma-dev`
