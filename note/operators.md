@@ -21,3 +21,5 @@ CUBE VECTOR和通信的融合
     - 1.5TB @ 2K
 
 有的stream专门负责通信
+
+FixPipe具有随路规约/随路转换功能。
