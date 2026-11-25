@@ -1,0 +1,16 @@
+# HiSparse + NIXL push 失败记录
+
+当前 SM120 后端配置：
+
+```text
+FLASHINFER_MLA_SPARSE_SM120
+```
+
+HiSparse + `NixlPushConnector` 启动时失败：
+
+```text
+NotImplementedError:
+NixlPushConnector does not support mixed-memory KV caches
+```
+
+原因：HiSparse 同时使用 GPU hot buffer 和 Host KV pool；当前 push connector 拒绝 mixed-memory KV cache。保留该失败作为兼容性边界，不绕过检查。
