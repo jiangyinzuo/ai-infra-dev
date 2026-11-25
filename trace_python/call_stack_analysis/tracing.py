@@ -172,6 +172,8 @@ class Tracer:
                 "values": capture_fields(frame, target.fields),
                 "stack": collect_stack(frame, self.root),
             }
+            if target.note:
+                record["note"] = target.note
             if target.caller_fields:
                 record["caller_values"] = capture_fields(frame.f_back, target.caller_fields)
             self.writer.emit(record)

@@ -77,15 +77,12 @@ config = TraceConfig(
                ("request_id", "num_computed_tokens"), 4),
         Target(COORDINATOR, "HiSparseCoordinator.update_residency",
                ("request_id",) + RESIDENCY, 8),
-        Target(COORDINATOR, "HiSparseCoordinator._plan_page_transfer",
-               ("request_id", "page_idx", "restore", "self.next_spill_id"), 64),
+        Target(COORDINATOR, "HiSparseCoordinator._plan_page_transfers",
+               ("request_id", "page_indices", "budget", "restore", "self.next_spill_id"), 64),
         Target(COORDINATOR, "HiSparseCoordinator.update_spills", (), 2),
-        # 这里调用者已经检查完成计数，且 pending 尚在局部变量中。
-        Target(COORDINATOR, "HiSparseCoordinator._page_became_clean",
-               ("request_id", "page_idx"), 40,
-               caller_fields=("pending.transfer_id", "pending.restore",
-                              "pending.worker_completions",
-                              "pending.expected_worker_completions")),
+        # 当前实现把完成页副本记录在 _record_copy。
+        Target(COORDINATOR, "HiSparseCoordinator._record_copy",
+               ("request_id", "page_idx", "host_block"), 40),
         Target(COORDINATOR, "HiSparseCoordinator._lose_page",
                ("request_id", "page_idx"), 8),
         # 入口前几次常是空 transfers；页面计划和 DMA ID 才能关联有效搬运。

@@ -5,6 +5,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import cast
+
 from trace_python.call_stack_analysis import Target, TraceConfig
 
 ROOT = Path(__file__).resolve().parents[3] / "code/vllm-workspace/vllm"
@@ -77,8 +78,8 @@ config = TraceConfig(
                ("q", "kv_cache", "topk_indices_physical"), 64),
         Target("vllm/v1/hisparse/coordinator.py", "HiSparseCoordinator.plan_prefix_materialization",
                ("request_id", "num_computed_tokens")),
-        Target("vllm/v1/hisparse/coordinator.py", "HiSparseCoordinator._plan_page_transfer",
-               ("request_id", "page_idx", "after_forward", "restore")),
+        Target("vllm/v1/hisparse/coordinator.py", "HiSparseCoordinator._plan_page_transfers",
+               ("request_id", "page_indices", "budget", "restore", "self.next_spill_id")),
         Target("vllm/v1/hisparse/coordinator.py", "HiSparseCoordinator.build_row_mirrors"),
         # Scheduler 侧把调度结果转换为 residency、spill/restore 和 row-mirror metadata。
         Target("vllm/distributed/kv_transfer/kv_connector/v1/hisparse/connector.py",

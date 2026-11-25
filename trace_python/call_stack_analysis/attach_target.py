@@ -108,6 +108,7 @@ def _start(request: dict[str, Any]) -> _Capture:
             file=target["file"], function=target["function"],
             fields=tuple(target["fields"]), limit=target["limit"],
             caller_fields=tuple(target["caller_fields"]),
+            note=target.get("note"),
         )
         for target in request["targets"]
     )

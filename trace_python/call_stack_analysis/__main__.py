@@ -17,6 +17,7 @@ if not __package__:
 
 from trace_python.call_stack_analysis import TraceConfig, TraceSession
 from trace_python.call_stack_analysis.configuration import load_config
+from trace_python.call_stack_analysis.invocation import write_command
 
 
 @contextlib.contextmanager
@@ -80,6 +81,7 @@ def run_trace(config: TraceConfig, output_prefix: Path, config_path: Path) -> in
 
 def main() -> int:
     args = parse_args()
+    write_command(args.output_prefix)
     with target_output():
         trace_config: TraceConfig = load_config(args.config)
     return run_trace(trace_config, args.output_prefix, args.config)

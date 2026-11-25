@@ -130,7 +130,7 @@ def test_python312_rejects_attach_without_touching_target(tmp_path: Path) -> Non
     )
     assert result.returncode != 0, result.stdout
     assert "3.14" in result.stderr, result.stderr
-    assert not list(tmp_path.glob("unsupported.*")), (result.stdout, result.stderr)
+    assert not list(tmp_path.glob("unsupported.*.jsonl")), (result.stdout, result.stderr)
 
 
 @requires_remote_exec

@@ -45,6 +45,7 @@ class Node:
     children: dict[tuple[str, str, int | None], "Node"] = field(default_factory=dict)
     value_samples: list[_ValueSample] = field(default_factory=list)
     value_count: int = 0
+    note: str | None = None
 
 
 class CallTree:
@@ -68,6 +69,8 @@ class CallTree:
             node.first_target_sequence = sequence
             node.first_target_monotonic_ns = record["monotonic_ns"]
         node.targets[record["target"]] = node.targets.get(record["target"], 0) + 1
+        if record.get("note"):
+            node.note = record["note"]
         values = record.get("values", {})
         caller_values = record.get("caller_values", {})
         if values or caller_values:
@@ -85,7 +88,8 @@ class CallTree:
                 if node.caller_line is not None:
                     location += f"; caller:{node.caller_line}"
                 marker = f" 🎯[{node.first_target_sequence}]" if node.targets else ""
-                label = (f"{node.function}{marker} ({location}) "
+                note = f" — {node.note}" if node.note else ""
+                label = (f"{node.function}{marker}{note} ({location}) "
                          f"samples={node.samples} events={node.first_sequence}..{node.last_sequence}")
                 result[label] = encode(node)
             return result
@@ -121,7 +125,8 @@ class CallTree:
                 if trace_start is not None and node.first_target_monotonic_ns:
                     elapsed_ms = (node.first_target_monotonic_ns - trace_start) / 1_000_000
                     target += f" +{elapsed_ms:.3f}ms"
-            print(f"{prefix}{branch}{node.function}{target} ({node.file}){source} "
+            note = f" — {node.note}" if node.note else ""
+            print(f"{prefix}{branch}{node.function}{target}{note} ({node.file}){source} "
                   f"samples={node.samples} events={node.first_sequence}..{node.last_sequence}", file=output)
             child_prefix = prefix + ("  " if last else "│ ")
             children = list(node.children.values())

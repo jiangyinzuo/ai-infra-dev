@@ -41,9 +41,9 @@ TARGETS = (
         "vllm/v1/engine/core.py",
         "EngineCore.__init__",
         (
-            "self.vllm_config.parallel_config.data_parallel_size",
-            "self.vllm_config.parallel_config.data_parallel_rank",
-            "self.vllm_config.parallel_config.enable_expert_parallel",
+            "vllm_config.parallel_config.data_parallel_size",
+            "vllm_config.parallel_config.data_parallel_rank",
+            "vllm_config.parallel_config.enable_expert_parallel",
         ),
     ),
     Target(
@@ -86,11 +86,11 @@ def _command(mode: str) -> list[str]:
         return [
             argument.replace("{model}", serve_config.model)
             for argument in serve_config.serve_command
-        ]
+        ] + ["--shutdown-timeout", "30"]
     mode_args = {
-        "single-api": ["--api-server-count", "1"],
-        "multi-api": ["--api-server-count", "2"],
-        "headless": ["--headless"],
+        "single-api": ["--api-server-count", "1", "--shutdown-timeout", "30"],
+        "multi-api": ["--api-server-count", "2", "--shutdown-timeout", "30"],
+        "headless": ["--headless", "--shutdown-timeout", "30"],
     }
     if mode not in mode_args:
         raise ValueError(f"unsupported startup mode: {mode}")
@@ -102,9 +102,12 @@ def _command(mode: str) -> list[str]:
         *(argument.replace("{model}", serve_config.model)
           for argument in serve_config.serve_command[1:]),
     ]
-    command[command.index("--tensor-parallel-size") + 1] = os.environ.get(
-        "TRACE_VLLM_STARTUP_TENSOR_PARALLEL_SIZE", "2"
-    )
+    tp_size = int(os.environ.get("TRACE_VLLM_STARTUP_TENSOR_PARALLEL_SIZE", "2"))
+    command[command.index("--tensor-parallel-size") + 1] = str(tp_size)
+    index = command.index("--hf-overrides") + 1
+    overrides = json.loads(command[index])
+    overrides["num_attention_heads"] *= tp_size
+    command[index] = json.dumps(overrides)
     return [*command, *mode_args[mode]]
 
 
@@ -171,7 +174,8 @@ def run_startup(start, mode: str, config_path: Path) -> None:
     run_id = uuid.uuid4().hex
     base_prefix = Path(
         os.environ.get(
-            "TRACE_VLLM_STARTUP_OUTPUT_PREFIX", f"/tmp/runtime/startup-trace/{mode}"
+            "TRACE_VLLM_STARTUP_OUTPUT_PREFIX",
+            str(Path.home() / "vllm-trace-python-log" / "startup-trace" / mode),
         )
     ).resolve()
     prefix = base_prefix.with_name(f"{base_prefix.name}-{run_id[:8]}")
@@ -201,19 +205,24 @@ def run_startup(start, mode: str, config_path: Path) -> None:
             command, cwd=VLLM_ROOT, env=env, start_new_session=True
         )
         seconds = float(os.environ.get("TRACE_VLLM_STARTUP_SECONDS", "0"))
+        stopped = False
         try:
             if seconds > 0:
                 try:
                     process.wait(timeout=seconds)
                 except subprocess.TimeoutExpired:
+                    stopped = True
                     print(f"采集 {seconds:g} 秒到期，正在停止服务进程组。", flush=True)
                     _stop(process)
             else:
                 process.wait()
         except KeyboardInterrupt:
+            stopped = True
             print("收到 Ctrl-C，正在停止服务进程组。", flush=True)
             _stop(process)
         finally:
             if process.poll() is None:
                 _stop(process)
     _write_timeline(prefix)
+    if process.returncode and not stopped:
+        raise subprocess.CalledProcessError(process.returncode, command)

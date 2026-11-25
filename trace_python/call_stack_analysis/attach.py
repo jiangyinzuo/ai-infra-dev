@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .configuration import load_config
+from .invocation import write_command
 
 
 class AttachError(RuntimeError):
@@ -241,6 +242,12 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"--process-label PID 重复：{pid}")
         process_labels[pid] = label
     try:
+        write_command(
+            args.output_prefix,
+            argv=None if argv is None else [
+                sys.executable, "-m", "trace_python.call_stack_analysis.attach", *argv,
+            ],
+        )
         report = capture_processes(
             args.pid, args.config, args.output_prefix, args.duration, args.timeout,
             process_labels=process_labels or None,

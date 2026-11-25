@@ -16,6 +16,7 @@ class Target:
     limit: int = 2
     # 在目标入口读取直接 Python 调用者的局部变量，不跳过包装函数。
     caller_fields: tuple[str, ...] = field(default=(), kw_only=True)
+    note: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)

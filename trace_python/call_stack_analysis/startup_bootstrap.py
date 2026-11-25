@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import atexit
 import os
+import signal
 from pathlib import Path
 
 from trace_python.call_stack_analysis import TraceSession
 from trace_python.call_stack_analysis.configuration import load_config
+
+
+def _exit_on_sigterm(signum, _frame) -> None:
+    # 只展开 Python 栈；不能在信号处理器中加 tracer 锁或写文件。
+    raise SystemExit(128 + signum)
 
 
 def install() -> None:
@@ -25,3 +31,5 @@ def install() -> None:
     capture = session.capture()
     capture.__enter__()
     atexit.register(capture.__exit__, None, None, None)
+    if signal.getsignal(signal.SIGTERM) == signal.SIG_DFL:
+        signal.signal(signal.SIGTERM, _exit_on_sigterm)

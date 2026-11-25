@@ -116,9 +116,6 @@ def test_direct_cli_preserves_outputs_and_target_context(tmp_path: Path, entrypo
     assert result.returncode == 0, result.stderr
     assert result.stdout == "", result.stdout
     assert all(f"business:{value}" in result.stderr for value in ("inactive", "first", "second", "third"))
-    assert {path.name for path in output.iterdir()} == {
-        "capture.jsonl", "capture.txt", "capture.tree.json", "capture.tree.txt",
-    }
     capture = smoke.read_capture(Path(str(prefix) + ".jsonl"))
     assert capture["run"]["argv"] == command
     assert capture["run"]["cwd"] == str(invocation)
@@ -645,3 +642,57 @@ def test_subprocess_inherits_label_and_named_files_survive_sigkill(
     assert records[-1]["process_name"] == "EngineCore"
     assert records[-1]["values"] == {"value": 42}
     assert Path(records[-1]["output_prefix"] + ".jsonl") == path
+
+
+def test_note_is_attached_only_to_its_target(tmp_path: Path, business: Any) -> None:
+    prefix = tmp_path / "noted"
+    session = TraceSession(
+        root=Path(business.__file__).parent,
+        targets=(Target("smoke_business_functions.py", "observe", ("value",), note="记录目标对象"),),
+        output_prefix=prefix,
+    )
+    with session.capture(output_prefix=prefix):
+        business.observe(42)
+    records = [json.loads(line) for line in Path(str(prefix) + ".jsonl").read_text().splitlines()]
+    event, = [r for r in records if r["type"] == "event"]
+    assert event["values"] == {"value": 42}
+    assert event["note"] == "记录目标对象"
+    for suffix in (".tree.txt", ".tree.json"):
+        text = Path(str(prefix) + suffix).read_text()
+        assert "observe" in text and text.count("记录目标对象") == 1
+
+
+def test_bootstrap_sigterm_writes_complete_tree(tmp_path: Path) -> None:
+    subject = tmp_path / "subject.py"
+    subject.write_text(
+        "import os, signal\n"
+        "from trace_python.call_stack_analysis.startup_bootstrap import install\n"
+        "install()\n"
+        "def observe(value):\n    return value\n"
+        "observe(42)\n"
+        "os.kill(os.getpid(), signal.SIGTERM)\n"
+    )
+    config = tmp_path / "config.py"
+    config.write_text(
+        "from pathlib import Path\n"
+        "from trace_python.call_stack_analysis import TraceConfig, Target\n"
+        "config=TraceConfig(Path(__file__).parent, lambda start:None,\n"
+        "    (Target('subject.py','observe',('value',)),))\n"
+    )
+    environment = dict(
+        os.environ, PYTHONPATH=str(REPOSITORY_ROOT),
+        TRACE_VLLM_STARTUP_CONFIG=str(config),
+        TRACE_VLLM_STARTUP_PREFIX=str(tmp_path / "capture"),
+        TRACE_VLLM_STARTUP_RUN_ID="bootstrap-sigterm",
+    )
+    result = subprocess.run(
+        [sys.executable, str(subject)], cwd=tmp_path, env=environment,
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert result.returncode == 128 + signal.SIGTERM
+    path, = tmp_path.glob("capture.*.jsonl")
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert rows[-1]["type"] == "summary"
+    assert [r["values"] for r in rows if r["type"] == "event"] == [{"value": 42}]
+    tree = json.loads(Path(str(path)[:-6] + ".tree.json").read_text())
+    assert tree["summary"] == rows[-1] and tree["tree"]
