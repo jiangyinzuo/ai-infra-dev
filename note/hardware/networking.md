@@ -3,9 +3,13 @@
 
 https://doc.hcs.huawei.com/zh-cn/hps/doc/download/pdf/hps-usermanual.pdf
 
-超节点间的高性能互通网络称为参数面。
+超节点间的高性能互通网络称为参数面。RoCE
+- DP、PP、EP
+- PD分离的KVCache传输
+- NPU间权重加载/同步
 
 超节点内基于高速互联技术（如NVLink、CXL、UB）将多个AI服务器耦合在一起构成的Scale-Up通信平面在HPS服务中称为超平面。
+- TP
 
 ### AI业务网络平面设计
 
