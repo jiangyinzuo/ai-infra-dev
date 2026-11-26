@@ -222,9 +222,10 @@
       return `<code>${ids.map((id) => `${symbol}[${id}]`).join(" · ")}</code>`;
     }
 
-    function renderFlow(state, groupStarts, shards, chunk = null) {
+    function renderFlow(state, groupStarts, { start, end, target, legend: flowLegend }) {
       const { tp, dcp, qHeads, kvHeads, path } = state;
-      const distributedContext = dcp > 1 && (!chunk || chunk.start > 0);
+      const distributedContext = dcp > 1 && start > 0;
+      const historyShards = kvShards(state, 0, start);
       const ranks = Array.from({ length: tp }, (_, rank) => rank);
       const qHeadsPerRank = qHeads / tp;
       const queryRange = (start, end) => rangeLabel(start * qHeadsPerRank, end * qHeadsPerRank - 1);
@@ -244,14 +245,11 @@
       const queryLegend = `每个 KV head 对应 ${qHeads / kvHeads} 个连续的 Q heads。`;
       const partialLegend = ' DCP group 由连续的 TP rank 组成。<code>P[s→r]</code> 包含部分输出和 LSE，s 是 KV 分片所在 TP rank，r 是 Q heads 原属 TP rank。<code>Correct()</code> 用一个部分结果和相同 Q heads 的各分片 LSE 算出校正输出 <code>P′[s→r]</code>。';
       const mergeLegend = ' <code>H</code> 是归并后的历史 attention 结果，<code>N</code> 是本轮 causal attention 结果。两者都带有 LSE，供 <code>MergeAttention()</code> 使用。';
-      const currentLegend = chunk ? prefillLegend : legend;
-      currentLegend.innerHTML = queryLegend + (distributedContext ? partialLegend : "")
-        + (chunk && distributedContext ? mergeLegend : "");
+      flowLegend.innerHTML = queryLegend + (distributedContext ? partialLegend + mergeLegend : "");
 
-      const newTokens = chunk ? rangeLabel(chunk.start, chunk.end - 1, "t") : null;
-      if (chunk) {
-        addStep("QKV 投影", "各 TP rank 在本卡为本轮全部新 token 生成 Q/K/V", (rank) =>
-          equation(`Q[${queryRanges[rank]}](${newTokens})`) + equation(`${kvLabels[rank]}(${newTokens})`));
+      const newTokens = rangeLabel(start, end - 1, "t");
+      addStep("QKV 投影", "各 TP rank 在本卡为本轮新 token 投影各自负责的 Q/K/V heads", (rank) =>
+        equation(`Q[${queryRanges[rank]}](${newTokens})`) + equation(`${kvLabels[rank]}(${newTokens})`));
 
         const writes = kvShards(state, chunk.start, chunk.end);
         addStep("写入本卡 KV cache", "从本卡投影结果选取归本 TP rank 的 token，无跨卡通信", (rank) => {
@@ -260,11 +258,6 @@
         });
       } else {
         addStep("Q 投影", "TP 按 head 切分", (rank) => blocks("Q", [queryRanges[rank]]));
-      }
-
-      if (!chunk && dcp === 1) {
-        addStep("本地 attention", "DCP=1，使用完整序列的 KV", (rank) =>
-          `完整输出 ${blocks("O", [queryRanges[rank]])}`);
       }
 
       if (distributedContext) {
@@ -287,14 +280,13 @@
 
         function reduce(rank) {
           const terms = sourceTerms(rank, (source) => `P′[${source}→${rank}]`, " + ");
-          if (chunk) return equation(`H[${queryRanges[rank]}].O = ${terms}`);
-          return `完整输出 ${blocks("O", [queryRanges[rank]])}<small class="equation">= <code>${terms}</code></small>`;
+          return equation(`H[${queryRanges[rank]}].O = ${terms}`);
         }
 
         addStep("AllGather(Q)", "在组内沿 head 维拼接", (rank) => gathered[groupOf(rank)], true);
-        addStep(chunk ? "历史 attention" : "本地 attention", "用本地 KV 分片计算部分输出", (rank) => {
-          const { length, positions } = shards[rank % dcp];
-          const kv = chunk ? `Cache${kvLabels[rank]}` : kvLabels[rank];
+        addStep("历史 attention", "读取本卡 KV cache 中的历史分片", (rank) => {
+          const { length, positions } = historyShards[rank % dcp];
+          const kv = `Cache${kvLabels[rank]}`;
           const tokens = length ? `<code>${positions}</code>` : "空分片，贡献为 0";
           const partials = members[groupOf(rank)].map((owner) =>
             equation(`P[${rank}→${owner}] = Attention(Q[${queryRanges[owner]}], ${kv})`));
@@ -346,7 +338,7 @@
             <th scope="colgroup" colspan="${dcp}">group ${group}</th>
           `).join("")}</tr>
           <tr>${ranks.map((rank) => `
-            <th${groupStartClass(rank)} scope="col">TP rank ${rank}<small>${kvLabels[rank]} · ${cacheLengthLabel}${formatNumber(shards[rank % dcp].length)} tokens</small></th>
+            <th${groupStartClass(rank)} scope="col">TP rank ${rank}<small>${kvLabels[rank]} · 历史 ${formatNumber(historyShards[rank % dcp].length)} tokens</small></th>
           `).join("")}</tr>
         </thead>
         <tbody>${rows.join("")}</tbody>
@@ -424,7 +416,7 @@
       const current = rangeLabel(start, end - 1, "t");
       prefillRange.textContent = `共 ${formatNumber(chunkCount)} 个 chunk · ${history} · 本轮 ${current}（${formatNumber(end - start)} tokens）`;
 
-      renderFlow(state, groupStarts, kvShards(state, 0, start), { start, end });
+      renderFlow(state, groupStarts, { start, end, target: prefillFlow, legend: prefillLegend });
     }
 
     function render() {
@@ -448,7 +440,7 @@
       const shards = kvShards(state);
       renderKvMatrix(state, groupStarts, shards);
       renderPrefill(state, groupStarts);
-      renderFlow(state, groupStarts, shards);
+      renderFlow(state, groupStarts, { start: state.sequence - 1, end: state.sequence, target: flow, legend });
     }
 
     for (const input of numericInputs) input.addEventListener("input", render);
