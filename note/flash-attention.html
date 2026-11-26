@@ -1,0 +1,75 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>/* Alignment */
+mtable.right-align mtd,
+mtable mtd.right-align,
+mtable.left-align mtd.right-align,
+mtable.aligned mtd:nth-child(odd) {
+  justify-items: end;
+  text-align: right;
+}
+mtable.cases mtd,
+mtable.left-align mtd,
+mtable mtd.left-align,
+mtable.aligned mtd:nth-child(even),
+math:is(:not([display])) > mtable.multiline-equation mtd {
+  justify-items: start;
+  text-align: left;
+}
+mtable.cases mtd,
+mtable.aligned mtd,
+mtable mtd.flushed,
+mtable mtd.left-flush {
+  padding-left: 0;
+}
+mtable.cases mtd,
+mtable.aligned mtd,
+mtable mtd.flushed,
+mtable mtd.right-flush {
+  padding-right: 0;
+}
+
+/* Tables */
+mtable {
+  math-style: inherit;
+}
+mtd {
+  math-depth: auto-add;
+  math-style: compact;
+  math-shift: compact;
+}
+
+/* Equations */
+mtable.multiline-equation mtd {
+  math-depth: inherit;
+  math-style: inherit;
+  math-shift: inherit;
+  padding: 0;
+}
+math > mtable.multiline-equation mtr:not(:last-child) mtd {
+  padding-bottom: 0.5em;
+}
+
+/* Fractions */
+mfrac {
+  padding-inline: 0;
+  margin-inline: 0.1em;
+}
+
+/* Accents */
+mover[accent="true" i] > :first-child {
+  font-feature-settings: "dtls";
+}
+mover.dotted[accent="true" i] > :first-child {
+  font-feature-settings: "dtls" 0;
+}
+
+/* Other rules for scriptlevel, displaystyle and math-shift */
+munder > :nth-child(2),
+munderover > :nth-child(2) {
+  math-shift: compact
+}
+munder[accentunder="true" i] > :not(:first-child),
+mover[accent="true" i] > :not(:first-child) {
+  math-depth: inherit;
+  math-style: inherit;
+  math-shift: inherit;
+}</style></head><body><h3>Online Softmax</h3><p>Online Softmax 是 Flash Attention 的核心数学机制。其基本思想是将完整的 Softmax 计算拆分为多个 Block，通过维护少量中间统计量，实现分块、增量式计算，而无需物化完整的 Attention Score Matrix 和 Probability Matrix。</p><h4>初始计算</h4><p>设当前 Query Block 包含 <math><msub><mi>𝐵</mi><mi>𝑞</mi></msub></math> 个 Query Row，Query/Key 的 Head Dimension 为 <math><mi>𝑑</mi></math>，Value 的 Head Dimension 为 <math><msub><mi>𝑑</mi><mi>𝑣</mi></msub></math>。令第 <math><mi>𝑗</mi></math> 个 Key/Value Block 包含 <math><msub><mi>𝐵</mi><mrow><mi>𝑘</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub></math> 个 Token（<math><mi>𝑗</mi><mo>=</mo><mn>1</mn><mo>,</mo><mi>…</mi><mo>,</mo><mi>𝑇</mi></math>），则</p><div style="display: flex; overflow: auto hidden;"><math display="block"><mi>𝑄</mi><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>𝐵</mi><mi>𝑞</mi></msub><mo lspace="0em" rspace="0em">×</mo><mi>𝑑</mi></mrow></msup></math></div><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝐾</mi><mi>𝑗</mi></msub><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>𝐵</mi><mrow><mi>𝑘</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub><mo lspace="0em" rspace="0em">×</mo><mi>𝑑</mi></mrow></msup><mspace width="1em"/><msub><mi>𝑉</mi><mi>𝑗</mi></msub><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>𝐵</mi><mrow><mi>𝑘</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub><mo lspace="0em" rspace="0em">×</mo><msub><mi>𝑑</mi><mi>𝑣</mi></msub></mrow></msup></math></div><p>其中 <math><msub><mi>𝐾</mi><mi>𝑗</mi></msub></math> 与 <math><msub><mi>𝑉</mi><mi>𝑗</mi></msub></math> 沿序列维度对齐，即二者具有相同的行数 <math><msub><mi>𝐵</mi><mrow><mi>𝑘</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub></math>。将所有 KV Block 沿序列维度拼接，记</p><div style="display: flex; overflow: auto hidden;"><math display="block"><mi>𝐾</mi><mo>=</mo><mrow><mo>[</mo><mrow><msub><mi>𝐾</mi><mn>1</mn></msub><mo>;</mo><msub><mi>𝐾</mi><mn>2</mn></msub><mo>;</mo><mi>…</mi><mo>;</mo><msub><mi>𝐾</mi><mi>𝑇</mi></msub></mrow><mo>]</mo></mrow><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>𝑁</mi><mi>𝑘</mi></msub><mo lspace="0em" rspace="0em">×</mo><mi>𝑑</mi></mrow></msup></math></div><div style="display: flex; overflow: auto hidden;"><math display="block"><mi>𝑉</mi><mo>=</mo><mrow><mo>[</mo><mrow><msub><mi>𝑉</mi><mn>1</mn></msub><mo>;</mo><msub><mi>𝑉</mi><mn>2</mn></msub><mo>;</mo><mi>…</mi><mo>;</mo><msub><mi>𝑉</mi><mi>𝑇</mi></msub></mrow><mo>]</mo></mrow><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>𝑁</mi><mi>𝑘</mi></msub><mo lspace="0em" rspace="0em">×</mo><msub><mi>𝑑</mi><mi>𝑣</mi></msub></mrow></msup></math></div><p>其中</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑁</mi><mi>𝑘</mi></msub><mo>=</mo><munderover><mo form="prefix" lspace="0em">∑</mo><mrow><mi>𝑗</mi><mo lspace="0em" rspace="0em">=</mo><mn>1</mn></mrow><mi>𝑇</mi></munderover><msub><mi>𝐵</mi><mrow><mi>𝑘</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub><mi>.</mi></math></div><p>因此，第 <math><mi>𝑗</mi></math> 个 KV Block 产生的局部 Attention Score 为</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑆</mi><mi>𝑗</mi></msub><mo>=</mo><mfrac><mrow><mi>𝑄</mi><msubsup><mi>𝐾</mi><mi>𝑗</mi><mi>𝑇</mi></msubsup></mrow><msqrt><mi>𝑑</mi></msqrt></mfrac><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>𝐵</mi><mi>𝑞</mi></msub><mo lspace="0em" rspace="0em">×</mo><msub><mi>𝐵</mi><mrow><mi>𝑘</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub></mrow></msup><mi>.</mi></math></div><p>其中 <math><msubsup><mi>𝐾</mi><mi>𝑗</mi><mi>𝑇</mi></msubsup><mo>∈</mo><msup><mi>ℝ</mi><mrow><mi>𝑑</mi><mo lspace="0em" rspace="0em">×</mo><msub><mi>𝐵</mi><mrow><mi>𝑘</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub></mrow></msup></math>，所以矩阵乘法的维度为</p><div style="display: flex; overflow: auto hidden;"><math display="block"><mrow><mo>(</mo><mrow><msub><mi>𝐵</mi><mi>𝑞</mi></msub><mo lspace="0.2222222222222222em" rspace="0.2222222222222222em">×</mo><mi>𝑑</mi></mrow><mo>)</mo></mrow><mrow><mo>(</mo><mrow><mi>𝑑</mi><mo lspace="0.2222222222222222em" rspace="0.2222222222222222em">×</mo><msub><mi>𝐵</mi><mrow><mi>𝑘</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub></mrow><mo>)</mo></mrow><mi>.</mi></math></div><p>完整的 Score Matrix 按列拼接为</p><div style="display: flex; overflow: auto hidden;"><math display="block"><mi>𝑆</mi><mo>=</mo><mrow><mo>[</mo><mrow><msub><mi>𝑆</mi><mn>1</mn></msub><mo>,</mo><msub><mi>𝑆</mi><mn>2</mn></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>𝑆</mi><mi>𝑇</mi></msub></mrow><mo>]</mo></mrow><mo>∈</mo><msup><mi>ℝ</mi><mrow><msub><mi>𝐵</mi><mi>𝑞</mi></msub><mo lspace="0em" rspace="0em">×</mo><msub><mi>𝑁</mi><mi>𝑘</mi></msub></mrow></msup><mo rspace="0em">,</mo></math></div><p>但 Online Softmax 不需要将其整体物化。</p><p>Online Softmax 为每个 Query Row 维护三个统计量：</p><ul><li><math><mi>𝑚</mi></math>：当前已处理 Score 的最大值。</li><li><math><mi>𝑙</mi></math>：以当前最大值为基准的指数和。</li><li><math><mi>𝑢</mi></math>：以当前最大值为基准的加权 Value 累积结果。</li></ul><p>初始化：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑚</mi><mn>0</mn></msub><mo>=</mo><mo form="prefix">−</mo><mi>∞</mi></math></div><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑙</mi><mn>0</mn></msub><mo>=</mo><mn>0</mn></math></div><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑢</mi><mn>0</mn></msub><mo>=</mo><mn>0</mn></math></div><p>其中 <math><msub><mi>𝑚</mi><mn>0</mn></msub></math> 和 <math><msub><mi>𝑙</mi><mn>0</mn></msub></math> 的形状均为 <math><msub><mi>𝐵</mi><mi>𝑞</mi></msub><mo lspace="0.2222222222222222em" rspace="0.2222222222222222em">×</mo><mn>1</mn></math>，<math><msub><mi>𝑢</mi><mn>0</mn></msub></math> 的形状为 <math><msub><mi>𝐵</mi><mi>𝑞</mi></msub><mo lspace="0.2222222222222222em" rspace="0.2222222222222222em">×</mo><msub><mi>𝑑</mi><mi>𝑣</mi></msub></math>。上述统计量均按 Query Row 独立维护。</p><h4>递推计算</h4><p>对于第 <math><mi>𝑗</mi></math> 个 KV Block，首先计算局部 Score：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑆</mi><mi>𝑗</mi></msub><mo>=</mo><mfrac><mrow><mi>𝑄</mi><msubsup><mi>𝐾</mi><mi>𝑗</mi><mi>𝑇</mi></msubsup></mrow><msqrt><mi>𝑑</mi></msqrt></mfrac></math></div><p>计算当前 Block 每个 Query Row 的局部最大值：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msubsup><mi>𝑚</mi><mi>𝑗</mi><mtext>local</mtext></msubsup><mo>=</mo><mtext>rowmax</mtext><mrow><mo>(</mo><msub><mi>𝑆</mi><mi>𝑗</mi></msub><mo>)</mo></mrow></math></div><p>更新全局最大值：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑚</mi><mi>𝑗</mi></msub><mo>=</mo><mo form="prefix" lspace="0em" rspace="0em">max</mo><mrow><mo>(</mo><mrow><msub><mi>𝑚</mi><mrow><mi>𝑗</mi><mo lspace="0em" rspace="0em">−</mo><mn>1</mn></mrow></msub><mo>,</mo><msubsup><mi>𝑚</mi><mi>𝑗</mi><mtext>local</mtext></msubsup></mrow><mo>)</mo></mrow></math></div><p>由于最大值发生变化，需要将历史统计量重新缩放到新的最大值基准下。定义两个缩放系数：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝛼</mi><mi>𝑗</mi></msub><mo>=</mo><mo form="prefix" lspace="0em" rspace="0em">exp</mo><mrow><mo>(</mo><mrow><msub><mi>𝑚</mi><mrow><mi>𝑗</mi><mo lspace="0em" rspace="0em">−</mo><mn>1</mn></mrow></msub><mo>−</mo><msub><mi>𝑚</mi><mi>𝑗</mi></msub></mrow><mo>)</mo></mrow></math></div><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝛽</mi><mi>𝑗</mi></msub><mo>=</mo><mo form="prefix" lspace="0em" rspace="0em">exp</mo><mrow><mo>(</mo><mrow><msubsup><mi>𝑚</mi><mi>𝑗</mi><mtext>local</mtext></msubsup><mo>−</mo><msub><mi>𝑚</mi><mi>𝑗</mi></msub></mrow><mo>)</mo></mrow></math></div><p>更新指数和：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑙</mi><mi>𝑗</mi></msub><mo>=</mo><msub><mi>𝛼</mi><mi>𝑗</mi></msub><msub><mi>𝑙</mi><mrow><mi>𝑗</mi><mo lspace="0em" rspace="0em">−</mo><mn>1</mn></mrow></msub><mo>+</mo><msub><mi>𝛽</mi><mi>𝑗</mi></msub><mspace width="0.2222em"/><mtext>rowsum</mtext><mrow><mo>(</mo><mrow><mo lspace="0em" rspace="0em">exp</mo><mrow><mo>(</mo><mrow><msub><mi>𝑆</mi><mi>𝑗</mi></msub><mo>−</mo><msubsup><mi>𝑚</mi><mi>𝑗</mi><mtext>local</mtext></msubsup></mrow><mo>)</mo></mrow></mrow><mo>)</mo></mrow></math></div><p>更新加权 Value 累积结果：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑢</mi><mi>𝑗</mi></msub><mo>=</mo><msub><mi>𝛼</mi><mi>𝑗</mi></msub><msub><mi>𝑢</mi><mrow><mi>𝑗</mi><mo lspace="0em" rspace="0em">−</mo><mn>1</mn></mrow></msub><mo>+</mo><msub><mi>𝛽</mi><mi>𝑗</mi></msub><mo form="prefix" lspace="0.16666666666666666em" rspace="0em">exp</mo><mrow><mo>(</mo><mrow><msub><mi>𝑆</mi><mi>𝑗</mi></msub><mo>−</mo><msubsup><mi>𝑚</mi><mi>𝑗</mi><mtext>local</mtext></msubsup></mrow><mo>)</mo></mrow><msub><mi>𝑉</mi><mi>𝑗</mi></msub></math></div><p>其中 <math><msub><mi>𝛼</mi><mi>𝑗</mi></msub></math> 和 <math><msub><mi>𝛽</mi><mi>𝑗</mi></msub></math> 均按 Query Row 广播，指数运算为逐元素运算。</p><h4>最终输出</h4><p>当所有 <math><mi>𝑇</mi></math> 个 KV Block 处理完毕后，得到最终统计量：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑚</mi><mi>𝑇</mi></msub><mo>,</mo><msub><mi>𝑙</mi><mi>𝑇</mi></msub><mo>,</mo><msub><mi>𝑢</mi><mi>𝑇</mi></msub></math></div><p>最终 Attention Output 为：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><mi>𝑂</mi><mo>=</mo><mfrac><msub><mi>𝑢</mi><mi>𝑇</mi></msub><msub><mi>𝑙</mi><mi>𝑇</mi></msub></mfrac></math></div><p>其中除法按照 Query Row 在 Value Dimension 上进行广播。</p><p>同时，可以计算每个 Query Row 对应的 Log-Sum-Exp（LSE）：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><mtext>LSE</mtext><mo>=</mo><msub><mi>𝑚</mi><mi>𝑇</mi></msub><mo>+</mo><mo form="prefix" lspace="0em" rspace="0em">log</mo><mrow><mo>(</mo><msub><mi>𝑙</mi><mi>𝑇</mi></msub><mo>)</mo></mrow></math></div><p>LSE 表示原始 Attention Score 的指数和的对数：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mtext>LSE</mtext><mi>𝑖</mi></msub><mo>=</mo><mo form="prefix" lspace="0em" rspace="0em">log</mo><mrow><mo>(</mo><mrow><munder><mo lspace="0em">∑</mo><mi>𝑗</mi></munder><mo form="prefix" lspace="0em" rspace="0em">exp</mo><mrow><mo>(</mo><msub><mi>𝑆</mi><mrow><mi>𝑖</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub><mo>)</mo></mrow></mrow><mo>)</mo></mrow></math></div><p>因此，Softmax Probability 可以通过以下公式恢复：</p><div style="display: flex; overflow: auto hidden;"><math display="block"><msub><mi>𝑃</mi><mrow><mi>𝑖</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub><mo>=</mo><mo form="prefix" lspace="0em" rspace="0em">exp</mo><mrow><mo>(</mo><mrow><msub><mi>𝑆</mi><mrow><mi>𝑖</mi><mo rspace="0em">,</mo><mi>𝑗</mi></mrow></msub><mo>−</mo><msub><mtext>LSE</mtext><mi>𝑖</mi></msub></mrow><mo>)</mo></mrow></math></div><h4>数学意义</h4><p>Online Softmax 的关键在于：每次处理新的 KV Block 时，通过更新全局最大值 <math><mi>𝑚</mi></math>，并利用缩放系数 <math><mi>𝛼</mi></math> 和 <math><mi>𝛽</mi></math> 对历史统计量进行重标定，从而保证增量计算结果与完整 Softmax 在数学上等价。</p><p>整个计算过程中，只需要维护 <math><mi>𝑚</mi></math>、<math><mi>𝑙</mi></math> 和 <math><mi>𝑢</mi></math> 三个中间统计量，无需保存完整的 <math><mi>𝑁</mi><mo lspace="0.2222222222222222em" rspace="0.2222222222222222em">×</mo><mi>𝑁</mi></math> Attention Score Matrix 或 Probability Matrix。</p><p>此外，<math><mrow><mo>(</mo><mrow><mi>𝑚</mi><mo>,</mo><mi>𝑙</mi><mo>,</mo><mi>𝑢</mi></mrow><mo>)</mo></mrow></math> 还可以通过相同的重标定公式进行合并，因此支持不同 KV Partition 上的并行计算与分布式 Reduce。这也是 Online Softmax 能够应用于 Context Parallelism、Ring Attention 和 Flash-Decoding 等技术的重要数学基础。</p><p><strong>一个实现细节：</strong> 上述初始化中的 <math><msub><mi>𝑚</mi><mn>0</mn></msub><mo>=</mo><mo form="prefix">−</mo><mi>∞</mi></math> 是数学上的初始状态。实际 GPU/NPU Kernel 中通常会对首个有效 Block 做特殊处理，避免直接计算 <math><mo lspace="0em" rspace="0em">exp</mo><mrow><mo>(</mo><mrow><mo>−</mo><mi>∞</mi><mo>−</mo><mrow><mo>(</mo><mrow><mo>−</mo><mi>∞</mi></mrow><mo>)</mo></mrow></mrow><mo>)</mo></mrow></math> 产生 NaN。</p></body></html>

@@ -12,7 +12,6 @@
       --surface: #f6f8fa;
       --accent: #225baf;
       --communication: #edf4ff;
-      --active: #fff1ca;
       color: var(--ink);
       font: 15px/1.5 system-ui, "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
@@ -30,14 +29,14 @@
 
     .controls {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
       gap: .75rem;
       margin: 1rem 0 .5rem;
     }
 
     label { display: grid; gap: .25rem; font-size: .9rem; }
 
-    input, select, button {
+    input, select {
       padding: .35rem .55rem;
       color: inherit;
       background: white;
@@ -48,8 +47,6 @@
 
     input, select { width: 100%; min-width: 0; }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    button { color: var(--accent); cursor: pointer; }
-    button:disabled { opacity: .65; cursor: wait; }
     #error { color: #a22118; }
 
     .layout, .diagram { margin-top: 1.2rem; }
@@ -65,14 +62,6 @@
       white-space: nowrap;
     }
 
-    .diagram-heading {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: .5rem;
-    }
-
     .flow { margin-top: .3rem; overflow-x: auto; }
     table { min-width: 100%; border-spacing: 0 .65rem; }
     th, td { padding: .4rem .55rem; text-align: left; }
@@ -83,7 +72,6 @@
     td { background: var(--surface); border: 1px solid var(--line); }
     td + td { border-left: 0; }
     .communication td { background: var(--communication); }
-    tr[aria-current="step"] > * { background: var(--active); }
     td code, td small { white-space: nowrap; }
 
     .arrow {
@@ -99,13 +87,15 @@
   <main>
     <header>
       <h1>DCP decode 通信演示</h1>
-      <p class="note">单 token decode，PCP=1，组内共享 KV heads。</p>
+      <p class="note">单 token decode，PCP=1。</p>
     </header>
 
     <section aria-label="演示参数">
       <div class="controls">
         <label>TP <input id="tp" type="number" min="1" max="128" step="1" value="8" required></label>
         <label>DCP <input id="dcp" type="number" min="1" max="128" step="1" value="2" required></label>
+        <label>Q heads <input id="q-heads" type="number" min="1" max="9007199254740991" step="1" value="32" required></label>
+        <label>KV heads <input id="kv-heads" type="number" min="1" max="9007199254740991" step="1" value="4" required></label>
         <label>Block interleave size <input id="interleave" type="number" min="1" max="4096" step="1" value="1" required></label>
         <label>序列长度 <input id="sequence" type="number" min="1" max="2147483647" step="1" value="17" required></label>
         <label>通信路径
@@ -125,10 +115,7 @@
         <p id="ownership" class="chips"></p>
       </div>
       <div class="diagram">
-        <div class="diagram-heading">
-          <h2 id="diagram-title">DCP group 0 的 decode 流程</h2>
-          <button id="play-button" type="button">播放当前路径</button>
-        </div>
+        <h2 id="diagram-title">DCP group 0 的 decode 流程</h2>
         <p id="legend" class="note"></p>
         <div id="flow" class="flow" role="region" aria-labelledby="diagram-title" tabindex="0"></div>
       </div>
@@ -139,24 +126,31 @@
   <script>
     const tpInput = document.querySelector("#tp");
     const dcpInput = document.querySelector("#dcp");
+    const qHeadsInput = document.querySelector("#q-heads");
+    const kvHeadsInput = document.querySelector("#kv-heads");
     const interleaveInput = document.querySelector("#interleave");
     const sequenceInput = document.querySelector("#sequence");
     const pathInput = document.querySelector("#path");
-    const numericInputs = [tpInput, dcpInput, interleaveInput, sequenceInput];
+    const numericInputs = [tpInput, dcpInput, qHeadsInput, kvHeadsInput, interleaveInput, sequenceInput];
     const error = document.querySelector("#error");
     const demo = document.querySelector("#demo");
     const groups = document.querySelector("#groups");
     const ownership = document.querySelector("#ownership");
     const legend = document.querySelector("#legend");
     const flow = document.querySelector("#flow");
-    const playButton = document.querySelector("#play-button");
 
-    let animationTimer;
-
-    function validate(tp, dcp) {
+    function validate({ tp, dcp, qHeads, kvHeads }) {
       const invalid = numericInputs.find((input) => !input.validity.valid);
       if (invalid) return invalid.validationMessage;
       if (tp % dcp !== 0) return "PCP=1 时，TP 必须能被 DCP 整除。";
+      if (qHeads % kvHeads !== 0) return "Q heads 数量必须能被 KV heads 数量整除。";
+      if (qHeads % tp !== 0) return "Q heads 数量必须能被 TP 整除。";
+      if (tp % kvHeads !== 0 && kvHeads % tp !== 0) {
+        return "TP 和 KV heads 数量中，较大的必须能被较小的整除。";
+      }
+      if (dcp > 1 && (tp / kvHeads) % dcp !== 0) {
+        return "DCP > 1 时，TP / KV heads 必须是 DCP 的整数倍，同组 rank 才能共享一个 KV head。";
+      }
       return "";
     }
 
@@ -172,8 +166,15 @@
       return value.toLocaleString("en-US");
     }
 
-    function rangeLabel(start, end) {
-      return start === end ? `r${start}` : `r${start}–r${end}`;
+    function rangeLabel(start, end, prefix = "") {
+      const first = `${prefix}${start}`;
+      return start === end ? first : `${first}–${prefix}${end}`;
+    }
+
+    function kvHeadLabel(rank, tp, kvHeads) {
+      const count = Math.max(1, kvHeads / tp);
+      const start = tp > kvHeads ? Math.floor(rank / (tp / kvHeads)) : rank * count;
+      return `KV[${rangeLabel(start, start + count - 1)}]`;
     }
 
     function chip(text) {
@@ -184,10 +185,12 @@
       return `<code>${ids.map((id) => `${symbol}[${id}]`).join(" · ")}</code>`;
     }
 
-    function renderFlow({ tp, dcp, sequence, interleave, path }) {
+    function renderFlow({ tp, dcp, qHeads, kvHeads, sequence, interleave, path }) {
       const ranks = Array.from({ length: dcp }, (_, rank) => rank);
       const lengths = ranks.map((rank) => localSequenceLength(sequence, dcp, interleave, rank));
       const ids = dcp <= 3 ? ranks : [`0…${dcp - 1}`];
+      const qHeadsPerRank = qHeads / tp;
+      const queryRanges = ranks.map((rank) => rangeLabel(rank * qHeadsPerRank, (rank + 1) * qHeadsPerRank - 1));
       const rows = [];
 
       function addStep(title, description, cell, communication = false) {
@@ -198,16 +201,17 @@
         </tr>`);
       }
 
-      const queryLegend = `<code>Q[r]</code> 是 rank r 原有的 Q heads（占本层的 1/${tp}）。`;
-      const partialLegend = ' <code>P[s→r]</code> 是分片 s 对 <code>Q[r]</code> 的部分输出和归并统计量（LSE）。';
+      const queryLegend = `每个 KV head 对应 ${qHeads / kvHeads} 个连续的 Q heads。`;
+      const partialLegend = ' <code>P[s→r]</code> 是 rank s 的本地 KV 对 rank r 原有 Q heads 的部分输出和归并统计量（LSE）。';
       legend.innerHTML = queryLegend + (dcp > 1 ? partialLegend : "");
 
-      addStep("Q 投影", "TP 按 head 切分", (rank) => blocks("Q", [rank]));
-      const complete = (rank) => `完整输出 ${blocks("O", [rank])}`;
+      addStep("Q 投影", "TP 按 head 切分", (rank) => blocks("Q", [queryRanges[rank]]));
+      const complete = (rank) => `完整输出 ${blocks("O", [queryRanges[rank]])}`;
       if (dcp === 1) {
         addStep("本地 attention", "DCP=1，使用完整序列的 KV", complete);
       } else {
-        const gathered = blocks("Q", ids);
+        const gatheredRanges = dcp <= 3 ? queryRanges : [rangeLabel(0, dcp * qHeadsPerRank - 1)];
+        const gathered = blocks("Q", gatheredRanges);
         addStep("AllGather(Q)", "在组内沿 head 维拼接", () => gathered, true);
         addStep("本地 attention", "组内 Q × 本地 KV", (rank) => {
           const partials = blocks("P", ids.map((owner) => `${rank}→${owner}`));
@@ -227,7 +231,7 @@
 
       flow.innerHTML = `<table>
         <thead><tr><th scope="col">计算步骤</th>${ranks.map((rank) => `
-          <th scope="col">rank ${rank}<small>KV · ${formatNumber(lengths[rank])} tokens</small></th>
+          <th scope="col">rank ${rank}<small>${kvHeadLabel(rank, tp, kvHeads)} · ${formatNumber(lengths[rank])} tokens</small></th>
         `).join("")}</tr></thead>
         <tbody>${rows.join("")}</tbody>
       </table>`;
@@ -247,11 +251,11 @@
       return { segments, truncated: start < sequence };
     }
 
-    function renderGroups({ tp, dcp }) {
+    function renderGroups({ tp, dcp, kvHeads }) {
       const count = tp / dcp;
       const shown = Array.from({ length: Math.min(count, 8) }, (_, group) => {
         const start = group * dcp;
-        return chip(rangeLabel(start, start + dcp - 1));
+        return chip(`${rangeLabel(start, start + dcp - 1, "r")} · ${kvHeadLabel(start, tp, kvHeads)}`);
       });
       if (shown.length < count) shown.push("…");
       groups.innerHTML = `<strong>DCP 分组（${count} 组）</strong>${shown.join("")}`;
@@ -260,57 +264,29 @@
     function renderOwnership({ sequence, dcp, interleave }) {
       const { segments, truncated } = ownershipSegments(sequence, dcp, interleave);
       const shown = segments.map(({ start, end, rank }) => {
-        const positions = start === end ? `t${start}` : `t${start}–t${end}`;
+        const positions = rangeLabel(start, end, "t");
         return chip(`${positions} → r${rank}`);
       });
       if (truncated) shown.push("…");
       ownership.innerHTML = `<strong>group 0 的 KV 位置</strong>${shown.join("")}`;
     }
 
-    function stopAnimation() {
-      window.clearInterval(animationTimer);
-      animationTimer = undefined;
-    }
-
-    function playAnimation() {
-      const rows = flow.querySelectorAll("tbody tr");
-      rows[rows.length - 1].removeAttribute("aria-current");
-      let index = 0;
-      playButton.disabled = true;
-      playButton.textContent = "播放中…";
-
-      function showNext() {
-        rows[index - 1]?.removeAttribute("aria-current");
-        rows[index].setAttribute("aria-current", "step");
-        index += 1;
-        if (index === rows.length) {
-          stopAnimation();
-          playButton.disabled = false;
-          playButton.textContent = "重新播放";
-        }
-      }
-
-      animationTimer = window.setInterval(showNext, 1100);
-      showNext();
-    }
-
     function render() {
-      stopAnimation();
       const state = {
         tp: tpInput.valueAsNumber,
         dcp: dcpInput.valueAsNumber,
+        qHeads: qHeadsInput.valueAsNumber,
+        kvHeads: kvHeadsInput.valueAsNumber,
         interleave: interleaveInput.valueAsNumber,
         sequence: sequenceInput.valueAsNumber,
         path: pathInput.value
       };
-      const message = validate(state.tp, state.dcp);
+      const message = validate(state);
       error.textContent = message;
       error.hidden = !message;
       demo.hidden = Boolean(message);
       if (message) return;
 
-      playButton.disabled = false;
-      playButton.textContent = "播放当前路径";
       renderGroups(state);
       renderOwnership(state);
       renderFlow(state);
@@ -318,7 +294,6 @@
 
     for (const input of numericInputs) input.addEventListener("input", render);
     pathInput.addEventListener("change", render);
-    playButton.addEventListener("click", playAnimation);
     render();
   </script>
 </body>
