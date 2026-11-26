@@ -6,428 +6,92 @@
   <title>DCP Decode 通信演示</title>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f6f7f9;
-      --surface: #ffffff;
-      --surface-muted: #f0f2f5;
-      --text: #20242b;
-      --muted: #66707d;
-      --border: #d8dde5;
-      --accent: #2563eb;
-      --accent-soft: #eaf1ff;
-      --green: #16803c;
-      --green-soft: #eaf8ef;
-      --orange: #a45b08;
-      --orange-soft: #fff5e7;
-      --red: #b42318;
-      --red-soft: #fff0ee;
-      --shadow: 0 1px 3px rgba(24, 39, 75, 0.08);
+      --ink: #182230;
+      --muted: #48576a;
+      --line: #cad4e0;
+      --surface: #f6f8fa;
+      --accent: #225baf;
+      --communication: #edf4ff;
+      --active: #fff1ca;
+      color: var(--ink);
+      font: 15px/1.5 system-ui, "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
 
     * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      color: var(--text);
-      background: var(--bg);
-      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-    }
-
-    main {
-      width: min(1180px, calc(100% - 32px));
-      margin: 32px auto 48px;
-    }
-
-    h1, h2, h3, p { margin: 0; }
-    h1 { font-size: 26px; letter-spacing: -0.02em; }
-    h2 { font-size: 18px; }
-    h3 { font-size: 15px; }
-
-    .intro {
-      margin-top: 6px;
-      color: var(--muted);
-    }
-
-    .panel,
-    .diagram,
-    .details {
-      margin-top: 20px;
-      padding: 20px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      box-shadow: var(--shadow);
-    }
-
-    .panel-heading,
-    .section-heading {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 14px;
-    }
-
-    .small {
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .section-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .play-button {
-      padding: 6px 10px;
-      color: var(--accent);
-      background: var(--surface);
-      border: 1px solid #a9c2fb;
-      border-radius: 6px;
-      font: inherit;
-      font-size: 13px;
-      cursor: pointer;
-    }
-
-    .play-button:hover:not(:disabled) { background: var(--accent-soft); }
-    .play-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .play-button:disabled { cursor: wait; opacity: 0.65; }
-
-    .flow-box,
-    .path-step { transition: border-color 160ms ease, box-shadow 160ms ease; }
-
-    .flow-box.playing,
-    .path-step.playing {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
-      animation: stepPulse 700ms ease-in-out alternate infinite;
-    }
-
-    .path-note {
-      margin-top: 10px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    @keyframes stepPulse {
-      from { transform: translateY(0); }
-      to { transform: translateY(-2px); }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .flow-box.playing,
-      .path-step.playing { animation: none; }
-    }
+    [hidden] { display: none !important; }
+    body { margin: 0; }
+    main { max-width: 1080px; margin: auto; padding: 1.5rem 1rem 2rem; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 1.65rem; }
+    h2 { font-size: 1.15rem; }
+    small, .note { color: var(--muted); font-size: .88rem; }
+    small { display: block; }
+    .note { margin-top: .3rem; }
 
     .controls {
       display: grid;
-      grid-template-columns: repeat(4, minmax(120px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+      gap: .75rem;
+      margin: 1rem 0 .5rem;
     }
 
-    label,
-    .path-control {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 600;
-    }
+    label { display: grid; gap: .25rem; font-size: .9rem; }
 
-    input[type="number"] {
-      width: 100%;
-      min-height: 38px;
-      padding: 7px 10px;
-      color: var(--text);
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
+    input, select, button {
+      padding: .35rem .55rem;
+      color: inherit;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: .3rem;
       font: inherit;
-      font-weight: 500;
     }
 
-    input[type="number"]:focus-visible,
-    input[type="radio"]:focus-visible + span {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
-    }
+    input, select { width: 100%; min-width: 0; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button { color: var(--accent); cursor: pointer; }
+    button:disabled { opacity: .65; cursor: wait; }
+    #error { color: #a22118; }
 
-    .fixed-control {
-      min-height: 38px;
-      display: flex;
-      align-items: center;
-      padding: 7px 10px;
-      color: var(--text);
-      background: var(--surface-muted);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-weight: 600;
-    }
+    .layout, .diagram { margin-top: 1.2rem; }
+    .layout { display: grid; gap: .5rem; }
+    .chips { display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem; }
+    .chips strong { margin-right: .25rem; font-size: .9rem; }
 
-    .path-options {
-      min-height: 38px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 7px 10px;
-      color: var(--text);
+    .chip {
+      padding: .12rem .35rem;
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-weight: 500;
-    }
-
-    .path-options label {
-      display: inline-flex;
-      flex-direction: row;
-      align-items: center;
-      gap: 5px;
-      color: var(--text);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-    }
-
-    .path-options input { margin: 0; accent-color: var(--accent); }
-
-    .error {
-      display: none;
-      margin-top: 14px;
-      padding: 10px 12px;
-      color: var(--red);
-      background: var(--red-soft);
-      border: 1px solid #f3c6c1;
-      border-radius: 6px;
-    }
-
-    .error.visible { display: block; }
-
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 18px;
-    }
-
-    .metric {
-      padding: 12px;
-      background: var(--surface-muted);
-      border: 1px solid var(--border);
-      border-radius: 7px;
-    }
-
-    .metric-label {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .metric-value {
-      margin-top: 3px;
-      font-weight: 700;
-    }
-
-    .formula {
-      margin-top: 14px;
-      padding: 11px 13px;
-      color: #3f4b59;
-      background: #fafbfc;
-      border-left: 3px solid var(--accent);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 13px;
-      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: .25rem;
       white-space: nowrap;
     }
 
-    .flow {
+    .diagram-heading {
       display: flex;
-      flex-direction: column;
-      align-items: stretch;
-      gap: 10px;
-      margin-top: 18px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .5rem;
     }
 
-    .flow-box {
-      display: grid;
-      grid-template-columns: 34px 1fr;
-      gap: 12px;
-      align-items: start;
-      padding: 14px 16px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface);
-    }
-
-    .flow-box.communication {
-      border-color: #a9c2fb;
-      background: var(--accent-soft);
-    }
-
-    .flow-box.compute {
-      border-color: #b9dfc7;
-      background: var(--green-soft);
-    }
-
-    .flow-box.result {
-      border-color: #f1d0a8;
-      background: var(--orange-soft);
-    }
-
-    .step-number {
-      width: 28px;
-      height: 28px;
-      display: grid;
-      place-items: center;
-      color: var(--accent);
-      background: var(--surface);
-      border: 1px solid currentColor;
-      border-radius: 50%;
-      font-weight: 700;
-    }
-
-    .flow-title {
-      font-weight: 700;
-    }
-
-    .flow-copy {
-      margin-top: 3px;
-      color: #4f5966;
-    }
+    .flow { margin-top: .3rem; overflow-x: auto; }
+    table { min-width: 100%; border-spacing: 0 .65rem; }
+    th, td { padding: .4rem .55rem; text-align: left; }
+    th:first-child { position: sticky; left: 0; min-width: 9.5rem; background: white; }
+    tbody th { font-size: .9rem; }
+    tbody th small { font-weight: 400; }
+    th:not(:first-child), td { min-width: 8.3rem; }
+    td { background: var(--surface); border: 1px solid var(--line); }
+    td + td { border-left: 0; }
+    .communication td { background: var(--communication); }
+    tr[aria-current="step"] > * { background: var(--active); }
+    td code, td small { white-space: nowrap; }
 
     .arrow {
-      height: 18px;
+      position: absolute;
+      top: -.72rem;
+      left: .55rem;
       color: var(--muted);
-      text-align: center;
-      font-size: 20px;
-      line-height: 18px;
-    }
-
-    .branch-title {
-      margin: 2px 0 -2px;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 600;
-      text-align: center;
-    }
-
-    .path-box {
-      padding: 15px 16px;
-      border: 1px solid var(--accent);
-      border-radius: 8px;
-      background: var(--accent-soft);
-    }
-
-    .path-box h3 { color: #1647a2; }
-
-    .path-list {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .path-step {
-      min-height: 70px;
-      padding: 10px;
-      background: var(--surface);
-      border: 1px solid #cbd8f5;
-      border-radius: 6px;
-    }
-
-    .path-step strong {
-      display: block;
-      font-size: 13px;
-    }
-
-    .path-step span {
-      display: block;
-      margin-top: 3px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .detail-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 16px;
-      margin-top: 16px;
-    }
-
-    .detail-card {
-      padding: 14px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-    }
-
-    .group-list,
-    .rank-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 7px;
-      margin-top: 10px;
-    }
-
-    .chip {
-      padding: 5px 8px;
-      color: #344054;
-      background: var(--surface-muted);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px;
-    }
-
-    .rank-chip {
-      min-width: 88px;
-      background: var(--green-soft);
-      border-color: #b9dfc7;
-    }
-
-    .rank-chip strong { display: block; color: var(--green); }
-    .rank-chip span { color: #42634c; font-size: 12px; }
-
-    .token-strip {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 10px;
-    }
-
-    .token-segment {
-      padding: 5px 7px;
-      color: #4b3b1e;
-      background: var(--orange-soft);
-      border: 1px solid #efd29f;
-      border-radius: 5px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px;
-    }
-
-    .token-segment em {
-      color: var(--orange);
-      font-style: normal;
-      font-weight: 700;
-    }
-
-    .note {
-      margin-top: 12px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    @media (max-width: 800px) {
-      main { width: min(100% - 20px, 680px); margin-top: 20px; }
-      .controls { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
-      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .detail-grid { grid-template-columns: 1fr; }
-      .path-list { grid-template-columns: 1fr; }
-    }
-
-    @media (max-width: 480px) {
-      .panel, .diagram, .details { padding: 14px; }
-      .controls { grid-template-columns: 1fr; }
-      .summary { grid-template-columns: 1fr; }
+      line-height: .8rem;
     }
   </style>
 </head>
@@ -435,118 +99,70 @@
   <main>
     <header>
       <h1>DCP decode 通信演示</h1>
-      <p class="intro">调节参数，观察 Q 如何在 DCP 组内流动，以及 KV 分片结果如何合并。</p>
+      <p class="note">单 token decode，PCP=1，组内共享 KV heads。</p>
     </header>
 
-    <section class="panel" aria-labelledby="controls-title">
-      <div class="panel-heading">
-        <h2 id="controls-title">参数</h2>
-        <span class="small">PCP 固定为 1</span>
-      </div>
+    <section aria-label="演示参数">
       <div class="controls">
-        <label>
-          TP
-          <input id="tp" type="number" min="1" max="128" step="1" value="8" inputmode="numeric">
+        <label>TP <input id="tp" type="number" min="1" max="128" step="1" value="8" required></label>
+        <label>DCP <input id="dcp" type="number" min="1" max="128" step="1" value="2" required></label>
+        <label>Block interleave size <input id="interleave" type="number" min="1" max="4096" step="1" value="1" required></label>
+        <label>序列长度 <input id="sequence" type="number" min="1" max="2147483647" step="1" value="17" required></label>
+        <label>通信路径
+          <select id="path">
+            <option value="ag_rs">ag_rs</option>
+            <option value="a2a">a2a</option>
+          </select>
         </label>
-        <label>
-          DCP
-          <input id="dcp" type="number" min="1" max="128" step="1" value="2" inputmode="numeric">
-        </label>
-        <label>
-          Block interleave size
-          <input id="interleave" type="number" min="1" max="4096" step="1" value="1" inputmode="numeric">
-        </label>
-        <label>
-          序列长度 L
-          <input id="sequence" type="number" min="1" max="1000000" step="1" value="32" inputmode="numeric">
-        </label>
-        <div class="path-control">
-          通信路径
-          <div class="path-options" role="radiogroup" aria-label="通信路径">
-            <label><input type="radio" name="path" value="ag_rs" checked><span>ag_rs</span></label>
-            <label><input type="radio" name="path" value="a2a"><span>a2a</span></label>
-          </div>
-        </div>
       </div>
-      <div id="error" class="error" role="alert"></div>
-      <div id="summary" class="summary" aria-live="polite"></div>
+      <p class="note">序列长度含当前 token。Interleave size 是每次连续分给一个 rank 的 token 数。</p>
+      <p id="error" role="alert" hidden></p>
     </section>
 
-    <section class="diagram" aria-labelledby="diagram-title">
-      <div class="section-heading">
-        <h2 id="diagram-title">decode 计算过程</h2>
-        <div class="section-actions">
-          <span id="path-label" class="small"></span>
-          <button id="play-button" class="play-button" type="button">播放当前路径</button>
-        </div>
+    <section id="demo" hidden>
+      <div class="layout">
+        <p id="groups" class="chips"></p>
+        <p id="ownership" class="chips"></p>
       </div>
-      <div id="flow" class="flow" aria-live="polite"></div>
+      <div class="diagram">
+        <div class="diagram-heading">
+          <h2 id="diagram-title">DCP group 0 的 decode 流程</h2>
+          <button id="play-button" type="button">播放当前路径</button>
+        </div>
+        <p id="legend" class="note"></p>
+        <div id="flow" class="flow" role="region" aria-labelledby="diagram-title" tabindex="0"></div>
+      </div>
     </section>
 
-    <section class="details" aria-labelledby="details-title">
-      <div class="section-heading">
-        <h2 id="details-title">当前参数下的 rank 与 KV 分片</h2>
-        <span class="small">展示 DCP group 0，其他 group 的形状相同</span>
-      </div>
-      <div id="details-content"></div>
-    </section>
   </main>
 
   <script>
-    const elements = {
-      tp: document.querySelector("#tp"),
-      dcp: document.querySelector("#dcp"),
-      interleave: document.querySelector("#interleave"),
-      sequence: document.querySelector("#sequence"),
-      error: document.querySelector("#error"),
-      summary: document.querySelector("#summary"),
-      flow: document.querySelector("#flow"),
-      details: document.querySelector("#details-content"),
-      pathLabel: document.querySelector("#path-label"),
-      playButton: document.querySelector("#play-button"),
-      paths: document.querySelectorAll('input[name="path"]')
-    };
+    const tpInput = document.querySelector("#tp");
+    const dcpInput = document.querySelector("#dcp");
+    const interleaveInput = document.querySelector("#interleave");
+    const sequenceInput = document.querySelector("#sequence");
+    const pathInput = document.querySelector("#path");
+    const numericInputs = [tpInput, dcpInput, interleaveInput, sequenceInput];
+    const error = document.querySelector("#error");
+    const demo = document.querySelector("#demo");
+    const groups = document.querySelector("#groups");
+    const ownership = document.querySelector("#ownership");
+    const legend = document.querySelector("#legend");
+    const flow = document.querySelector("#flow");
+    const playButton = document.querySelector("#play-button");
 
-    let animationTimer = null;
+    let animationTimer;
 
-
-    function integerValue(input) {
-      return Number.parseInt(input.value, 10);
-    }
-
-    function selectedPath() {
-      return [...elements.paths].find((input) => input.checked)?.value || "ag_rs";
-    }
-
-    function readState() {
-      return {
-        tp: integerValue(elements.tp),
-        dcp: integerValue(elements.dcp),
-        interleave: integerValue(elements.interleave),
-        sequence: integerValue(elements.sequence),
-        path: selectedPath()
-      };
-    }
-
-    function validate(state) {
-      if (![state.tp, state.dcp, state.interleave, state.sequence].every(Number.isInteger)) {
-        return "请输入整数参数。";
-      }
-      if (state.tp < 1 || state.tp > 128) return "TP 必须在 1 到 128 之间。";
-      if (state.dcp < 1 || state.dcp > 128) return "DCP 必须在 1 到 128 之间。";
-      if (state.tp % state.dcp !== 0) return "PCP=1 时，TP 必须能被 DCP 整除。";
-      if (state.interleave < 1 || state.interleave > 4096) {
-        return "Block interleave size 必须在 1 到 4096 之间。";
-      }
-      if (state.sequence < 1 || state.sequence > 1000000) {
-        return "序列长度必须在 1 到 1,000,000 之间。";
-      }
+    function validate(tp, dcp) {
+      const invalid = numericInputs.find((input) => !input.validity.valid);
+      if (invalid) return invalid.validationMessage;
+      if (tp % dcp !== 0) return "PCP=1 时，TP 必须能被 DCP 整除。";
       return "";
     }
 
     // 与 vLLM get_dcp_local_seq_lens 的计算一致。
     function localSequenceLength(sequence, dcp, interleave, rank) {
-      const base = Math.floor(sequence / interleave / dcp) * interleave;
+      const base = Math.floor(sequence / (interleave * dcp)) * interleave;
       const remainder = sequence - base * dcp;
       const extra = Math.min(Math.max(remainder - rank * interleave, 0), interleave);
       return base + extra;
@@ -560,77 +176,61 @@
       return start === end ? `r${start}` : `r${start}–r${end}`;
     }
 
-    function makeChip(text, className = "") {
-      return `<span class="chip ${className}">${text}</span>`;
+    function chip(text) {
+      return `<code class="chip">${text}</code>`;
     }
 
-    function metric(label, value) {
-      return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div></div>`;
+    function blocks(symbol, ids) {
+      return `<code>${ids.map((id) => `${symbol}[${id}]`).join(" · ")}</code>`;
     }
 
-    function flowBox(number, title, copy, kind = "", animationStep = number) {
-      return `
-        <article class="flow-box ${kind}" data-animation-step="${animationStep}">
-          <div class="step-number">${number}</div>
-          <div><div class="flow-title">${title}</div><div class="flow-copy">${copy}</div></div>
-        </article>`;
-    }
+    function renderFlow({ tp, dcp, sequence, interleave, path }) {
+      const ranks = Array.from({ length: dcp }, (_, rank) => rank);
+      const lengths = ranks.map((rank) => localSequenceLength(sequence, dcp, interleave, rank));
+      const ids = dcp <= 3 ? ranks : [`0…${dcp - 1}`];
+      const rows = [];
 
-    function arrow() {
-      return '<div class="arrow" aria-hidden="true">↓</div>';
-    }
-
-    function pathSteps(path, dcp) {
-      if (path === "a2a") {
-        return `
-          <div class="path-step" data-animation-step="5"><strong>Pack O + 可归并摘要</strong><span>按目标 rank 的本地 Q heads 切块</span></div>
-          <div class="path-step" data-animation-step="6"><strong>DCP all_to_all</strong><span>把同一 head 的各 KV 分片贡献送到归属 rank</span></div>
-          <div class="path-step" data-animation-step="7"><strong>按 head reduce</strong><span>接收端合成每个本地 head 的完整输出</span></div>`;
+      function addStep(title, description, cell, communication = false) {
+        const arrow = rows.length ? '<span class="arrow" aria-hidden="true">↓</span>' : "";
+        rows.push(`<tr${communication ? ' class="communication"' : ""}>
+          <th scope="row">${arrow}${title}<small>${description}</small></th>
+          ${ranks.map((rank) => `<td>${cell(rank)}</td>`).join("")}
+        </tr>`);
       }
-      return `
-        <div class="path-step" data-animation-step="5"><strong>DCP all_gather(摘要)</strong><span>每个 rank 收齐 DCP 组内各 KV 分片摘要</span></div>
-        <div class="path-step" data-animation-step="6"><strong>可归并 attention</strong><span>把不同 KV 分片的局部结果合成全局结果</span></div>
-        <div class="path-step" data-animation-step="7"><strong>DCP reduce_scatter(O)</strong><span>按 head 求和并返回本 rank 的 heads</span></div>`;
-    }
 
-    function renderSummary(state) {
-      const groups = state.tp / state.dcp;
-      const localQ = "H / TP";
-      const groupQ = `${state.dcp} × H / TP`;
-      const collective = state.path === "a2a"
-        ? "Q AG + O/摘要 A2A"
-        : "Q AG + 摘要 AG + O RS";
-      elements.summary.innerHTML = [
-        metric("DCP groups", groups),
-        metric("每 rank 的 Q heads", localQ),
-        metric("all_gather 后 / rank", groupQ),
-        metric("DCP collective", collective)
-      ].join("");
-    }
+      const queryLegend = `<code>Q[r]</code> 是 rank r 原有的 Q heads（占本层的 1/${tp}）。`;
+      const partialLegend = ' <code>P[s→r]</code> 是分片 s 对 <code>Q[r]</code> 的部分输出和归并统计量（LSE）。';
+      legend.innerHTML = queryLegend + (dcp > 1 ? partialLegend : "");
 
-    function renderFlow(state) {
-      const localQ = "H / TP";
-      const groupQ = `${state.dcp} × H / TP`;
-      const pathName = state.path === "a2a" ? "a2a" : "ag_rs";
-      elements.pathLabel.textContent = `当前路径：${pathName}`;
-      elements.flow.innerHTML = `
-        ${flowBox(1, "TP 分片的 Q projection", `每个 rank 先生成本地 ${localQ} 个 Q heads。PCP=1，DCP 组由连续的 ${state.dcp} 个 TP ranks 组成。`, "compute")}
-        ${arrow()}
-        ${flowBox(2, "DCP all_gather(Q)", `沿 head 维收集。DCP 组内每个 rank 从 ${localQ} 个 Q heads 变为 ${groupQ} 个 Q heads。`, "communication")}
-        ${arrow()}
-        ${flowBox(3, "读取本地 KV 分片", `序列长度 L=${formatNumber(state.sequence)}，按 interleave=${state.interleave} 把历史 KV 分到 DCP ranks。每个 rank 只读取自己的 KV token。`, "compute")}
-        ${arrow()}
-        ${flowBox(4, "本地 attention", `每个 rank 用完整的 DCP 组内 Q heads，和自己的 KV 分片计算部分输出 Oᵣ 与一个可归并摘要。`, "compute")}
-        ${arrow()}
-        <div class="branch-title">选择的后处理路径：${pathName}</div>
-        <div class="path-box">
-          <h3>${pathName === "a2a" ? "a2a：交换部分输出" : "ag_rs：收集摘要，再归并输出"}</h3>
-          <div class="path-list">${pathSteps(state.path, state.dcp)}</div>
-          <p class="path-note">这里先把它当作可以 reduce 的摘要，暂不展开 online softmax 的内部实现。</p>
-        </div>
-        ${arrow()}
-        ${flowBox(5, "完整 attention 输出", `每个 rank 最终保留自己的 ${localQ} 个 Q heads，交给后续 o_proj。`, "result", 8)}
-      `;
+      addStep("Q 投影", "TP 按 head 切分", (rank) => blocks("Q", [rank]));
+      const complete = (rank) => `完整输出 ${blocks("O", [rank])}`;
+      if (dcp === 1) {
+        addStep("本地 attention", "DCP=1，使用完整序列的 KV", complete);
+      } else {
+        const gathered = blocks("Q", ids);
+        addStep("AllGather(Q)", "在组内沿 head 维拼接", () => gathered, true);
+        addStep("本地 attention", "组内 Q × 本地 KV", (rank) => {
+          const partials = blocks("P", ids.map((owner) => `${rank}→${owner}`));
+          return lengths[rank] ? partials : `${partials}<small>空分片，贡献为 0</small>`;
+        });
+
+        if (path === "a2a") {
+          addStep("AllToAll(O, LSE)", "按 head 归属打包并交换",
+            (rank) => blocks("P", ids.map((source) => `${source}→${rank}`)), true);
+          addStep("本地 reduce", "合并同一 head 的各分片贡献", complete);
+        } else {
+          addStep("AllGather(LSE)", "收集各分片的归并统计量", () => `收到 ${dcp} 个 rank 的 LSE`, true);
+          addStep("校正本地输出", "按全组 LSE 换算贡献", () => "本地贡献已校正");
+          addStep("ReduceScatter(O)", "对同一 head 求和并交回归属 rank", complete, true);
+        }
+      }
+
+      flow.innerHTML = `<table>
+        <thead><tr><th scope="col">计算步骤</th>${ranks.map((rank) => `
+          <th scope="col">rank ${rank}<small>KV · ${formatNumber(lengths[rank])} tokens</small></th>
+        `).join("")}</tr></thead>
+        <tbody>${rows.join("")}</tbody>
+      </table>`;
     }
 
     function ownershipSegments(sequence, dcp, interleave) {
@@ -647,124 +247,78 @@
       return { segments, truncated: start < sequence };
     }
 
-    function renderGroups(state) {
-      const groupCount = state.tp / state.dcp;
-      const maxGroups = 8;
-      const chips = [];
-      for (let group = 0; group < Math.min(groupCount, maxGroups); group += 1) {
-        const start = group * state.dcp;
-        chips.push(makeChip(`G${group}: ${rangeLabel(start, start + state.dcp - 1)}`));
-      }
-      if (groupCount > maxGroups) chips.push(makeChip(`… 共 ${groupCount} 组`));
-      return chips.join("");
-    }
-
-    function renderRankLengths(state) {
-      const maxRanks = 12;
-      const chips = [];
-      for (let rank = 0; rank < Math.min(state.dcp, maxRanks); rank += 1) {
-        const length = localSequenceLength(state.sequence, state.dcp, state.interleave, rank);
-        chips.push(`<div class="chip rank-chip"><strong>rank ${rank}</strong><span>KV tokens: ${formatNumber(length)}</span></div>`);
-      }
-      if (state.dcp > maxRanks) chips.push(makeChip(`… 共 ${state.dcp} ranks`));
-      return chips.join("");
-    }
-
-    function renderOwnership(state) {
-      const { segments, truncated } = ownershipSegments(
-        state.sequence,
-        state.dcp,
-        state.interleave
-      );
-      const segmentHtml = segments.map(({ start, end, rank }) => {
-        const label = start === end ? `t${start}` : `t${start}–t${end}`;
-        return `<span class="token-segment">${label} → <em>rank ${rank}</em></span>`;
+    function renderGroups({ tp, dcp }) {
+      const count = tp / dcp;
+      const shown = Array.from({ length: Math.min(count, 8) }, (_, group) => {
+        const start = group * dcp;
+        return chip(rangeLabel(start, start + dcp - 1));
       });
-      if (truncated) segmentHtml.push('<span class="token-segment">…</span>');
-      return segmentHtml.join("");
+      if (shown.length < count) shown.push("…");
+      groups.innerHTML = `<strong>DCP 分组（${count} 组）</strong>${shown.join("")}`;
     }
 
-    function renderDetails(state) {
-      elements.details.innerHTML = `
-        <div class="detail-grid">
-          <article class="detail-card">
-            <h3>DCP group 划分</h3>
-            <p class="note">PCP=1 时，DCP 复用 TP ranks。每组有 ${state.dcp} 个 ranks。</p>
-            <div class="group-list">${renderGroups(state)}</div>
-          </article>
-          <article class="detail-card">
-            <h3>group 0 的本地 KV 长度</h3>
-            <p class="note">rank 相对编号从 0 到 ${state.dcp - 1}，实际 rank 为 r0 到 r${state.dcp - 1}。</p>
-            <div class="rank-list">${renderRankLengths(state)}</div>
-          </article>
-        </div>
-        <div class="formula">base = floor(L / I / DCP) × I　　remainder = L − base × DCP　　local(r) = base + clip(remainder − r × I, 0, I)</div>
-        <article class="detail-card" style="margin-top: 16px">
-          <h3>KV token ownership 的前几个 interleave chunk</h3>
-          <p class="note">每个 chunk 的长度最多为 I。这里只截取开头用于示意，所有 rank 的本地长度仍按上方公式精确计算。</p>
-          <div class="token-strip">${renderOwnership(state)}</div>
-        </article>
-      `;
+    function renderOwnership({ sequence, dcp, interleave }) {
+      const { segments, truncated } = ownershipSegments(sequence, dcp, interleave);
+      const shown = segments.map(({ start, end, rank }) => {
+        const positions = start === end ? `t${start}` : `t${start}–t${end}`;
+        return chip(`${positions} → r${rank}`);
+      });
+      if (truncated) shown.push("…");
+      ownership.innerHTML = `<strong>group 0 的 KV 位置</strong>${shown.join("")}`;
     }
 
     function stopAnimation() {
-      if (animationTimer !== null) {
-        window.clearInterval(animationTimer);
-        animationTimer = null;
-      }
-      elements.flow.querySelectorAll(".playing").forEach((node) => node.classList.remove("playing"));
-      elements.playButton.disabled = false;
-      elements.playButton.textContent = "播放当前路径";
+      window.clearInterval(animationTimer);
+      animationTimer = undefined;
     }
 
     function playAnimation() {
-      stopAnimation();
-      const nodes = [...elements.flow.querySelectorAll("[data-animation-step]")]
-        .sort((left, right) => Number(left.dataset.animationStep) - Number(right.dataset.animationStep));
+      const rows = flow.querySelectorAll("tbody tr");
+      rows[rows.length - 1].removeAttribute("aria-current");
       let index = 0;
-      elements.playButton.disabled = true;
-      elements.playButton.textContent = "播放中…";
+      playButton.disabled = true;
+      playButton.textContent = "播放中…";
 
-      const showNext = () => {
-        nodes.forEach((node) => node.classList.remove("playing"));
-        if (index >= nodes.length) {
-          window.clearInterval(animationTimer);
-          animationTimer = null;
-          elements.playButton.disabled = false;
-          elements.playButton.textContent = "重新播放";
-          return;
-        }
-        nodes[index].classList.add("playing");
+      function showNext() {
+        rows[index - 1]?.removeAttribute("aria-current");
+        rows[index].setAttribute("aria-current", "step");
         index += 1;
-      };
+        if (index === rows.length) {
+          stopAnimation();
+          playButton.disabled = false;
+          playButton.textContent = "重新播放";
+        }
+      }
 
+      animationTimer = window.setInterval(showNext, 1100);
       showNext();
-      animationTimer = window.setInterval(showNext, 850);
     }
 
     function render() {
       stopAnimation();
-      const state = readState();
-      const error = validate(state);
-      elements.error.textContent = error;
-      elements.error.classList.toggle("visible", Boolean(error));
-      if (error) {
-        elements.summary.innerHTML = "";
-        elements.flow.innerHTML = "";
-        elements.details.innerHTML = "";
-        elements.pathLabel.textContent = "";
-        return;
-      }
-      renderSummary(state);
+      const state = {
+        tp: tpInput.valueAsNumber,
+        dcp: dcpInput.valueAsNumber,
+        interleave: interleaveInput.valueAsNumber,
+        sequence: sequenceInput.valueAsNumber,
+        path: pathInput.value
+      };
+      const message = validate(state.tp, state.dcp);
+      error.textContent = message;
+      error.hidden = !message;
+      demo.hidden = Boolean(message);
+      if (message) return;
+
+      playButton.disabled = false;
+      playButton.textContent = "播放当前路径";
+      renderGroups(state);
+      renderOwnership(state);
       renderFlow(state);
-      renderDetails(state);
     }
 
-    [elements.tp, elements.dcp, elements.interleave, elements.sequence].forEach((input) => {
-      input.addEventListener("input", render);
-    });
-    elements.paths.forEach((input) => input.addEventListener("change", render));
-    elements.playButton.addEventListener("click", playAnimation);
+    for (const input of numericInputs) input.addEventListener("input", render);
+    pathInput.addEventListener("change", render);
+    playButton.addEventListener("click", playAnimation);
     render();
   </script>
 </body>
