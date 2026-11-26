@@ -179,7 +179,7 @@
       return `<code>${ids.map((id) => `${symbol}[${id}]`).join(" · ")}</code>`;
     }
 
-    function renderFlow({ tp, dcp, qHeads, kvHeads, path }, groupStarts, lengths) {
+    function renderFlow({ tp, dcp, qHeads, kvHeads, path }, groupStarts, shards) {
       const ranks = Array.from({ length: tp }, (_, rank) => rank);
       const qHeadsPerRank = qHeads / tp;
       const queryRange = (start, end) => rangeLabel(start * qHeadsPerRank, end * qHeadsPerRank - 1);
@@ -220,9 +220,17 @@
         };
 
         addStep("AllGather(Q)", "在组内沿 head 维拼接", (rank) => gathered[groupOf(rank)], true);
-        addStep("本地 attention", "组内 Q × 本地 KV", (rank) => {
-          const partials = outgoing("P", rank);
-          return lengths[rank % dcp] ? partials : `${partials}<small>空分片，贡献为 0</small>`;
+        addStep("本地 attention", "每行 Q 读取该格的本地 KV", (rank) => {
+          const offset = rank % dcp;
+          const { length, positions } = shards[offset];
+          const kv = kvHeadLabel(rank, tp, kvHeads);
+          const tokens = length ? `<code>${positions}</code>` : "空分片，贡献为 0";
+          const start = rank - offset;
+          const pairs = [];
+          for (let owner = start; owner < start + dcp; owner += 1) {
+            pairs.push(`<div><code>Q[${queryRanges[owner]}] → P[${rank}→${owner}]</code></div>`);
+          }
+          return `<small>本地 <code>${kv}</code> · ${tokens}</small>${pairs.join("")}`;
         });
 
         if (path === "a2a") {
@@ -244,41 +252,45 @@
             <th scope="colgroup" colspan="${dcp}">group ${group}</th>
           `).join("")}</tr>
           <tr>${ranks.map((rank) => `
-            <th${groupStartClass(rank)} scope="col">rank ${rank}<small>${kvHeadLabel(rank, tp, kvHeads)} · ${formatNumber(lengths[rank % dcp])} tokens</small></th>
+            <th${groupStartClass(rank)} scope="col">rank ${rank}<small>${kvHeadLabel(rank, tp, kvHeads)} · ${formatNumber(shards[rank % dcp].length)} tokens</small></th>
           `).join("")}</tr>
         </thead>
         <tbody>${rows.join("")}</tbody>
       </table>`;
     }
 
-    function renderKvMatrix({ tp, dcp, kvHeads, sequence, interleave }, groupStarts, lengths) {
+    function kvShards({ sequence, dcp, interleave }) {
       const stride = dcp * interleave;
-      const positions = lengths.map((length, offset) => {
-        if (length === 0) return "空分片";
-        if (dcp === 1) return rangeLabel(0, sequence - 1, "t");
+      return Array.from({ length: dcp }, (_, offset) => {
+        const length = localSequenceLength(sequence, dcp, interleave, offset);
+        if (length === 0) return { length, positions: "空分片" };
+        if (dcp === 1) return { length, positions: rangeLabel(0, sequence - 1, "t") };
 
         const chunks = Math.ceil(length / interleave);
         const chunkLabel = (index) => {
           const start = offset * interleave + index * stride;
           return rangeLabel(start, Math.min(start + interleave, sequence) - 1, "t");
         };
-        if (chunks === 1) return chunkLabel(0);
-        if (chunks === 2) return `${chunkLabel(0)}, ${chunkLabel(1)}`;
-        const middle = chunks > 3 ? ", …" : "";
-        return `${chunkLabel(0)}, ${chunkLabel(1)}${middle}, ${chunkLabel(chunks - 1)}`;
+        const labels = [chunkLabel(0)];
+        if (chunks > 1) labels.push(chunkLabel(1));
+        if (chunks > 3) labels.push("…");
+        if (chunks > 2) labels.push(chunkLabel(chunks - 1));
+        return { length, positions: labels.join(", ") };
       });
+    }
 
+    function renderKvMatrix({ tp, dcp, kvHeads, interleave }, groupStarts, shards) {
       kvNote.textContent = "列标题为各分片的 token 位置，格内为持有分片的 TP rank。";
-      if (dcp > 1 && lengths[0] > 3 * interleave) {
-        kvNote.textContent += `省略号内每隔 ${stride} 个 token 重复一段。`;
+      if (dcp > 1 && shards[0].length > 3 * interleave) {
+        kvNote.textContent += `省略号内每隔 ${dcp * interleave} 个 token 重复一段。`;
       }
       kvMatrix.innerHTML = `<table>
-        <thead><tr><th scope="col">DCP group</th>${positions.map((label) => `
-          <th scope="col"><code>${label}</code></th>
+        <thead><tr><th scope="col">DCP group</th>${shards.map(({ positions }) => `
+          <th scope="col"><code>${positions}</code></th>
         `).join("")}</tr></thead>
         <tbody>${groupStarts.map((start, group) => `<tr>
           <th scope="row">group ${group}<small>${kvHeadLabel(start, tp, kvHeads)}</small></th>
-          ${positions.map((_, offset) => `<td>rank ${start + offset}</td>`).join("")}
+          ${shards.map((_, offset) => `<td>rank ${start + offset}</td>`).join("")}
         </tr>`).join("")}</tbody>
       </table>`;
     }
@@ -300,10 +312,9 @@
       if (message) return;
 
       const groupStarts = Array.from({ length: state.tp / state.dcp }, (_, group) => group * state.dcp);
-      const lengths = Array.from({ length: state.dcp }, (_, rank) =>
-        localSequenceLength(state.sequence, state.dcp, state.interleave, rank));
-      renderKvMatrix(state, groupStarts, lengths);
-      renderFlow(state, groupStarts, lengths);
+      const shards = kvShards(state);
+      renderKvMatrix(state, groupStarts, shards);
+      renderFlow(state, groupStarts, shards);
     }
 
     for (const input of numericInputs) input.addEventListener("input", render);
