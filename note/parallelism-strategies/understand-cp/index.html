@@ -70,6 +70,9 @@
     .flow th[scope="colgroup"], .flow .group-start { border-left: 2px solid var(--line); }
     .communication td { background: var(--communication); }
     td code, td small { white-space: nowrap; }
+    .equation { max-width: 18rem; white-space: normal; }
+    .equation code { white-space: normal; overflow-wrap: anywhere; }
+    .formula-group + .formula-group { margin-top: .5rem; }
 
     .arrow {
       position: absolute;
@@ -102,7 +105,7 @@
           </select>
         </label>
       </div>
-      <p class="note">序列长度含当前 token。Interleave size 是每次连续分给一个 rank 的 token 数。</p>
+      <p class="note">序列长度含当前 token。Interleave size 是每次连续分给一个 TP rank 的 token 数。</p>
       <p id="error" role="alert" hidden></p>
     </section>
 
@@ -113,7 +116,6 @@
         <div id="kv-matrix" class="matrix" role="region" aria-labelledby="kv-title" tabindex="0"></div>
       </div>
       <div class="diagram">
-        <h2 id="diagram-title">各 DCP group 的 decode 流程</h2>
         <p id="legend" class="note"></p>
         <div id="flow" class="flow" role="region" aria-labelledby="diagram-title" tabindex="0"></div>
       </div>
@@ -196,7 +198,7 @@
       }
 
       const queryLegend = `每个 KV head 对应 ${qHeads / kvHeads} 个连续的 Q heads。`;
-      const partialLegend = ' <code>P[s→r]</code> 含 rank s 对 rank r 原有 Q heads 的部分输出和 LSE。<code>P′[s→r]</code> 是按 LSE 加权后的部分输出。';
+      const partialLegend = ' DCP group 由连续的 TP rank 组成。<code>P[s→r]</code> 包含部分输出和 LSE，s 是 KV 分片所在 TP rank，r 是 Q heads 原属 TP rank。<code>Correct()</code> 用一个部分结果和相同 Q heads 的各分片 LSE 算出校正输出 <code>P′[s→r]</code>。';
       legend.innerHTML = queryLegend + (dcp > 1 ? partialLegend : "");
 
       addStep("Q 投影", "TP 按 head 切分", (rank) => blocks("Q", [queryRanges[rank]]));
@@ -205,41 +207,48 @@
         addStep("本地 attention", "DCP=1，使用完整序列的 KV", complete);
       } else {
         const groupOf = (rank) => Math.floor(rank / dcp);
-        const members = groupStarts.map((start) => dcp <= 3
-          ? ranks.slice(start, start + dcp)
-          : [`${start}…${start + dcp - 1}`]);
+        const members = groupStarts.map((start) => ranks.slice(start, start + dcp));
         const gathered = groupStarts.map((start) => blocks("Q", dcp <= 3
           ? queryRanges.slice(start, start + dcp)
           : [queryRange(start, start + dcp)]));
-        const outgoing = (symbol, rank) => blocks(symbol, members[groupOf(rank)].map((owner) => `${rank}→${owner}`));
-        const reduce = (rank) => {
-          const start = groupStarts[groupOf(rank)];
-          const sources = dcp <= 3 ? members[groupOf(rank)] : [start, "…", start + dcp - 1];
-          const terms = sources.map((source) => source === "…" ? source : `P′[${source}→${rank}]`);
-          return `${complete(rank)}<small>= <code>${terms.join(" + ")}</code></small>`;
-        };
+        function sourceTerms(owner, term, separator) {
+          const sources = members[groupOf(owner)];
+          if (dcp <= 3) return sources.map(term).join(separator);
+          return [term(sources[0]), "…", term(sources.at(-1))].join(separator);
+        }
+
+        function correctPartial(source, owner) {
+          const partial = `P[${source}→${owner}]`;
+          const lses = sourceTerms(owner, (rank) => `P[${rank}→${owner}].LSE`, ", ");
+          return `<div class="equation formula-group"><code>P′[${source}→${owner}] = Correct(${partial}, [${lses}])</code></div>`;
+        }
+
+        function reduce(rank) {
+          const terms = sourceTerms(rank, (source) => `P′[${source}→${rank}]`, " + ");
+          return `${complete(rank)}<small class="equation">= <code>${terms}</code></small>`;
+        }
 
         addStep("AllGather(Q)", "在组内沿 head 维拼接", (rank) => gathered[groupOf(rank)], true);
-        addStep("本地 attention", "每行 Q 读取该格的本地 KV", (rank) => {
-          const offset = rank % dcp;
-          const { length, positions } = shards[offset];
+        addStep("本地 attention", "用本地 KV 计算部分输出", (rank) => {
+          const { length, positions } = shards[rank % dcp];
           const kv = kvHeadLabel(rank, tp, kvHeads);
           const tokens = length ? `<code>${positions}</code>` : "空分片，贡献为 0";
-          const start = rank - offset;
-          const pairs = [];
-          for (let owner = start; owner < start + dcp; owner += 1) {
-            pairs.push(`<div><code>Q[${queryRanges[owner]}] → P[${rank}→${owner}]</code></div>`);
-          }
-          return `<small>本地 <code>${kv}</code> · ${tokens}</small>${pairs.join("")}`;
+          const partials = members[groupOf(rank)].map((owner) =>
+            `<div class="equation"><code>P[${rank}→${owner}] = Attention(Q[${queryRanges[owner]}], ${kv})</code></div>`);
+          return `<small class="equation">本地 <code>${kv}</code> · ${tokens}</small>${partials.join("")}`;
         });
 
         if (path === "a2a") {
-          addStep("AllToAll(O, LSE)", "按 head 归属打包并交换",
-            (rank) => blocks("P", members[groupOf(rank)].map((source) => `${source}→${rank}`)), true);
-          addStep("本地 reduce", "按同一 head 的 LSE 加权求和", reduce);
+          addStep("AllToAll(O, LSE)", "按 head 归属打包并交换", (rank) =>
+            `<code>${sourceTerms(rank, (source) => `P[${source}→${rank}]`, " · ")}</code>`, true);
+          addStep("本地 reduce", "按同一 head 的 LSE 加权求和", (rank) => {
+            const contributions = members[groupOf(rank)].map((source) => correctPartial(source, rank));
+            return `${contributions.join("")}<div class="formula-group">${reduce(rank)}</div>`;
+          });
         } else {
           addStep("AllGather(LSE)", "收集各分片的归并统计量", () => `收到 ${dcp} 个 rank 的 LSE`, true);
-          addStep("校正本地输出", "按同一 head 的全组 LSE 加权", (rank) => outgoing("P′", rank));
+          addStep("校正本地输出", "用同一 Q head 的各分片 LSE", (rank) =>
+            members[groupOf(rank)].map((owner) => correctPartial(rank, owner)).join(""));
           addStep("ReduceScatter(O)", "对同一 head 求和并交回归属 rank", reduce, true);
         }
       }
@@ -252,7 +261,7 @@
             <th scope="colgroup" colspan="${dcp}">group ${group}</th>
           `).join("")}</tr>
           <tr>${ranks.map((rank) => `
-            <th${groupStartClass(rank)} scope="col">rank ${rank}<small>${kvHeadLabel(rank, tp, kvHeads)} · ${formatNumber(shards[rank % dcp].length)} tokens</small></th>
+            <th${groupStartClass(rank)} scope="col">TP rank ${rank}<small>${kvHeadLabel(rank, tp, kvHeads)} · ${formatNumber(shards[rank % dcp].length)} tokens</small></th>
           `).join("")}</tr>
         </thead>
         <tbody>${rows.join("")}</tbody>
@@ -290,7 +299,7 @@
         `).join("")}</tr></thead>
         <tbody>${groupStarts.map((start, group) => `<tr>
           <th scope="row">group ${group}<small>${kvHeadLabel(start, tp, kvHeads)}</small></th>
-          ${shards.map((_, offset) => `<td>rank ${start + offset}</td>`).join("")}
+          ${shards.map((_, offset) => `<td>TP rank ${start + offset}</td>`).join("")}
         </tr>`).join("")}</tbody>
       </table>`;
     }
