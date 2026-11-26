@@ -56,9 +56,23 @@
     .matrix th:first-child, .flow .step { position: sticky; left: 0; background: white; }
     td { background: var(--surface); border: 1px solid var(--line); }
 
-    .matrix table { border-spacing: 0; }
-    .matrix th, .matrix td { border: solid var(--line); border-width: 0 1px 1px 0; white-space: nowrap; }
-    .matrix th:not(:first-child), .matrix td { text-align: center; }
+    .matrix table { min-width: 0; border-spacing: 0; }
+    .matrix th, .matrix td {
+      min-width: 7.5rem;
+      vertical-align: top;
+      border: solid var(--line);
+      border-width: 0 1px 1px 0;
+      white-space: nowrap;
+    }
+    .matrix th { z-index: 1; }
+    .matrix td { text-align: center; }
+    .matrix strong { display: block; margin-bottom: .35rem; }
+    .token-box { display: block; background: white; border: 1px solid var(--line); }
+    .token-box + .token-box { margin-top: .15rem; }
+
+    .kv-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .35rem 0; }
+    .kv-pagination label { display: flex; align-items: center; gap: .4rem; }
+    .kv-pagination input { width: 7rem; }
 
     .flow table { border-spacing: 0 .65rem; }
     .flow .step { min-width: 9.5rem; }
@@ -112,7 +126,10 @@
     <section id="demo" hidden>
       <div class="layout">
         <h2 id="kv-title">KV 位置</h2>
-        <p id="kv-note" class="note"></p>
+        <div id="kv-pagination" class="kv-pagination" hidden>
+          <label>KV 页码 <input id="kv-page" type="number" min="1" step="1" value="1"></label>
+          <small id="kv-page-range" role="status"></small>
+        </div>
         <div id="kv-matrix" class="matrix" role="region" aria-labelledby="kv-title" tabindex="0"></div>
       </div>
       <div class="diagram">
@@ -135,7 +152,9 @@
     const numericInputs = [tpInput, dcpInput, qHeadsInput, kvHeadsInput, interleaveInput, sequenceInput];
     const error = document.querySelector("#error");
     const demo = document.querySelector("#demo");
-    const kvNote = document.querySelector("#kv-note");
+    const kvPagination = document.querySelector("#kv-pagination");
+    const kvPage = document.querySelector("#kv-page");
+    const kvPageRange = document.querySelector("#kv-page-range");
     const kvMatrix = document.querySelector("#kv-matrix");
     const legend = document.querySelector("#legend");
     const flow = document.querySelector("#flow");
@@ -289,18 +308,37 @@
       });
     }
 
-    function renderKvMatrix({ tp, dcp, kvHeads, interleave }, groupStarts, shards) {
-      kvNote.textContent = "列标题为各分片的 token 位置，格内为持有分片的 TP rank。";
-      if (dcp > 1 && shards[0].length > 3 * interleave) {
-        kvNote.textContent += `省略号内每隔 ${dcp * interleave} 个 token 重复一段。`;
+    function renderKvMatrix({ tp, dcp, kvHeads, sequence, interleave }, groupStarts, shards) {
+      // Bound the number of rendered boxes while keeping every position reachable.
+      const maxTokenBoxes = 4096;
+      const pageSize = Math.floor(maxTokenBoxes / groupStarts.length);
+      const pageCount = Math.ceil(sequence / pageSize);
+      const requestedPage = Math.trunc(kvPage.valueAsNumber) || 1;
+      const page = Math.min(Math.max(requestedPage, 1), pageCount);
+      const start = (page - 1) * pageSize;
+      const end = Math.min(start + pageSize, sequence);
+
+      kvPagination.hidden = pageCount === 1;
+      kvPage.max = pageCount;
+      kvPage.value = page;
+      kvPageRange.textContent = `共 ${formatNumber(pageCount)} 页 · ${rangeLabel(start, end - 1, "t")}`;
+
+      const tokenBoxes = Array.from({ length: dcp }, () => []);
+      for (let position = start; position < end; position += 1) {
+        const offset = Math.floor(position / interleave) % dcp;
+        tokenBoxes[offset].push(`<code class="token-box">t${position}</code>`);
       }
+      const columns = tokenBoxes.map((boxes, offset) => boxes.length > 0
+        ? boxes.join("")
+        : `<small>${shards[offset].length ? "本页无 token" : "空分片"}</small>`);
+
       kvMatrix.innerHTML = `<table>
-        <thead><tr><th scope="col">DCP group</th>${shards.map(({ positions }) => `
-          <th scope="col"><code>${positions}</code></th>
-        `).join("")}</tr></thead>
-        <tbody>${groupStarts.map((start, group) => `<tr>
-          <th scope="row">group ${group}<small>${kvHeadLabel(start, tp, kvHeads)}</small></th>
-          ${shards.map((_, offset) => `<td>TP rank ${start + offset}</td>`).join("")}
+        <tbody>${groupStarts.map((groupStart, group) => `<tr>
+          <th scope="row">DCP group ${group}<small>${kvHeadLabel(groupStart, tp, kvHeads)}</small></th>
+          ${columns.map((contents, offset) => `<td>
+            <strong>TP rank ${groupStart + offset}</strong>
+            ${contents}
+          </td>`).join("")}
         </tr>`).join("")}</tbody>
       </table>`;
     }
@@ -329,6 +367,7 @@
 
     for (const input of numericInputs) input.addEventListener("input", render);
     pathInput.addEventListener("change", render);
+    kvPage.addEventListener("change", render);
     render();
   </script>
 </body>
