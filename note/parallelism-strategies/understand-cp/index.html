@@ -127,7 +127,7 @@
     <section id="demo" hidden>
       <div class="layout">
         <h2 id="kv-title">KV 位置</h2>
-        <p class="note"><code>DCP = TP / KV heads</code> 能把 KV cache 的重复存储完全消掉。</p>
+        <p class="note"><code>DCP = TP / KV heads</code> 能把 KV cache 的重复存储完全消掉，但考虑到增加的通信开销，不一定是性能最优的。</p>
         <div id="kv-pagination" class="range-controls" hidden>
           <label>KV 页码 <input id="kv-page" type="number" min="1" step="1" value="1"></label>
           <small id="kv-page-range" role="status"></small>
@@ -251,14 +251,11 @@
       addStep("QKV 投影", "各 TP rank 在本卡为本轮新 token 投影各自负责的 Q/K/V heads", (rank) =>
         equation(`Q[${queryRanges[rank]}](${newTokens})`) + equation(`${kvLabels[rank]}(${newTokens})`));
 
-        const writes = kvShards(state, chunk.start, chunk.end);
-        addStep("写入本卡 KV cache", "从本卡投影结果选取归本 TP rank 的 token，无跨卡通信", (rank) => {
-          const { length, positions } = writes[rank % dcp];
-          return length ? equation(`WriteKV(${kvLabels[rank]}(${positions}))`) : "本轮无待写入 token";
-        });
-      } else {
-        addStep("Q 投影", "TP 按 head 切分", (rank) => blocks("Q", [queryRanges[rank]]));
-      }
+      const writes = kvShards(state, start, end);
+      addStep("写入本卡 KV cache", "从本卡投影结果选取归本 TP rank 的 token，无跨卡通信", (rank) => {
+        const { length, positions } = writes[rank % dcp];
+        return length ? equation(`WriteKV(${kvLabels[rank]}(${positions}))`) : "本轮无待写入 token";
+      });
 
       if (distributedContext) {
         const groupOf = (rank) => Math.floor(rank / dcp);
@@ -308,15 +305,15 @@
         }
       }
 
-      if (chunk && dcp === 1) {
-        const cachedTokens = rangeLabel(0, chunk.end - 1, "t");
+      if (dcp === 1) {
+        const cachedTokens = rangeLabel(0, end - 1, "t");
         addStep("本地 causal attention", "读取截至本轮的本地 KV cache", (rank) => {
           const heads = queryRanges[rank];
           return equation(`O[${heads}] = CausalAttention(Q[${heads}], Cache${kvLabels[rank]}(${cachedTokens}))`);
         });
-      } else if (chunk) {
+      } else {
         const result = distributedContext ? "N" : "O";
-        addStep("本轮 causal attention", "用本轮投影出的完整 token 范围的 K/V", (rank) => {
+        addStep("本轮 causal attention", "直接读取本卡投影出的本轮全部 K/V", (rank) => {
           const heads = queryRanges[rank];
           return equation(`${result}[${heads}] = CausalAttention(Q[${heads}], ${kvLabels[rank]}(${newTokens}))`);
         });
@@ -328,8 +325,6 @@
         }
       }
 
-      const target = chunk ? prefillFlow : flow;
-      const cacheLengthLabel = chunk ? "历史 " : "";
       target.innerHTML = `<table>
         <colgroup span="1"></colgroup>
         ${groupStarts.map(() => `<colgroup span="${dcp}"></colgroup>`).join("")}
