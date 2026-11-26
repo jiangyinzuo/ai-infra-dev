@@ -62,8 +62,8 @@
       border-radius: .4rem;
     }
 
-    .panel { background: var(--surface); }
-    .panel > p, .panel .blocks { margin-top: .35rem; }
+    .panel { align-self: start; background: var(--surface); }
+    .panel > p { margin-top: .35rem; }
     .table-scroll { margin-top: .6rem; padding: 0; overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: .4rem .55rem; text-align: left; vertical-align: top; }
@@ -87,6 +87,18 @@
     .source-1 { background: #e3f3ed; border-color: #a8cdbd; }
     .source-2 { background: #efe8fa; border-color: #c7b6df; }
     .source-3 { background: #fff2d9; border-color: #e3c690; }
+
+    .handoff-stage { background: white; }
+    .handoff-stage caption {
+      padding: .35rem .55rem;
+      background: var(--communication);
+      text-align: left;
+      font-size: .88rem;
+      font-weight: 600;
+    }
+    .handoff-stage caption code { margin-left: .35rem; color: var(--muted); font-weight: normal; }
+    .handoff-stage th { width: 1%; }
+    .handoff-arrow { color: var(--accent); text-align: center; }
 
     footer { margin-top: 1.2rem; padding-top: .6rem; border-top: 1px solid var(--line); }
 
@@ -128,14 +140,30 @@
         <div class="pair">
           <article class="panel" aria-labelledby="colocated">
             <h3 id="colocated">PD 混部</h3>
-            <p>同一实例调度 Prefill 和 Decode。该请求沿用表中最后一列的 KVCache 布局。</p>
+            <p>同一实例调度 Prefill 和 Decode，继续使用各 TP rank 的 KV 分片。</p>
+            <div class="table-scroll handoff-stage">
+              <table>
+                <caption>Prefill → Decode <code id="colocated-config"></code></caption>
+                <tbody id="colocated-kv"></tbody>
+              </table>
+            </div>
           </article>
           <article class="panel" aria-labelledby="disaggregated">
             <h3 id="disaggregated">PD 分离 · D 端 DCP=1</h3>
-            <p id="transfer-note"></p>
-            <div id="import-layout" hidden>
-              <p class="note">D 端 <code id="d-config"></code>，每个 TP rank 的 prompt KV</p>
-              <div id="import-pages" class="blocks"></div>
+            <p id="transfer-note" class="note" hidden></p>
+            <div class="table-scroll handoff-stage">
+              <table>
+                <caption>P · Prefill <code id="p-config"></code></caption>
+                <tbody id="p-kv"></tbody>
+              </table>
+            </div>
+            <p class="handoff-arrow"><span aria-hidden="true">↓</span> <strong>NIXL Pull</strong></p>
+            <p id="transfer-source" class="note"></p>
+            <div class="table-scroll handoff-stage">
+              <table>
+                <caption>D · Decode <code id="d-config"></code></caption>
+                <tbody id="d-kv"></tbody>
+              </table>
             </div>
           </article>
         </div>
@@ -157,10 +185,14 @@
     const demo = document.querySelector("#demo");
     const groupNote = document.querySelector("#group-note");
     const kvTable = document.querySelector("#kv-table");
+    const colocatedConfig = document.querySelector("#colocated-config");
+    const colocatedKV = document.querySelector("#colocated-kv");
     const transferNote = document.querySelector("#transfer-note");
-    const importLayout = document.querySelector("#import-layout");
+    const transferSource = document.querySelector("#transfer-source");
+    const pConfig = document.querySelector("#p-config");
+    const pKV = document.querySelector("#p-kv");
     const dConfig = document.querySelector("#d-config");
-    const importPages = document.querySelector("#import-pages");
+    const dKV = document.querySelector("#d-kv");
     const promptTokens = 8;
     const pageSize = 2;
     const pages = Array.from({ length: promptTokens / pageSize }, (_, index) => ({
@@ -173,17 +205,23 @@
       return end - start === 1 ? `t${start}` : `t${start}–t${end - 1}`;
     }
 
-    function pageTiles(shard, dcp, start = 0, end = promptTokens) {
+    function pageTiles(shard, sourceDcp, { start = 0, end = promptTokens, showRange = true } = {}) {
       const tiles = shard.map((page) => {
         const sliceStart = Math.max(start, page.start);
         const sliceEnd = Math.min(end, page.end);
         if (sliceStart >= sliceEnd) return "";
-        return `<code class="page source-${page.index % dcp}">B${page.index} · ${tokenRange(sliceStart, sliceEnd)}</code>`;
+        const range = showRange ? ` · ${tokenRange(sliceStart, sliceEnd)}` : "";
+        return `<code class="page source-${page.index % sourceDcp}">B${page.index}${range}</code>`;
       }).join("");
       return tiles || '<span class="empty" aria-label="无 KV">—</span>';
     }
 
-    function renderCacheTable(tp, dcp, budget) {
+    function pageShards(dcp) {
+      return Array.from({ length: dcp }, (_, offset) => pages.filter((page) => page.index % dcp === offset));
+    }
+
+    function renderCacheTable(tp, shards, budget) {
+      const dcp = shards.length;
       const chunks = Array.from({ length: Math.ceil(promptTokens / budget) }, (_, index) => {
         const start = index * budget;
         return { start, end: Math.min(start + budget, promptTokens) };
@@ -192,10 +230,9 @@
         <th scope="col">第 ${index + 1} 轮<small>${tokenRange(start, end)}</small></th>`).join("");
 
       // Chunk boundaries change when KV is written. Page ownership uses the prompt position.
-      const rankCells = Array.from({ length: dcp }, (_, offset) => {
-        const shard = pages.filter((page) => page.index % dcp === offset);
+      const rankCells = shards.map((shard) => {
         const writes = chunks.map(({ start, end }) => `
-          <td><div class="blocks">${pageTiles(shard, dcp, start, end)}</div></td>`).join("");
+          <td><div class="blocks">${pageTiles(shard, dcp, { start, end })}</div></td>`).join("");
         return `${writes}<td class="total"><div class="blocks">${pageTiles(shard, dcp)}</div></td>`;
       });
       const groups = Array.from({ length: tp / dcp }, (_, group) => {
@@ -216,6 +253,36 @@
         </tr></thead>${groups}`;
     }
 
+    function renderHandoffRows(body, tp, shards, sourceDcp = shards.length) {
+      const tiles = shards.map((shard) => pageTiles(shard, sourceDcp, { showRange: false }));
+      body.innerHTML = Array.from({ length: tp }, (_, rank) => `
+        <tr>
+          <th scope="row">TP rank ${rank}</th>
+          <td><div class="blocks">${tiles[rank % shards.length]}</div></td>
+        </tr>`).join("");
+    }
+
+    function renderHandoff(tp, shards) {
+      const dcp = shards.length;
+      colocatedConfig.textContent = `TP=${tp}, DCP=${dcp}`;
+      renderHandoffRows(colocatedKV, tp, shards);
+
+      // NIXL Pull accepts a replicated or a fully sharded P-side layout.
+      const transferDcp = dcp === 1 ? 1 : tp;
+      const transferShards = transferDcp === dcp ? shards : pageShards(transferDcp);
+      transferNote.hidden = transferDcp === dcp;
+      if (!transferNote.hidden) {
+        transferNote.textContent = `NIXL Pull 要求 P 端 DCP 为 1 或等于 TP。下图采用 P 端 DCP=${transferDcp}。`;
+      }
+      transferSource.textContent = transferDcp === 1
+        ? "每个 D 端 TP rank 从 P 端对应的 TP rank 拉取 KV。"
+        : "每个 D 端 TP rank 从 P 端各 TP rank 读取所需页，按逻辑页位置写入本地 KVCache。";
+      pConfig.textContent = `TP=${tp}, DCP=${transferDcp}`;
+      dConfig.textContent = `TP=${tp}, DCP=1`;
+      renderHandoffRows(pKV, tp, transferShards);
+      renderHandoffRows(dKV, tp, [pages], transferDcp);
+    }
+
     function render() {
       const [tp, dcp, budget] = inputs.map((input) => input.valueAsNumber);
       const invalid = inputs.find((input) => !input.validity.valid);
@@ -230,17 +297,9 @@
       if (message) return;
 
       groupNote.textContent = `${tp} 个 TP rank 按连续编号分成 ${tp / dcp} 个 DCP group，每组 ${dcp} 个 TP rank。`;
-      renderCacheTable(tp, dcp, budget);
-
-      importLayout.hidden = dcp !== 1 && dcp !== tp;
-      if (importLayout.hidden) {
-        transferNote.textContent = "在 PCP=1 的 MLA 配置中，NIXL Pull 要求 P 端 DCP 为 1 或等于 TP。";
-      } else {
-        const source = dcp === 1 ? "P 端对应的 TP rank" : "P 端各 TP rank";
-        transferNote.textContent = `NIXL Pull 从${source}读取 KV，按逻辑页位置写入 D 端。`;
-        dConfig.textContent = `TP=${tp}, DCP=1`;
-        importPages.innerHTML = pageTiles(pages, dcp);
-      }
+      const shards = pageShards(dcp);
+      renderCacheTable(tp, shards, budget);
+      renderHandoff(tp, shards);
     }
 
     document.querySelector(".controls").addEventListener("input", render);
