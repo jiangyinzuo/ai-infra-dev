@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PD 分离 + P 端 DCP</title>
+  <style>
+    :root {
+      --ink: #182230;
+      --muted: #48576a;
+      --line: #cad4e0;
+      --surface: #f6f8fa;
+      --accent: #225baf;
+      --communication: #edf4ff;
+      color: var(--ink);
+      font: 15px/1.5 system-ui, "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1080px; margin: auto; padding: 1.5rem 1rem 2rem; }
+    h1, h2, p, figure { margin: 0; }
+    h1 { font-size: 1.65rem; }
+    h2 { font-size: 1.15rem; }
+    .intro { max-width: 75ch; margin-top: .35rem; }
+    .note { color: var(--muted); font-size: .88rem; }
+    header .note, .stage .note { margin-top: .3rem; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(8rem, .75fr) minmax(0, 2.2fr);
+      gap: .75rem;
+      margin-top: 1.2rem;
+    }
+
+    .stage, .transfer {
+      padding: .75rem;
+      border: 1px solid var(--line);
+      border-radius: .4rem;
+      background: var(--surface);
+    }
+
+    .stage-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .2rem .6rem;
+    }
+
+    .stage-heading code { color: var(--muted); }
+    table { width: 100%; border-spacing: 0 .3rem; margin-top: .4rem; }
+    th, td { padding: 0; }
+    th { width: 3.4rem; text-align: left; font-size: .84rem; white-space: nowrap; }
+    .blocks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: .25rem; }
+    .prefill .blocks { grid-template-columns: repeat(2, 2.15rem); }
+
+    .block {
+      padding: .25rem 0;
+      border: 1px solid var(--block-line);
+      border-radius: .25rem;
+      background: var(--block-fill);
+      text-align: center;
+      font-size: .82rem;
+    }
+
+    .source-0 { --block-fill: #e6f0ff; --block-line: #adc5e7; }
+    .source-1 { --block-fill: #e3f3ed; --block-line: #a8cdbd; }
+    .source-2 { --block-fill: #efe8fa; --block-line: #c7b6df; }
+    .source-3 { --block-fill: #fff2d9; --block-line: #e3c690; }
+
+    .transfer { align-self: center; text-align: center; background: var(--communication); }
+    .arrow { display: block; color: var(--accent); font-size: 1.45rem; line-height: 1; margin: .25rem 0; }
+    figcaption { grid-column: 1 / -1; }
+
+    .effects { margin-top: 1.2rem; }
+    .effects ul { margin: .35rem 0 0; padding-left: 1.25rem; }
+    .effects li + li { margin-top: .35rem; }
+
+    @media (max-width: 52rem) {
+      .flow { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); }
+    }
+
+    @media (max-width: 25rem) {
+      .stage { padding: .5rem; }
+      .blocks { gap: .15rem; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>PD 分离 + P 端 DCP</h1>
+      <p class="intro">PD 分离让 P 处理输入 prompt，让 D 在接收 KV 后逐 token 生成。两个实例独立调度，并分别配置并行度。</p>
+      <p class="note">MLA + NIXL Pull。P、D 两端均为 <code>TP=4</code>、<code>PCP=1</code>。</p>
+    </header>
+
+    <figure class="flow" aria-labelledby="layout-caption">
+      <section class="stage prefill" aria-labelledby="prefill-title">
+        <div class="stage-heading">
+          <h2 id="prefill-title">P · Prefill</h2>
+          <code>DCP=4</code>
+        </div>
+        <p class="note">按逻辑 KV 块交错分片</p>
+        <table aria-label="P 端各 rank 的 GPU KV">
+          <tbody>
+            <tr>
+              <th scope="row">rank 0</th>
+              <td><div class="blocks">
+                <code class="block source-0">B0</code><code class="block source-0">B4</code>
+              </div></td>
+            </tr>
+            <tr>
+              <th scope="row">rank 1</th>
+              <td><div class="blocks">
+                <code class="block source-1">B1</code><code class="block source-1">B5</code>
+              </div></td>
+            </tr>
+            <tr>
+              <th scope="row">rank 2</th>
+              <td><div class="blocks">
+                <code class="block source-2">B2</code><code class="block source-2">B6</code>
+              </div></td>
+            </tr>
+            <tr>
+              <th scope="row">rank 3</th>
+              <td><div class="blocks">
+                <code class="block source-3">B3</code><code class="block source-3">B7</code>
+              </div></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="transfer">
+        <strong>NIXL Pull</strong>
+        <span class="arrow" aria-hidden="true">→</span>
+        <p class="note">每个 D rank 从 P 的各 rank 读取缺失块，按逻辑位置写入本地 GPU。</p>
+      </div>
+
+      <section class="stage decode" aria-labelledby="decode-title">
+        <div class="stage-heading">
+          <h2 id="decode-title">D · Decode</h2>
+          <code>DCP=1</code>
+        </div>
+        <p class="note">用拉齐后的本地 GPU KV 逐 token 生成</p>
+        <table aria-label="D 端各 rank 的 GPU KV">
+          <tbody>
+            <tr>
+              <th scope="row">rank 0</th>
+              <td><div class="blocks">
+                <code class="block source-0">B0</code><code class="block source-1">B1</code>
+                <code class="block source-2">B2</code><code class="block source-3">B3</code>
+                <code class="block source-0">B4</code><code class="block source-1">B5</code>
+                <code class="block source-2">B6</code><code class="block source-3">B7</code>
+              </div></td>
+            </tr>
+            <tr>
+              <th scope="row">rank 1</th>
+              <td><div class="blocks">
+                <code class="block source-0">B0</code><code class="block source-1">B1</code>
+                <code class="block source-2">B2</code><code class="block source-3">B3</code>
+                <code class="block source-0">B4</code><code class="block source-1">B5</code>
+                <code class="block source-2">B6</code><code class="block source-3">B7</code>
+              </div></td>
+            </tr>
+            <tr>
+              <th scope="row">rank 2</th>
+              <td><div class="blocks">
+                <code class="block source-0">B0</code><code class="block source-1">B1</code>
+                <code class="block source-2">B2</code><code class="block source-3">B3</code>
+                <code class="block source-0">B4</code><code class="block source-1">B5</code>
+                <code class="block source-2">B6</code><code class="block source-3">B7</code>
+              </div></td>
+            </tr>
+            <tr>
+              <th scope="row">rank 3</th>
+              <td><div class="blocks">
+                <code class="block source-0">B0</code><code class="block source-1">B1</code>
+                <code class="block source-2">B2</code><code class="block source-3">B3</code>
+                <code class="block source-0">B4</code><code class="block source-1">B5</code>
+                <code class="block source-2">B6</code><code class="block source-3">B7</code>
+              </div></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <figcaption id="layout-caption" class="note"><code>B0</code>–<code>B7</code> 是同一个 prompt 的连续逻辑 KV 块。颜色对应块在 P 端的来源 rank。</figcaption>
+    </figure>
+
+    <section class="effects" aria-labelledby="effects-title">
+      <h2 id="effects-title">对容量和延迟的影响</h2>
+      <ul>
+        <li>P 端的分片降低每张卡的 KV 占用。同样的显存预算可容纳更多长 prompt 或缓存的前缀，缓解 KV 容量不足造成的排队。</li>
+        <li>D 端每步 attention 读取本地完整 KV，省去 DCP 的跨 rank 结果合并。D 的显存需要容纳并发请求的完整上下文。</li>
+        <li>端到端首 token 延迟还取决于 prefill 计算、P 端组内通信和 P 到 D 的 KV 交接耗时。</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
