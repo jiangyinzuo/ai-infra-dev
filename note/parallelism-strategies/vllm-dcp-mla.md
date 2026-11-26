@@ -1,8 +1,8 @@
 # vLLM DCP + MLA：KV Cache Layout、Prefill 与 Decode
 
-> 范围：基础 DCP（`PCP=1`）。DCP 复用 TP ranks，沿 sequence 维度切分 KV cache；MLA cache 保存压缩 latent，而不是展开后的每-head K/V。
+> 范围：dense MLA，基础 DCP（`PCP=1`）。DCP 复用 TP ranks，沿 sequence 维度切分 KV cache；MLA cache 保存压缩 latent，而不是展开后的每-head K/V。
 
-![DCP + MLA overview](./vllm-dcp-mla.svg)
+![vLLM DCP + MLA：KV 交错分片、Prefill 与 Decode](./vllm-dcp-mla.svg)
 
 ## 1. MLA cache 是什么
 
@@ -45,7 +45,7 @@ B = physical block_size
 I = cp_kv_cache_interleave_size
 ```
 
-一个虚拟 block 覆盖 `B×D` 个 token。全局位置 `x` 的 owner：
+假设 `B % I == 0`。一个虚拟 block 覆盖 `B×D` 个 token。全局位置 `x` 的 owner 和它在该 rank 请求序列中的位置为：
 
 ```text
 v = x // (B×D)
@@ -97,24 +97,24 @@ Ascend MLA 的 cache 写入最终调用 `reshape_and_cache()`，见 `vllm_ascend
 
 ### 3.2 计算 attention
 
-基础 DCP 不增加 PCP ranks。prefill 通常分成两部分：当前新 token 的 attention，以及读取历史 cache 的 context attention。后者需要两类通信：
+Prefill 分两路：用本轮新 K/V 做因果 attention；有历史 cache 时，再对历史 KV 做 context attention。两路使用相同的 TP 本地 Q heads，不做 DCP Q all-gather。
 
 ```text
-local Q
-  └─ DCP all-gather：head 轴
+TP-local Q + 本轮新 K/V -> current attention
 
-local paged KV
+本地历史 paged KV
   └─ DCP all-gather：sequence/token 轴
-        └─ reorg：恢复 request-contiguous 顺序
-              └─ context attention：kv_c -> W_UK/W_UV -> K/V
+        └─ reorg：按请求拼接，去除 padding
+              └─ kv_c -> W_UK/W_UV -> K/V
+                    └─ 与 TP-local Q 做 context attention
 ```
 
 当前 token 的结果与 context 结果再按 output/LSE 合并。
 
-Ascend `_compute_prefill_context()` 负责分块 load、latent KV 投影和 attention；DCP `_reorg_kvcache()` 负责 all-gather 后的顺序恢复：
- 
- - `vllm_ascend/attention/mla_v1.py:1550-1716`；
- - `vllm_ascend/attention/context_parallel/mla_cp.py:928-1024`。
+源码：
+
+- upstream：`vllm/model_executor/layers/attention/mla_attention.py` 的 `forward_mha()`、`_context_parallel_compute_prefill_context()`；
+- Ascend：`vllm_ascend/attention/mla_v1.py` 的 `_forward_prefill()`、`_compute_prefill_context()`；DCP 聚合与重排在 `vllm_ascend/attention/context_parallel/mla_cp.py` 的 `_reorg_kvcache()`。
 
 长上下文通常按 workspace 分块：
 
@@ -122,13 +122,12 @@ Ascend `_compute_prefill_context()` 负责分块 load、latent KV 投影和 atte
 for each context chunk:
     load paged KV rows
     gather across DCP ranks
-    restore token order
+    group rows by request and drop padding
     attention(current Q, context chunk)
     merge chunk output + LSE
 ```
 
-
-**直接观测：**官方 Ascend 图显示 `DCP.AG Q(head)` 与 `DCP.AG KV(seq dim) → reorg_kvcache → Attention`。
+**文档差异：**Ascend 设计文档的 Prefill 配图标了 `DCP.AG Q(head)`，但上述 dense MLA 源码直接使用 TP 本地 Q；此处以源码执行路径为准。
 
 ## 4. Decode 流程
 
@@ -146,8 +145,10 @@ Q = [token, N_local×D, Lkv+R]
 
 upstream `MLADCPManager._gather_query()` 调用 `group.all_gather(query, dim=1)`；Ascend 对应 `reorg_decode_q()`：
 
-- `vllm/v1/attention/ops/dcp.py:1841-1864`；
-- `vllm_ascend/attention/context_parallel/mla_cp.py:463-473`。
+- `vllm/v1/attention/ops/dcp.py`：`MLADCPManager._gather_query()`；
+- `vllm_ascend/attention/context_parallel/mla_cp.py`：`AscendMlaDCPImpl.reorg_decode_q()`。
+
+这里画的是 Q all-gather 路径。若 Ascend 已通过复制 Q 投影在每个 rank 生成 DCP 组内所需的 heads，`reorg_decode_q()` 会跳过这次通信。
 
 ### 4.2 本地 attention
 
@@ -185,11 +186,11 @@ upstream 根据配置选择 `dcp_a2a_lse_reduce`、`cp_lse_ag_out_ar` 或 `cp_ls
 
 | 阶段 | 通信对象 | 目的 | 本地计算后的结果 |
 |---|---|---|---|
-| Prefill | Q(head) + KV(sequence) | 补齐 head 与历史上下文 | current/context attention；按 chunk 合并 |
-| Decode | Q，head 轴 | 每个 rank 得到完整 query heads | 本地 `O_r/LSE_r` |
+| Dense Prefill（有历史） | 历史 KV，sequence 轴 | 每个 rank 用本地 Q heads 看完整历史 | current/context attention；按 chunk 合并 |
+| Decode | Q，head 轴（尚未具备组内 heads 时） | 每个 rank 得到 DCP 组内所需的 query heads | 本地 `O_r/LSE_r` |
 | Decode 收尾 | partial output + LSE | 恢复全局 softmax | 每 rank 的 local head output |
 
-核心区别：**prefill gather Q/KV；decode gather Q，并合并 attention partials。**
+核心区别：**Dense Prefill 聚合历史 KV，让本地 Q 看完整上下文；Decode 保留 KV 分片，用 DCP 组内 Q heads 算局部结果，再合并 output/LSE。**
 
 ## 6. DCP、TP、PCP 不要混淆
 
