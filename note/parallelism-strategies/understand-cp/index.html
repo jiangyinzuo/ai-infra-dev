@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DCP Decode 通信演示</title>
+  <title>DCP Prefill 与 Decode 通信演示</title>
   <style>
     :root {
       --ink: #182230;
@@ -70,9 +70,9 @@
     .token-box { display: block; background: white; border: 1px solid var(--line); }
     .token-box + .token-box { margin-top: .15rem; }
 
-    .kv-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .35rem 0; }
-    .kv-pagination label { display: flex; align-items: center; gap: .4rem; }
-    .kv-pagination input { width: 7rem; }
+    .range-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .35rem 0; }
+    .range-controls label { display: flex; align-items: center; gap: .4rem; }
+    .range-controls input { width: 7rem; }
 
     .flow table { border-spacing: 0 .65rem; }
     .flow .step { min-width: 9.5rem; }
@@ -100,8 +100,8 @@
 <body>
   <main>
     <header>
-      <h1>DCP decode 通信演示</h1>
-      <p class="note">单 token decode，PCP=1。</p>
+      <h1>DCP Prefill 与 Decode 通信演示</h1>
+      <p class="note">以 vLLM FlashAttention 的单请求 GQA 为例，PCP=1。</p>
     </header>
 
     <section aria-label="演示参数">
@@ -112,6 +112,7 @@
         <label>KV heads <input id="kv-heads" type="number" min="1" max="9007199254740991" step="1" value="4" required></label>
         <label>Block interleave size <input id="interleave" type="number" min="1" max="4096" step="1" value="1" required></label>
         <label>序列长度 <input id="sequence" type="number" min="1" max="2147483647" step="1" value="17" required></label>
+        <label>Chunked prefill 预算 <input id="prefill-budget" type="number" min="1" max="2147483647" step="1" value="8" required></label>
         <label>通信路径
           <select id="path">
             <option value="ag_rs">ag_rs</option>
@@ -119,7 +120,7 @@
           </select>
         </label>
       </div>
-      <p class="note">序列长度含当前 token。Interleave size 是每次连续分给一个 TP rank 的 token 数。</p>
+      <p class="note">序列长度在 Prefill 中是 prompt 长度，在 Decode 中包含当前 token。Interleave size 是每次连续分给一个 TP rank 的 token 数。</p>
       <p id="error" role="alert" hidden></p>
     </section>
 
@@ -127,14 +128,24 @@
       <div class="layout">
         <h2 id="kv-title">KV 位置</h2>
         <p class="note"><code>DCP = TP / KV heads</code> 能把 KV cache 的重复存储完全消掉。</p>
-        <div id="kv-pagination" class="kv-pagination" hidden>
+        <div id="kv-pagination" class="range-controls" hidden>
           <label>KV 页码 <input id="kv-page" type="number" min="1" step="1" value="1"></label>
           <small id="kv-page-range" role="status"></small>
         </div>
         <div id="kv-matrix" class="matrix" role="region" aria-labelledby="kv-title" tabindex="0"></div>
       </div>
       <div class="diagram">
-        <h2 id="diagram-title">各 DCP group 的 decode 流程</h2>
+        <h2 id="prefill-title">各 DCP group 的 Prefill 流程</h2>
+        <p class="note">Chunked prefill 预算决定示例中每轮最多处理的 prompt token 数。</p>
+        <div class="range-controls">
+          <label>Prefill chunk <input id="prefill-chunk" type="number" min="1" step="1" value="1"></label>
+          <small id="prefill-range" role="status"></small>
+        </div>
+        <p id="prefill-legend" class="note"></p>
+        <div id="prefill-flow" class="flow" role="region" aria-labelledby="prefill-title" tabindex="0"></div>
+      </div>
+      <div class="diagram">
+        <h2 id="diagram-title">各 DCP group 的 Decode 流程</h2>
         <p id="legend" class="note"></p>
         <div id="flow" class="flow" role="region" aria-labelledby="diagram-title" tabindex="0"></div>
       </div>
@@ -149,14 +160,19 @@
     const kvHeadsInput = document.querySelector("#kv-heads");
     const interleaveInput = document.querySelector("#interleave");
     const sequenceInput = document.querySelector("#sequence");
+    const prefillBudgetInput = document.querySelector("#prefill-budget");
     const pathInput = document.querySelector("#path");
-    const numericInputs = [tpInput, dcpInput, qHeadsInput, kvHeadsInput, interleaveInput, sequenceInput];
+    const numericInputs = [tpInput, dcpInput, qHeadsInput, kvHeadsInput, interleaveInput, sequenceInput, prefillBudgetInput];
     const error = document.querySelector("#error");
     const demo = document.querySelector("#demo");
     const kvPagination = document.querySelector("#kv-pagination");
     const kvPage = document.querySelector("#kv-page");
     const kvPageRange = document.querySelector("#kv-page-range");
     const kvMatrix = document.querySelector("#kv-matrix");
+    const prefillChunk = document.querySelector("#prefill-chunk");
+    const prefillRange = document.querySelector("#prefill-range");
+    const prefillLegend = document.querySelector("#prefill-legend");
+    const prefillFlow = document.querySelector("#prefill-flow");
     const legend = document.querySelector("#legend");
     const flow = document.querySelector("#flow");
 
@@ -198,15 +214,22 @@
       return `KV[${rangeLabel(start, start + count - 1)}]`;
     }
 
+    function equation(text) {
+      return `<div class="equation"><code>${text}</code></div>`;
+    }
+
     function blocks(symbol, ids) {
       return `<code>${ids.map((id) => `${symbol}[${id}]`).join(" · ")}</code>`;
     }
 
-    function renderFlow({ tp, dcp, qHeads, kvHeads, path }, groupStarts, shards) {
+    function renderFlow(state, groupStarts, shards, chunk = null) {
+      const { tp, dcp, qHeads, kvHeads, path } = state;
+      const distributedContext = dcp > 1 && (!chunk || chunk.start > 0);
       const ranks = Array.from({ length: tp }, (_, rank) => rank);
       const qHeadsPerRank = qHeads / tp;
       const queryRange = (start, end) => rangeLabel(start * qHeadsPerRank, end * qHeadsPerRank - 1);
       const queryRanges = ranks.map((rank) => queryRange(rank, rank + 1));
+      const kvLabels = ranks.map((rank) => kvHeadLabel(rank, tp, kvHeads));
       const groupStartClass = (rank) => rank % dcp === 0 ? ' class="group-start"' : "";
       const rows = [];
 
@@ -220,13 +243,31 @@
 
       const queryLegend = `每个 KV head 对应 ${qHeads / kvHeads} 个连续的 Q heads。`;
       const partialLegend = ' DCP group 由连续的 TP rank 组成。<code>P[s→r]</code> 包含部分输出和 LSE，s 是 KV 分片所在 TP rank，r 是 Q heads 原属 TP rank。<code>Correct()</code> 用一个部分结果和相同 Q heads 的各分片 LSE 算出校正输出 <code>P′[s→r]</code>。';
-      legend.innerHTML = queryLegend + (dcp > 1 ? partialLegend : "");
+      const mergeLegend = ' <code>H</code> 是归并后的历史 attention 结果，<code>N</code> 是本轮 causal attention 结果。两者都带有 LSE，供 <code>MergeAttention()</code> 使用。';
+      const currentLegend = chunk ? prefillLegend : legend;
+      currentLegend.innerHTML = queryLegend + (distributedContext ? partialLegend : "")
+        + (chunk && distributedContext ? mergeLegend : "");
 
-      addStep("Q 投影", "TP 按 head 切分", (rank) => blocks("Q", [queryRanges[rank]]));
-      const complete = (rank) => `完整输出 ${blocks("O", [queryRanges[rank]])}`;
-      if (dcp === 1) {
-        addStep("本地 attention", "DCP=1，使用完整序列的 KV", complete);
+      const newTokens = chunk ? rangeLabel(chunk.start, chunk.end - 1, "t") : null;
+      if (chunk) {
+        addStep("QKV 投影", "TP 按 head 切分，覆盖本轮新 token", (rank) =>
+          equation(`Q[${queryRanges[rank]}](${newTokens})`) + equation(`${kvLabels[rank]}(${newTokens})`));
+
+        const writes = kvShards(state, chunk.start, chunk.end);
+        addStep("写入 KV cache", "按全局 token 位置分片写入", (rank) => {
+          const { length, positions } = writes[rank % dcp];
+          return length ? equation(`WriteKV(${kvLabels[rank]}(${positions}))`) : "本轮无待写入 token";
+        });
       } else {
+        addStep("Q 投影", "TP 按 head 切分", (rank) => blocks("Q", [queryRanges[rank]]));
+      }
+
+      if (!chunk && dcp === 1) {
+        addStep("本地 attention", "DCP=1，使用完整序列的 KV", (rank) =>
+          `完整输出 ${blocks("O", [queryRanges[rank]])}`);
+      }
+
+      if (distributedContext) {
         const groupOf = (rank) => Math.floor(rank / dcp);
         const members = groupStarts.map((start) => ranks.slice(start, start + dcp));
         const gathered = groupStarts.map((start) => blocks("Q", dcp <= 3
@@ -246,16 +287,17 @@
 
         function reduce(rank) {
           const terms = sourceTerms(rank, (source) => `P′[${source}→${rank}]`, " + ");
-          return `${complete(rank)}<small class="equation">= <code>${terms}</code></small>`;
+          if (chunk) return equation(`H[${queryRanges[rank]}].O = ${terms}`);
+          return `完整输出 ${blocks("O", [queryRanges[rank]])}<small class="equation">= <code>${terms}</code></small>`;
         }
 
         addStep("AllGather(Q)", "在组内沿 head 维拼接", (rank) => gathered[groupOf(rank)], true);
-        addStep("本地 attention", "用本地 KV 计算部分输出", (rank) => {
+        addStep(chunk ? "历史 attention" : "本地 attention", "用本地 KV 分片计算部分输出", (rank) => {
           const { length, positions } = shards[rank % dcp];
-          const kv = kvHeadLabel(rank, tp, kvHeads);
+          const kv = chunk ? `Cache${kvLabels[rank]}` : kvLabels[rank];
           const tokens = length ? `<code>${positions}</code>` : "空分片，贡献为 0";
           const partials = members[groupOf(rank)].map((owner) =>
-            `<div class="equation"><code>P[${rank}→${owner}] = Attention(Q[${queryRanges[owner]}], ${kv})</code></div>`);
+            equation(`P[${rank}→${owner}] = Attention(Q[${queryRanges[owner]}], ${kv})`));
           return `<small class="equation">本地 <code>${kv}</code> · ${tokens}</small>${partials.join("")}`;
         });
 
@@ -274,7 +316,29 @@
         }
       }
 
-      flow.innerHTML = `<table>
+      if (chunk && dcp === 1) {
+        const cachedTokens = rangeLabel(0, chunk.end - 1, "t");
+        addStep("本地 causal attention", "读取截至本轮的本地 KV cache", (rank) => {
+          const heads = queryRanges[rank];
+          return equation(`O[${heads}] = CausalAttention(Q[${heads}], Cache${kvLabels[rank]}(${cachedTokens}))`);
+        });
+      } else if (chunk) {
+        const result = distributedContext ? "N" : "O";
+        addStep("本轮 causal attention", "用本轮投影出的完整 token 范围的 K/V", (rank) => {
+          const heads = queryRanges[rank];
+          return equation(`${result}[${heads}] = CausalAttention(Q[${heads}], ${kvLabels[rank]}(${newTokens}))`);
+        });
+        if (distributedContext) {
+          addStep("合并 attention", "合并同一 Q head 的历史和本轮结果", (rank) => {
+            const heads = queryRanges[rank];
+            return equation(`O[${heads}] = MergeAttention(H[${heads}], N[${heads}])`);
+          });
+        }
+      }
+
+      const target = chunk ? prefillFlow : flow;
+      const cacheLengthLabel = chunk ? "历史 " : "";
+      target.innerHTML = `<table>
         <colgroup span="1"></colgroup>
         ${groupStarts.map(() => `<colgroup span="${dcp}"></colgroup>`).join("")}
         <thead>
@@ -282,29 +346,31 @@
             <th scope="colgroup" colspan="${dcp}">group ${group}</th>
           `).join("")}</tr>
           <tr>${ranks.map((rank) => `
-            <th${groupStartClass(rank)} scope="col">TP rank ${rank}<small>${kvHeadLabel(rank, tp, kvHeads)} · ${formatNumber(shards[rank % dcp].length)} tokens</small></th>
+            <th${groupStartClass(rank)} scope="col">TP rank ${rank}<small>${kvLabels[rank]} · ${cacheLengthLabel}${formatNumber(shards[rank % dcp].length)} tokens</small></th>
           `).join("")}</tr>
         </thead>
         <tbody>${rows.join("")}</tbody>
       </table>`;
     }
 
-    function kvShards({ sequence, dcp, interleave }) {
+    function kvShards({ sequence, dcp, interleave }, start = 0, end = sequence) {
       const stride = dcp * interleave;
       return Array.from({ length: dcp }, (_, offset) => {
-        const length = localSequenceLength(sequence, dcp, interleave, offset);
+        const before = localSequenceLength(start, dcp, interleave, offset);
+        const length = localSequenceLength(end, dcp, interleave, offset) - before;
         if (length === 0) return { length, positions: "空分片" };
-        if (dcp === 1) return { length, positions: rangeLabel(0, sequence - 1, "t") };
+        if (dcp === 1) return { length, positions: rangeLabel(start, end - 1, "t") };
 
-        const chunks = Math.ceil(length / interleave);
+        const firstChunk = Math.floor(before / interleave);
+        const lastChunk = Math.floor((before + length - 1) / interleave);
         const chunkLabel = (index) => {
-          const start = offset * interleave + index * stride;
-          return rangeLabel(start, Math.min(start + interleave, sequence) - 1, "t");
+          const chunkStart = offset * interleave + index * stride;
+          return rangeLabel(Math.max(chunkStart, start), Math.min(chunkStart + interleave, end) - 1, "t");
         };
-        const labels = [chunkLabel(0)];
-        if (chunks > 1) labels.push(chunkLabel(1));
-        if (chunks > 3) labels.push("…");
-        if (chunks > 2) labels.push(chunkLabel(chunks - 1));
+        const labels = [chunkLabel(firstChunk)];
+        if (lastChunk > firstChunk) labels.push(chunkLabel(firstChunk + 1));
+        if (lastChunk > firstChunk + 2) labels.push("…");
+        if (lastChunk > firstChunk + 1) labels.push(chunkLabel(lastChunk));
         return { length, positions: labels.join(", ") };
       });
     }
@@ -344,6 +410,23 @@
       </table>`;
     }
 
+    function renderPrefill(state, groupStarts) {
+      const { sequence, prefillBudget } = state;
+      const chunkCount = Math.ceil(sequence / prefillBudget);
+      const requestedChunk = Math.trunc(prefillChunk.valueAsNumber) || 1;
+      const index = Math.min(Math.max(requestedChunk, 1), chunkCount);
+      const start = (index - 1) * prefillBudget;
+      const end = Math.min(start + prefillBudget, sequence);
+
+      prefillChunk.max = chunkCount;
+      prefillChunk.value = index;
+      const history = start ? `历史 ${rangeLabel(0, start - 1, "t")}` : "无历史 KV";
+      const current = rangeLabel(start, end - 1, "t");
+      prefillRange.textContent = `共 ${formatNumber(chunkCount)} 个 chunk · ${history} · 本轮 ${current}（${formatNumber(end - start)} tokens）`;
+
+      renderFlow(state, groupStarts, kvShards(state, 0, start), { start, end });
+    }
+
     function render() {
       const state = {
         tp: tpInput.valueAsNumber,
@@ -352,6 +435,7 @@
         kvHeads: kvHeadsInput.valueAsNumber,
         interleave: interleaveInput.valueAsNumber,
         sequence: sequenceInput.valueAsNumber,
+        prefillBudget: prefillBudgetInput.valueAsNumber,
         path: pathInput.value
       };
       const message = validate(state);
@@ -363,12 +447,14 @@
       const groupStarts = Array.from({ length: state.tp / state.dcp }, (_, group) => group * state.dcp);
       const shards = kvShards(state);
       renderKvMatrix(state, groupStarts, shards);
+      renderPrefill(state, groupStarts);
       renderFlow(state, groupStarts, shards);
     }
 
     for (const input of numericInputs) input.addEventListener("input", render);
     pathInput.addEventListener("change", render);
     kvPage.addEventListener("change", render);
+    prefillChunk.addEventListener("change", render);
     render();
   </script>
 </body>
