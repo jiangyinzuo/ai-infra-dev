@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DCP 下的 Prefill</title>
+  <style>
+    :root {
+      --ink: #182230;
+      --muted: #48576a;
+      --line: #cad4e0;
+      --surface: #f6f8fa;
+      --accent: #225baf;
+      --communication: #edf4ff;
+      color: var(--ink);
+      font: 15px/1.5 system-ui, "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1000px; margin: auto; padding: 1.5rem 1rem 2rem; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 1.65rem; }
+    h2 { font-size: 1.15rem; }
+    h3 { font-size: 1rem; }
+    a { color: var(--accent); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    header p, h2 + p, section > p + p, footer p + p { margin-top: .3rem; }
+    main > section { margin-top: 1.2rem; }
+
+    .pair, .branches {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .6rem;
+    }
+
+    .pair { margin-top: .6rem; }
+    .panel, .step {
+      padding: .65rem .75rem;
+      border: 1px solid var(--line);
+      border-radius: .4rem;
+    }
+
+    .step { background: var(--surface); }
+    .communication { background: var(--communication); }
+    .panel > p, .step p, .panel > table, .panel > .step, .branches { margin-top: .35rem; }
+    .arrow { color: var(--accent); line-height: 1.1; text-align: center; }
+    .merge { margin: 0; text-align: center; font-size: .88rem; }
+
+    table { width: 100%; border-spacing: 0 .25rem; }
+    caption { text-align: left; color: var(--muted); font-size: .88rem; }
+    th { width: 5.4rem; text-align: left; font-size: .87rem; white-space: nowrap; }
+    td { padding: 0; }
+    .blocks { display: flex; flex-wrap: wrap; gap: .25rem; }
+    .page {
+      display: inline-block;
+      padding: .13rem .4rem;
+      border: 1px solid;
+      border-radius: .25rem;
+      white-space: nowrap;
+    }
+    .source-0 { background: #e6f0ff; border-color: #adc5e7; }
+    .source-1 { background: #e3f3ed; border-color: #a8cdbd; }
+
+    footer { margin-top: 1.2rem; padding-top: .6rem; border-top: 1px solid var(--line); }
+
+    @media (max-width: 48rem) {
+      .pair { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>DCP 下的 Prefill</h1>
+      <p class="note">普通 MLA 的 <code>forward_mha</code> 路径。<code>PCP=1</code>，Prefill 实例 <code>TP=2, DCP=2</code>。</p>
+      <p class="note">此配置下 Prefill 的 TP 组和 DCP 组成员相同，TP rank 0、1 各自对应 DCP rank 0、1。</p>
+    </header>
+
+    <section aria-labelledby="prefill">
+      <h2 id="prefill">混部和分离使用同一条 Prefill 路径</h2>
+      <p>Chunked Prefill 可以把 prompt 分到多个调度步。本例 8 个 prompt token 没有前缀命中，每步分到 4 个 token 的预算，所以分两轮。若一步能分到 8 个 token，整段一轮完成。</p>
+      <p class="note">每轮两个 TP rank 都处理本轮全部 token，Q heads 按 TP 切分。压缩主 KV 按页交错写入，每页含 2 个 token。<code>B0</code>–<code>B3</code> 是 prompt 内的逻辑页序号，颜色标记写入该页的 Prefill TP rank。</p>
+
+      <div class="pair">
+        <article class="panel" aria-labelledby="first-chunk">
+          <h3 id="first-chunk">第一轮 <code>t0–t3</code></h3>
+          <table>
+            <caption>GPU KV 写入</caption>
+            <tbody>
+              <tr><th scope="row">TP rank 0</th><td><code class="page source-0">B0 · t0–t1</code></td></tr>
+              <tr><th scope="row">TP rank 1</th><td><code class="page source-1">B1 · t2–t3</code></td></tr>
+            </tbody>
+          </table>
+          <div class="step">
+            <strong>本轮因果 attention</strong>
+            <p><code>Q(t0–t3)</code> 读取本轮投影得到的 <code>K/V(t0–t3)</code>。历史长度为 0，直接得到本轮输出。</p>
+          </div>
+        </article>
+
+        <article class="panel" aria-labelledby="next-chunk">
+          <h3 id="next-chunk">第二轮 <code>t4–t7</code></h3>
+          <table>
+            <caption>GPU KV 写入</caption>
+            <tbody>
+              <tr><th scope="row">TP rank 0</th><td><code class="page source-0">B2 · t4–t5</code></td></tr>
+              <tr><th scope="row">TP rank 1</th><td><code class="page source-1">B3 · t6–t7</code></td></tr>
+            </tbody>
+          </table>
+          <div class="branches">
+            <div class="step">
+              <strong>本轮因果 attention</strong>
+              <p><code>Q(t4–t7)</code> 读取本轮投影得到的 <code>K/V(t4–t7)</code>。</p>
+            </div>
+            <div class="step communication">
+              <strong>历史 attention</strong>
+              <p>将 TP rank 0 的 <code>B0</code> 和 TP rank 1 的 <code>B1</code> 在 DCP 组内 AllGather 到临时 workspace，再按位置还原并投影出 <code>K/V(t0–t3)</code>，供同一组 Q 读取。</p>
+            </div>
+            <div class="arrow" aria-hidden="true">↓</div>
+            <div class="arrow" aria-hidden="true">↓</div>
+          </div>
+          <p class="merge"><strong>按两段 LSE 合并 attention 输出</strong></p>
+        </article>
+      </div>
+      <p class="note">例如 <code>t4</code> 同时看历史 <code>t0–t3</code> 和本轮的 <code>t4</code>。LSE 是各段 attention logits 的 log-sum-exp，合并时据此恢复全上下文的 softmax 归一化。</p>
+    </section>
+
+    <section aria-labelledby="handoff">
+      <h2 id="handoff">Prefill 完成后的 KV 去向</h2>
+      <div class="pair">
+        <article class="panel" aria-labelledby="colocated">
+          <h3 id="colocated">PD 混部</h3>
+          <div class="step">同一实例调度 Prefill 和 Decode。该请求沿用各 TP rank 上的分片 KV。</div>
+          <div class="arrow" aria-hidden="true">↓</div>
+          <table>
+            <caption>Decode · <code>TP=2, DCP=2</code></caption>
+            <tbody>
+              <tr>
+                <th scope="row">TP rank 0</th>
+                <td><div class="blocks"><code class="page source-0">B0</code><code class="page source-0">B2</code></div></td>
+              </tr>
+              <tr>
+                <th scope="row">TP rank 1</th>
+                <td><div class="blocks"><code class="page source-1">B1</code><code class="page source-1">B3</code></div></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="note">生成时各 TP rank 对局部 KV 算 attention，再在 DCP 组内按 LSE 合并局部输出。</p>
+        </article>
+        <article class="panel" aria-labelledby="disaggregated">
+          <h3 id="disaggregated">PD 分离 · 只在 P 端开 DCP</h3>
+          <div class="step communication"><strong>NIXL Pull</strong> 让每个 D 端 TP rank 从 P 端两个 TP rank 读取缺失的页，按逻辑位置写入本地 GPU KV。</div>
+          <div class="arrow" aria-hidden="true">↓</div>
+          <table>
+            <caption>D 端无缓存命中时的导入布局 · <code>TP=2, DCP=1</code></caption>
+            <tbody>
+              <tr>
+                <th scope="row">TP rank 0</th>
+                <td><div class="blocks">
+                  <code class="page source-0">B0</code><code class="page source-1">B1</code>
+                  <code class="page source-0">B2</code><code class="page source-1">B3</code>
+                </div></td>
+              </tr>
+              <tr>
+                <th scope="row">TP rank 1</th>
+                <td><div class="blocks">
+                  <code class="page source-0">B0</code><code class="page source-1">B1</code>
+                  <code class="page source-0">B2</code><code class="page source-1">B3</code>
+                </div></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="note">D 端每个 TP rank 的 DCP 组只有自身，组内编号都是 0，解码读取本地完整 KV。Connector 负责实例间传输，DCP 分片和 attention 在实例内执行。</p>
+        </article>
+      </div>
+    </section>
+
+    <footer class="note">
+      <p>Sparse MLA 若走分片 <code>forward_mqa</code>，各 TP rank 用全局 top-k 中属于本 TP rank 的 KV 算局部 attention，再按 LSE 合并。</p>
+      <p>主仓参考 · <a href="https://github.com/vllm-project/vllm/blob/8ee3951ecd/docs/configuration/optimization.md#chunked-prefill">Chunked Prefill 调度</a> · <a href="https://github.com/vllm-project/vllm/blob/8ee3951ecd/vllm/distributed/parallel_state.py#L2310-L2329">DCP 分组</a> · <a href="https://github.com/vllm-project/vllm/blob/8ee3951ecd/vllm/v1/worker/gpu/block_table.py#L403-L432">KV slot mapping</a> · <a href="https://github.com/vllm-project/vllm/blob/8ee3951ecd/vllm/model_executor/layers/attention/mla_attention.py#L3535-L3617">MLA Prefill</a> · <a href="https://github.com/vllm-project/vllm/blob/8ee3951ecd/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py#L4060-L4117">NIXL 页映射</a></p>
+      <p>相关图 · <a href="index.html">DCP Decode 通信</a> · <a href="pd-prefill-dcp.html">PD 分离中的 KV 布局</a></p>
+    </footer>
+  </main>
+</body>
+</html>
