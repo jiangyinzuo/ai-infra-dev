@@ -250,11 +250,11 @@
 
       const newTokens = chunk ? rangeLabel(chunk.start, chunk.end - 1, "t") : null;
       if (chunk) {
-        addStep("QKV 投影", "TP 按 head 切分，覆盖本轮新 token", (rank) =>
+        addStep("QKV 投影", "各 TP rank 在本卡为本轮全部新 token 生成 Q/K/V", (rank) =>
           equation(`Q[${queryRanges[rank]}](${newTokens})`) + equation(`${kvLabels[rank]}(${newTokens})`));
 
         const writes = kvShards(state, chunk.start, chunk.end);
-        addStep("写入 KV cache", "按全局 token 位置分片写入", (rank) => {
+        addStep("写入本卡 KV cache", "从本卡投影结果选取归本 TP rank 的 token，无跨卡通信", (rank) => {
           const { length, positions } = writes[rank % dcp];
           return length ? equation(`WriteKV(${kvLabels[rank]}(${positions}))`) : "本轮无待写入 token";
         });
