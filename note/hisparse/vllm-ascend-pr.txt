@@ -1,0 +1,8 @@
+1. HiSparse 基础功能：zhenwenqi2024 提交，已合入，提交为 4b3bd7ebe。将 Core HiSparse 接入 Ascend 950 的 Model Runner V2 和 SFA 路径，支持 BF16 和原生 FP8 C8 KV。#20926 · Add Ascend backend foundation
+    (https://github.com/vllm-project/vllm-ascend/pull/20926)
+2. HiSparse 支持 P/D 分离：LifeOfCoffee 提交，仍为 Open。通过 Mooncake MemFabric Pull 把 P 端主 KV 导入 D 端 HiSparse Host Source，把 Indexer KV 导入 NPU。该 PR 要求 P 端 DCP=1。#22109 · Mooncake MemFabric Pull into shared
+    Offload Host (https://github.com/vllm-project/vllm-ascend/pull/22109)
+3. HiSparse 支持 A2/A3：qjgggsse 提交，已合入，提交为 915e70117。通过共用的 arch22 算子路径支持 A2/A3 的 INT8 KV offload。#22062 · Add HiSparse KV Offloading Support for Ascend A2/A3
+    (https://github.com/vllm-project/vllm-ascend/pull/22062)
+4. HiSparse 接入 AscendStore KV 池（HiSparse + 池化），具体新增的是单机 P/D 共置时的跨请求、整块前缀复用。请求 A 把完整的前缀块写入池中，请求 B 在本地前缀未命中时可以从池里恢复，把主 KV 写回 Host Source、Indexer KV 写回 NPU，只计算剩余的 token。Resident 和 Hot 仍由本地 HiSparse 管理。(https://github.com/vllm-project/vllm-ascend/pull/21924)
+    - 设计 RFC (https://github.com/vllm-project/vllm-ascend/issues/22762)

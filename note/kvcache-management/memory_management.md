@@ -2,15 +2,104 @@
 
 在 vLLM 的 Python 层面：
 - torch.Tensor: 持有GPU显存起始地址
-- KVCacheBlock / BlockPool: 只管理 block_id，不直接持有地址
+    - Worker 分配一整块原始 Tensor: allocate_kv_cache -> _allocate_kv_cache_buffer -> torch.zeros
+- KVCacheBlock: 只管理元数据（如block_id），不直接持有地址
+    - 由BlockPool管理
 
-## BlockPool
+## GPU 核函数的输入会传入block table或者slot mapping
+
+读取路径（Attention），需要block ID转显存地址：
+- `physical_block_id = block_table[logical_block_idx]`
+- `target_block_addr = base_ptr + physical_block_id * row_stride`
+
+写入路径（KV Cache 更新）：需要知道“刚刚计算出的这个新 token 的 K/V，应该精确地写到显存的哪一个槽位”
+- slot_mapping: token position -> 物理 slot
+
+## KVCacheBlock和BlockPool定义
+```vllmclass
+@dataclass(slots=True)
+class KVCacheBlock:
+    """KV-cache block metadata."""
+
+    # Block ID, ranging from 0 to num_gpu_blocks - 1.
+    block_id: int
+    # Reference count.
+    ref_cnt: int = 0
+    # Deferred frees may contain blocks from multiple pools. Weak to avoid ref cycles.
+    pool: "weakref.ref[BlockPool] | None" = field(
+        default=None, repr=False, compare=False, kw_only=True
+    )
+    # The hash key (block hash + group id) of the block, only available
+    # when the block is full and cached.
+    block_hash: BlockHashWithGroupId | None = None
+    # Number of prefix tokens covered by block_hash. For full blocks this is
+    # the full block boundary; partial entries can end inside a cache block.
+    block_hash_num_tokens: int | None = None
+
+    # Used to construct a doubly linked list for free blocks.
+    # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
+    prev_free_block: "KVCacheBlock | None" = None
+    next_free_block: "KVCacheBlock | None" = None
+
+    # Whether the block is a null block that should never be cached.
+    is_null: bool = False
+```
 
 ```vllmclass
 class BlockPool:
     """BlockPool that manages KVCacheBlocks.
+    def __init__(self, num_gpu_blocks: int, enable_caching: bool, hash_block_size: int, enable_kv_cache_events: bool=False, metrics_collector: KVCacheMetricsCollector | None=None, num_hash_lookahead_tokens: int=0, medium: str=MEDIUM_GPU):
+        self.num_gpu_blocks = num_gpu_blocks
+        self.medium = medium
+        self.enable_caching = enable_caching
+        self.hash_block_size = hash_block_size
+        self.num_hash_lookahead_tokens = num_hash_lookahead_tokens
+        self._weak_self = weakref.ref(...)
+        self.blocks: list[KVCacheBlock] = [KVCacheBlock(...) for idx in range(...)]
 ```
 
+## Kernel函数定义
+```python
+@triton.jit
+def _compute_slot_mappings_kernel(
+    max_num_tokens,
+    idx_mapping,  # [num_reqs]
+    query_start_loc,  # [num_reqs + 1]
+    pos,  # [num_tokens]
+    block_table_ptrs,  # [num_kv_cache_groups]
+    block_table_strides,  # [num_kv_cache_groups]
+    block_sizes,  # [num_kv_cache_groups]
+    slot_mapping_enabled,  # [num_kv_cache_groups]
+    dcp_sharded,  # [num_kv_cache_groups]
+    slot_mappings_ptr,  # [num_kv_cache_groups, max_num_tokens]
+    slot_mappings_stride,
+    cp_rank,
+    CP_SIZE: tl.constexpr,
+    CP_INTERLEAVE: tl.constexpr,
+    PAD_ID: tl.constexpr,
+    TRITON_BLOCK_SIZE: tl.constexpr,
+):
+```
+
+```python
+        decode_attention_fwd(
+            q,
+            kv_c_and_k_pe_cache,
+            kv_c_cache,
+            o,
+            lse,
+            block_table, # req_to_token=block_table
+            seq_lens,
+            attn_logits,
+            num_kv_splits,
+            self.scale,
+            PAGE_SIZE,
+            k_scale=layer._k_scale,
+            v_scale=layer._k_scale,
+            is_mla=True,
+            sliding_window=self.decode_sliding_window,
+        )
+```
 ---
 
 普通的full attention，每一层的block pool都一样。
