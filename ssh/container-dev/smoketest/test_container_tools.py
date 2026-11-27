@@ -144,26 +144,47 @@ def test_default_shares_do_not_mount_container_tmp(monkeypatch, tmp_path, direct
 def test_direct_create_needs_neither_bindfs_nor_sudo(monkeypatch, tmp_path):
     module = load("create")
     monkeypatch.setattr(module, "require_host", lambda: None)
-    monkeypatch.setattr(module, "shm_capacity", lambda: 1024**3)
     monkeypatch.setattr(module.os, "getuid", lambda: 1000)
     monkeypatch.setattr(module.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(module.shutil, "which", lambda name: None)
+    image = "registry.example/vllm-ascend:nightly-main-a2"
+    devices = [f"/dev/davinci{index}" for index in range(8)] + [
+        "/dev/davinci_manager",
+        "/dev/devmm_svm",
+        "/dev/hisi_hdc",
+    ]
+    created = []
 
     def run(*command, **kwargs):
         if command[0] != "docker":
             pytest.fail("direct mode requires a non-Docker command")
         if command[:3] == ("docker", "image", "inspect"):
+            assert command[3] == image
             return subprocess.CompletedProcess(
                 command, 0, '[{"Id":"sha256:test","RepoTags":[]}]'
             )
+        if command[:2] == ("docker", "create"):
+            created.append(command)
         return subprocess.CompletedProcess(command, 0, "")
 
     monkeypatch.setattr(module, "run", run)
     monkeypatch.setattr(
-        module, "discover_devices", lambda: [{"path": "/dev/davinci0", "gid": 1000}]
+        module,
+        "discover_devices",
+        lambda: [{"path": device, "gid": 1000} for device in devices],
     )
     options = build_parser().parse_args(
-        ["containers", "create", "--image", "image", "--name", "test", "--no-bindfs"]
+        [
+            "containers",
+            "create",
+            "--npu-platform",
+            "a2",
+            "--image",
+            image,
+            "--name",
+            "test",
+            "--no-bindfs",
+        ]
     )
     options, home, sources, bindfs = module.prepare(options)
     assert bindfs is None
@@ -178,7 +199,15 @@ def test_direct_create_needs_neither_bindfs_nor_sudo(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "run", fail_start)
     with pytest.raises(subprocess.CalledProcessError):
         module.create_container(options, home, sources, bindfs)
+    (command,) = created
+    assert command[-1] == "sha256:test"
+    assert f"{tmp_path}:{home}" in command
+    assert [
+        command[index + 1] for index, flag in enumerate(command) if flag == "--device"
+    ] == devices
     assert original.read_text() == "user data"
+    assert "--ipc=host" in command
+    assert "--shm-size" not in command
 
 
 @pytest.fixture
@@ -229,6 +258,10 @@ def test_server_local_platform_uses_real_machine_probe(setup, monkeypatch, tmp_p
     assert common.dispatch(options, "download", []) is None
     assert options.npu_platform == "a3"
     binary.write_text("#!/bin/sh\nprintf 'PCI Device ID : 0xD802\\n'\n")
+    options = args()
+    assert common.dispatch(options, "create", []) is None
+    assert options.npu_platform == "a2"
+    binary.write_text("#!/bin/sh\nprintf 'PCI Device ID : 0xFFFF\\n'\n")
     with pytest.raises(ValueError, match="无法识别本地"):
         common.dispatch(args(), "download", [])
 
@@ -271,23 +304,32 @@ def test_remote_uses_inventory_platform_and_safe_arguments(setup, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "subcommand, options",
+    "subcommand, options, platform",
     [
-        ("create", ["--image", "image with spaces", "--name", "jiangyinzuo-dev1"]),
-        ("delete", ["--name", "jiangyinzuo-dev1", "--yes"]),
-        ("download", ["--date", "20261012"]),
-        ("ls", ["--json"]),
+        (
+            "create",
+            ["--image", "image with spaces", "--name", "jiangyinzuo-dev1"],
+            "a3",
+        ),
+        (
+            "create",
+            ["--image", "registry.example/vllm-ascend:a2", "--no-bindfs"],
+            "a2",
+        ),
+        ("delete", ["--name", "jiangyinzuo-dev1", "--yes"], "a3"),
+        ("download", ["--date", "20261012"], "a3"),
+        ("ls", ["--json"], "a3"),
     ],
 )
 def test_remote_dispatch_places_subcommand_before_options(
-    setup, monkeypatch, subcommand, options
+    setup, monkeypatch, subcommand, options, platform
 ):
     directory = setup.parents[2] / "machine-info"
     directory.mkdir()
     with (directory / "machines-output.csv").open("w", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(["Host", "OS", "Arch", "NPUPlatform"])
-        writer.writerow(["suzhou-one", "openEuler", "aarch64", "a3"])
+        writer.writerow(["suzhou-one", "openEuler", "aarch64", platform])
     calls = []
 
     def run_remote_cli(host, arguments):
@@ -299,7 +341,7 @@ def test_remote_dispatch_places_subcommand_before_options(
     assert calls == [
         (
             "suzhou-one",
-            ["containers", subcommand, "--npu-platform", "a3", *options],
+            ["containers", subcommand, "--npu-platform", platform, *options],
         )
     ]
 

@@ -15,12 +15,14 @@ def register(subparsers) -> None:
     parser = subparsers.add_parser("containers", help="容器管理")
     commands = parser.add_subparsers(dest="container_action", required=True)
     creator = commands.add_parser("create", help="创建 root 容器，默认 bindfs 映射")
-    creator.add_argument("--image", help="镜像名或 ID；默认交互选择")
+    creator.add_argument(
+        "--image", help="宿主机已有的镜像名、完整仓库地址或 ID。省略时交互选择"
+    )
     creator.add_argument("--name", help="容器名；默认递增并交互确认")
     creator.add_argument(
         "--no-bindfs",
         action="store_true",
-        help="直接挂载，避免 FUSE 开销；新文件可能归宿主机 root 所有",
+        help="直接使用 Docker bind mount，无需 bindfs。新文件可能归宿主机 root 所有",
     )
     creator.add_argument(
         "--share", action="append", default=[], help="额外共享目录，可重复指定"

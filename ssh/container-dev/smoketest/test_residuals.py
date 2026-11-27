@@ -77,6 +77,12 @@ def test_legacy_discovery_is_preserved(
     parent = Path("/var/tmp/root-mapped-regression")
     target = parent / "123"
     original_stat = Path.stat
+    original_exists = Path.exists
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda path, **kwargs: path == parent or original_exists(path, **kwargs),
+    )
     monkeypatch.setattr(
         Path,
         "stat",

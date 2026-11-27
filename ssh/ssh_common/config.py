@@ -78,4 +78,4 @@ TOOL_PLATFORMS = {
     ("openeuler", "aarch64"): "openeuler24.03-lts-aarch64",
     ("openeuler", "arm64"): "openeuler24.03-lts-aarch64",
 }
-NPU_PLATFORMS = {"a3": "800I-A3-py311-openEuler24.03-lts-aarch64"}
+NPU_PLATFORMS = ("a2", "a3")

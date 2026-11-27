@@ -19,7 +19,7 @@ from ..core.mappings import MappingStore
 from ssh_common.npu_devices import discover_devices
 from ..core.process import run
 from ssh_common.terminal import green, yellow
-from ..core.host import require_host, shm_capacity
+from ..core.host import require_host
 from ssh_common.images import image_list_command
 
 
@@ -148,7 +148,7 @@ def prepare(
         raise ValueError("Invalid container name")
     bindfs = None if args.no_bindfs else shutil.which("bindfs")
     if not args.no_bindfs and not bindfs:
-        raise ValueError("bindfs is required on the host")
+        raise ValueError("宿主机缺少 bindfs。使用 --no-bindfs 可直接挂载目录")
     home = str(Path.home())
     sources = [Path(args.test_home or home).resolve()] + [
         Path(p).resolve() for p in args.share
@@ -174,7 +174,6 @@ def prepare(
 
 
 def docker_command(name: str, home: str) -> list[str]:
-    shm_size = shm_capacity()
     command = [
         "docker",
         "create",
@@ -184,11 +183,8 @@ def docker_command(name: str, home: str) -> list[str]:
         "0:0",
         "--userns=host",
         "--network=host",
-        # 只需充足的共享内存，无跨容器共享 IPC 需求，因此不使用 --ipc=host。
-        # 匹配宿主机 /dev/shm 总容量，同时保留容器独立的 IPC namespace 和 /dev/shm；
-        # 此容量上限不预分配内存，也不保证实际可用内存，仍受 RAM/swap 和 cgroup 限制。
-        "--shm-size",
-        str(shm_size),
+        # Engram 和本地 DP 进程需要通过宿主机 /dev/shm 共享内存。
+        "--ipc=host",
         "--hostname",
         socket.gethostname() + "-container",
         "--privileged",

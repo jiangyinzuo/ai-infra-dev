@@ -123,6 +123,9 @@ def test_platform_and_localhost(tmp_path):
     assert complete(
         tmp_path, ["devtools/cli.py", "images", "download", "--host", "local"]
     ) == ["localhost"]
+    assert complete(
+        tmp_path, ["devtools/cli.py", "containers", "create", "--npu-platform", ""]
+    ) == ["a2", "a3"]
 
 
 @pytest.mark.parametrize("python", [False, True])

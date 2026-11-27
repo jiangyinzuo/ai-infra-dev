@@ -30,7 +30,9 @@ def detect_local_platform():
     result = npu_platform()
     if result["platform"] not in NPU_PLATFORMS:
         detail = "; ".join(result["errors"] or result["models"]) or result["status"]
-        raise ValueError(f"无法识别本地 NPU 平台：{detail}；请指定 --npu-platform a3")
+        raise ValueError(
+            f"无法识别本地 NPU 平台：{detail}。请指定 --npu-platform a2 或 a3"
+        )
     return result["platform"]
 
 
@@ -41,7 +43,7 @@ def dispatch(args, script, options):
     if not is_remote_host(args.host):
         if not args.npu_platform:
             if wsl:
-                raise ValueError("WSL 本地下载必须指定 --npu-platform a3")
+                raise ValueError("WSL 本地下载必须指定 --npu-platform a2 或 a3")
             args.npu_platform = detect_local_platform()
         return None
     host_alias(args.host)

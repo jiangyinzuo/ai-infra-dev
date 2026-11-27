@@ -113,15 +113,20 @@ URL 为 `https://cmc-lfg-artifactory.cmc.tools.huawei.com/artifactory/generic-81
 python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py images download --archive 'vllm-ascend:dev-26.2.0.B109-day20261019-800I-A3-py311-openEuler24.03-lts-aarch64.tar.gz'
 python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers create
 python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers create --image vllm-ascend:TAG --name jiangyinzuo-dev1
+python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers create \
+  --npu-platform a2 --image 'quay.io/ascend/vllm-ascend:YOUR_A2_TAG' \
+  --name jiangyinzuo-a2-dev1 --no-bindfs
 python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers ls
 python3 ~/ai-infra-dev/ssh/container-dev/devtools/cli.py containers ls --json
 ```
 
-创建默认交互选择镜像和容器名，并通过 bindfs 共享 HOME；容器内 root 创建的文件归宿主机当前用户。`--share PATH` 添加共享目录，`--test-home PATH` 使用隔离目录，`--no-bindfs` 改为直接挂载（文件可能归 root 所有，避免 FUSE 开销）。
+创建支持 Atlas 800I A2 和 A3，并根据宿主机上实际存在的昇腾字符设备生成挂载选项。在服务器宿主机上使用有 Docker 权限的普通用户运行，可用 `--npu-platform a2` 或 `--npu-platform a3` 显式选择。通过 `--host` 远程执行时，平台取自机器清单，显式参数必须与清单一致。
+
+默认通过 bindfs 共享 HOME，容器内 root 创建的文件归宿主机当前用户。`--no-bindfs` 使用 Docker 直接挂载，容器创建不需要 bindfs 或挂载映射所用的 sudo，容器新文件可能归宿主机 root 所有。`--share PATH` 添加共享目录，`--test-home PATH` 使用隔离目录代替真实 HOME。
 
 默认不共享宿主机 `/tmp`，保留容器原生临时目录，避免 bindfs 的 `.fuse_hidden*` 行为导致 Triton JIT 临时目录清理失败（#11）。已有容器需重建才能移除原 `/tmp` 挂载；不会自动卸载共享映射或修改服务的 TMPDIR。重建前备份容器可写层及匿名 volume 中需要保留的数据。显式 `--share /tmp` 会重新引入这一风险。
 
-创建时的镜像选择与 `images ls` 共用 repository 过滤规则，同时包含 `vllm-ascend` 和 `quay.io/ascend/vllm-ascend`，按镜像创建时间从新到旧排列。
+默认交互选择镜像和容器名。`--image` 可直接指定宿主机已有的镜像，接受完整仓库名加 tag 或镜像 ID。交互镜像列表与 `images ls` 共用 repository 过滤规则，包含 `vllm-ascend` 和 `quay.io/ascend/vllm-ascend`，按镜像创建时间从新到旧排列。
 
 新建或复用托管 bindfs 挂载时提高守护进程的 open-files 限制，防止并行编译受默认 1024 上限影响；不需要改变容器自身的限制。
 

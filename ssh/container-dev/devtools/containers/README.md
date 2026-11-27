@@ -1,11 +1,17 @@
 参考：https://quay.io/repository/ascend/vllm-ascend
 
+https://docs.vllm.ai/projects/ascend/en/latest/tutorials/models/DeepSeek-V4.1-Flash.html#__tabbed_1_1
+
+> A2/A3 上运行 DeepSeek V4.1 Flash 时，按官方示例在 docker run 中加 `--ipc=host`，让 Engram 初始化使用宿主机的 `/dev/shm`，避免容器 `/dev/shm` 过小。
+>
+> `--ipc=host` 会让容器加入宿主机 IPC namespace，共用宿主机的 `/dev/shm`、信号量和消息队列。只使用 `--shm-size` 时，容器使用独立的 IPC namespace 和 `/dev/shm`，只调整容器共享内存容量上限。
+
 a2 (Atlas 800I A2) — 8 cards
 ```bash
 docker run --rm \
     --name vllm-ascend \
     --net=host \
-    --shm-size=1g \
+    --ipc=host \
     --device /dev/davinci0 \
     --device /dev/davinci1 \
     --device /dev/davinci2 \
@@ -32,7 +38,7 @@ a3 (Atlas 800I A3) — 16 cards
 docker run --rm \
     --name vllm-ascend \
     --net=host \
-    --shm-size=1g \
+    --ipc=host \
     --device /dev/davinci0 \
     --device /dev/davinci1 \
     --device /dev/davinci2 \

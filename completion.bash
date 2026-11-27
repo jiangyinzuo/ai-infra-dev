@@ -143,7 +143,7 @@ _devtools_cli_complete() {
             _ssh_usg_complete "$HOME/.ssh/config"
             [[ localhost != "$current"* || " ${COMPREPLY[*]} " == *' localhost '* ]] || COMPREPLY+=(localhost)
             ;;
-        --npu-platform) _complete_values a3 ;;
+        --npu-platform) _complete_values a2 a3 ;;
         --from) _complete_values quay cmc.rnd ;;
         --lock|--output|--repos|--share|--test-home|--root)
             mapfile -t COMPREPLY < <(compgen -f -- "$current")
