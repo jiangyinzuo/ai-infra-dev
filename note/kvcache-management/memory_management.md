@@ -1,3 +1,18 @@
+# vLLM显存管理
+
+在 vLLM 的 Python 层面：
+- torch.Tensor: 持有GPU显存起始地址
+- KVCacheBlock / BlockPool: 只管理 block_id，不直接持有地址
+
+## BlockPool
+
+```vllmclass
+class BlockPool:
+    """BlockPool that manages KVCacheBlocks.
+```
+
+---
+
 普通的full attention，每一层的block pool都一样。
 发起一次请求，就可以每一层都返回 。
 逻辑上每一层的kvcache是独立的。

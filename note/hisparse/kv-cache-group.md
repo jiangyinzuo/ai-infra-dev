@@ -1,5 +1,14 @@
 # KV Cache Group
 
+vllm/vllm-ascend:/kv_cache_interface.py:1543-1546
+```python
+class KVCacheGroupRole(StrEnum):
+    DEFAULT = "default"
+    HISPARSE_SOURCE = "hisparse_source"
+    HISPARSE_INDEXER = "hisparse_indexer"
+```
+
+
 - 一组共享同一套 KV block table 的模型层。
 - 共享 block 映射，不共享 KV 数值。
 - Full Attention、Sliding Window、GDN 等缓存规格不同 → 分组管理。
