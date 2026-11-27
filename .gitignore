@@ -2,3 +2,4 @@ __pycache__/
 .jupyter/
 .jupyter_ystore.db
 .ipynb_checkpoints/
+.mindie-local/
