@@ -10,3 +10,5 @@ vllm/vllm:vllm/v1/core/sched/scheduler.py:832-838
                         num_lookahead_tokens=self.num_lookahead_tokens,
                     )
 ```
+
+torch_profiler_with_stack: torch.profiler开启stack

@@ -8,12 +8,12 @@
 
 ## GPU 核函数的输入会传入block table或者slot mapping
 
-读取路径（Attention），需要block ID转显存地址：
-- `physical_block_id = block_table[logical_block_idx]`
+**block_table**用于读取路径（Attention），需要block ID转显存地址：
+- `physical_block_id = block_table[request_id, logical_block_idx]`, 逻辑BlockID转物理GPU/NPU BlockID
 - `target_block_addr = base_ptr + physical_block_id * row_stride`
 
-写入路径（KV Cache 更新）：需要知道“刚刚计算出的这个新 token 的 K/V，应该精确地写到显存的哪一个槽位”
-- slot_mapping: token position -> 物理 slot
+**slot_mapping**用于写入路径（KV Cache 更新）：需要知道“刚刚计算出的这个新 token 的 K/V，应该精确地写到显存的哪一个槽位”
+- slot_mapping: token position -> 物理 slot，可以预计算
 
 ## KVCacheBlock和BlockPool定义
 ```vllmclass
@@ -58,7 +58,61 @@ class BlockPool:
         self.blocks: list[KVCacheBlock] = [KVCacheBlock(...) for idx in range(...)]
 ```
 
+### HiSparse的BlockTable管理
+
+Resident BlockTable
+- 0代表null block，当前 page 只从 Host 读取
+Hot BlockTable:
+
+见`bind_hisparse_kv_caches()`函数
+```python
+# Resident 使用额外的 residency 表
+cache_handle.bind_cache(
+    ...,
+    block_table=residency[resident_source_index],
+    ...
+)
+
+# Hot 使用通用 BlockTables 中的 Hot group 表
+cache_handle.runtime.bind_hot_cache(
+    ...,
+    block_table=block_tables.input_block_tables[group_id],
+)
+
+# Source 使用通用 BlockTables 中的 Host Source group 表
+cache_handle.source_block_table = block_tables.input_block_tables[
+    source_group_id
+]
+```
+
+```text
+Indexer
+    ↓
+top-k logical token positions
+    ↓
+HiSparse resolver
+    ├── Resident table 命中
+    │       ↓
+    │   直接使用 Resident row
+    │
+    ├── Hot table 命中
+    │       ↓
+    │   直接使用 Hot row
+    │
+    └── Source table 命中但 Resident/Hot miss
+            ↓
+        LRU 选择 Hot slot
+            ↓
+        Host row 拷贝到 Hot
+            ↓
+        输出物理 Hot row
+            ↓
+        SFA 读取 selected KV
+```
+
 ## Kernel函数定义
+
+计算slot mapping
 ```python
 @triton.jit
 def _compute_slot_mappings_kernel(
@@ -81,6 +135,7 @@ def _compute_slot_mappings_kernel(
 ):
 ```
 
+Attention（包含通过block table定位并读取KVCache）
 ```python
         decode_attention_fwd(
             q,
@@ -100,6 +155,19 @@ def _compute_slot_mappings_kernel(
             sliding_window=self.decode_sliding_window,
         )
 ```
+
+写KVCache
+```python
+    def do_kv_cache_update(
+        self,
+        layer: AttentionLayer,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: torch.Tensor,
+        slot_mapping: torch.Tensor,
+    ):
+```
+
 ---
 
 普通的full attention，每一层的block pool都一样。

@@ -1,3 +1,5 @@
+https://docs.vllm.ai/en/v0.30.0/design/hisparse/
+
 vllm/vllm:docs/design/hisparse.md
 
 针对稀疏注意力模型（如DSA）的KVCache offload。
@@ -30,3 +32,47 @@ HiSparse 不是一个单一的模块，而是集成在 vLLM 调度器和 Worker 
 
 在具体实现上，它还会利用 **LRU（最近最少使用）** 策略来管理 GPU 上的热缓存，以提高 Top-K 数据的命中率；并通过融合 CUDA 内核来处理命中、未命中以及从主机取数的操作，力求不让数据搬运阻塞解码的关键路径。
 
+## Source、Resident、Hot：BlockTable 与 KV 流向
+
+BlockTable 只负责定位，不存 KV 数据。
+
+```mermaid
+flowchart TD
+    NEW["模型新算出的主 KV"] -->|首次写入| R["Resident · NPU residency"]
+    R -->|镜像新写入的行| S["Source · Host source_block_table"]
+    S -->|Resident 和 Hot 都未命中：按 top-k 回填缺失行| H["Hot · NPU hot_block_table"]
+    R -->|Resident 命中：直接读| A["SFA：读取 top-k 对应的 KV 行"]
+    H -->|Hot 命中或回填完成后读| A
+    S -.->|外部 Host import/restore（如 PD 分离）| R
+```
+
+普通本地 Decode 的主流程是 Resident → Source 镜像和 Source → Hot 按行回填。虚线表示外部 Host import 后的按页恢复路径，当前 PD 分离是主要实例。
+
+
+PD 分离下，P 端产生 Prefill KV，D 端接收后继续 Decode
+
+```mermaid
+flowchart LR
+    subgraph P["P Prefill"]
+        PM["GPU：主 MLA KV"]
+        PI["GPU：Indexer KV"]
+    end
+
+    subgraph D["D Decode"]
+        DS["Host Source source_block_table"]
+        DI["NPU Indexer KV"]
+        DR["NPU Resident residency"]
+        DH["NPU Hot hot_block_table"]
+        TOPK["Indexer 计算 top-k"]
+        ATT["SFA Attention"]
+    end
+
+    PM -->|"MemFabric Pull：主 KV"| DS
+    PI -->|"MemFabric Pull：Indexer KV"| DI
+    DS -->|"Host import 完成后：尾页必须恢复，其他 page 按 GPU 余量 promotion"| DR
+    DS -->|"Resident 和 Hot 都未命中：按 top-k 回填 rows"| DH
+    DI --> TOPK
+    TOPK --> ATT
+    DR -->|"Resident hit"| ATT
+    DH -->|"Hot hit 或回填完成"| ATT
+```
